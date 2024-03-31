@@ -56,7 +56,7 @@ pub enum Ext2Error {
     /// Tried to access a non-existing inode.
     NonExistingInode(u32),
 
-    /// Requested more free blocks than currently available.
+    /// `NotEnoughFreeBlocks(requested, available)`: Requested more free blocks than currently available.
     NotEnoughFreeBlocks(u32, u32),
 
     /// Requested an inode while none is available.

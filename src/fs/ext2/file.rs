@@ -5,10 +5,9 @@ use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::fmt::Debug;
-use core::mem::size_of;
-use core::ops::{AddAssign, SubAssign};
-use core::ptr::{addr_of, addr_of_mut};
-use core::slice::from_raw_parts;
+use core::ptr::{addr_of, addr_of_mut, slice_from_raw_parts};
+
+use itertools::Itertools;
 
 use super::directory::Entry;
 use super::error::Ext2Error;
@@ -25,10 +24,6 @@ use crate::fs::ext2::inode::DIRECT_BLOCK_POINTER_COUNT;
 use crate::fs::PATH_MAX;
 use crate::io::{Base, Read, Seek, SeekFrom, Write};
 use crate::types::{Blkcnt, Blksize, Dev, Gid, Ino, Mode, Nlink, Off, Time, Timespec, Uid};
-
-/// Arbitrary number of supplementary reserved blocks for each file owned by the UID or the GID declared in [the
-/// superblock]((struct.Base.html#structfield.def_resuid)).
-pub const SUPPLEMENTARY_RESERVED_BLOCKS_PER_WRITE: u32 = 8;
 
 /// Limit in bytes for the length of a pointed path of a symbolic link to be store in an inode and not in a separate data block.
 pub const SYMBOLIC_LINK_INODE_STORE_LIMIT: usize = 60;
@@ -236,212 +231,115 @@ impl<D: Device<u8, Ext2Error>> Read for File<D> {
 
 impl<D: Device<u8, Ext2Error>> Write for File<D> {
     #[inline]
+    #[allow(clippy::too_many_lines)]
     fn write(&mut self, buf: &[u8]) -> Result<usize, Error<Self::IOError>> {
-        /// Writes the given `blocks` number in the indirect block with the number `block_number`.
-        fn write_indirect_block<D: Device<u8, Ext2Error>>(
-            filesystem: &Celled<Ext2<D>>,
-            block_number: u32,
-            blocks: &Vec<u32>,
-        ) -> Result<(), Error<Ext2Error>> {
-            let mut indirect_block = Block::new(filesystem.clone(), block_number);
-            // SAFETY: it is always possible to cast a `u32` to four `u8`
-            let buffer = unsafe { from_raw_parts::<u8>(blocks.as_ptr().cast(), blocks.len() * size_of::<u32>() / size_of::<u8>()) };
-            indirect_block.write(buffer).map(|_| ())
-        }
-
-        /// Write a data block given with its state, starting the buffer `buf` at the given offset `offset`.
-        fn write_data_block<D: Device<u8, Ext2Error>>(
-            filesystem: &Celled<Ext2<D>>,
-            block_number: u32,
-            buf: &[u8],
-            offset: &mut u64,
-            written_bytes: &mut usize,
-        ) -> Result<(), Error<Ext2Error>> {
-            let fs = filesystem.borrow();
-            let block_size = u64::from(fs.superblock().block_size());
-
-            // SAFETY: `block_size` is lower than `usize::MAX` when `usize` is at least `u16`
-            let block_size_usize = unsafe { usize::try_from(fs.superblock().block_size()).unwrap_unchecked() };
-
-            if *offset >= block_size {
-                offset.sub_assign(block_size);
-            } else if *offset > 0 {
-                let mut block = Block::new(filesystem.clone(), block_number);
-
-                block.seek(SeekFrom::Start(*offset))?;
-
-                // SAFETY: `offset < block_size` which is lower than `usize::MAX` when `usize` is at least `u16`
-                let bytes_to_end_block = block_size_usize - unsafe { usize::try_from(*offset).unwrap_unchecked() };
-                let length = bytes_to_end_block.min(buf.len() - *written_bytes);
-
-                // SAFETY: the block has been Updated so `written_bytes < `bytes_to_write`
-                block.write(unsafe { buf.get_unchecked(*written_bytes..*written_bytes + length) })?;
-
-                *offset = 0_u64;
-                written_bytes.add_assign(length);
-            } else {
-                let length = block_size_usize.min(buf.len() - *written_bytes);
-
-                let mut block = Block::new(filesystem.clone(), block_number);
-
-                // SAFETY: the block has been Updated so `written_bytes < `bytes_to_write`
-                block.write(unsafe { buf.get_unchecked(*written_bytes..*written_bytes + length) })?;
-
-                written_bytes.add_assign(length);
-            }
-
-            Ok(())
-        }
-
         let fs = self.filesystem.borrow_mut();
         let superblock = fs.superblock().clone();
         let block_size = u64::from(fs.superblock().block_size());
 
-        if buf.len() as u64 > fs.superblock().max_file_size() {
-            return Err(Error::Fs(FsError::Implementation(Ext2Error::OutOfBounds(buf.len() as i128))));
+        let buf_len = buf.len();
+        if buf_len as u64 > fs.superblock().max_file_size() {
+            return Err(Error::Fs(FsError::Implementation(Ext2Error::OutOfBounds(buf_len as i128))));
         }
 
-        let reserved_blocks =
-            if self.inode.uid == fs.superblock().base().def_resuid || self.inode.gid == fs.superblock().base().def_resgid {
-                SUPPLEMENTARY_RESERVED_BLOCKS_PER_WRITE
-            } else {
-                0
-            };
-
         // Calcul of the number of needed data blocks
-        let bytes_to_write = buf.len() as u64;
-        // SAFETY: there are at most u32::MAX blocks on the filesystem
-        let data_blocks_needed = unsafe { u32::try_from((bytes_to_write + self.io_offset) / block_size).unwrap_unchecked() }
-            + u32::from((bytes_to_write + self.io_offset) % block_size != 0)
-            + reserved_blocks;
+        let bytes_to_write = buf_len as u64;
+        let data_blocks_needed =
+            // SAFETY: there are at most u32::MAX blocks on the filesystem
+            1 + unsafe { u32::try_from((bytes_to_write + self.io_offset - 1) / block_size).unwrap_unchecked() };
 
-        let mut indirected_blocks = self.inode.data_blocks(&fs.device, fs.superblock())?;
+        let indirected_blocks = self.inode.indirected_blocks(&fs.device, fs.superblock())?;
 
         let current_data_block_count = indirected_blocks.data_block_count();
         let data_blocks_to_request = data_blocks_needed.saturating_sub(current_data_block_count);
 
         let current_indirection_block_count = indirected_blocks.indirection_block_count();
-        // SAFETY: `buf.len() < fs.superblock().max_file_size()`
-        let indirection_blocks_to_request = unsafe {
-            IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::necessary_indirection_block_count(
-                data_blocks_needed,
-                fs.superblock().base().blocks_per_group,
-            )
-            .unwrap_unchecked()
-        } - current_indirection_block_count;
+        let indirection_blocks_to_request = IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::necessary_indirection_block_count(
+            data_blocks_needed,
+            fs.superblock().base().block_size() / 4,
+        ) - current_indirection_block_count;
 
-        let free_blocks = fs.free_blocks_offset(
-            data_blocks_to_request + indirection_blocks_to_request,
-            indirected_blocks.last_data_block_allocated().map(|(block, _)| block).unwrap_or_default()
-                / superblock.base().blocks_per_group,
-        )?;
+        let start_block_group = indirected_blocks.last_data_block_allocated().map(|(block, _)| block).unwrap_or_default()
+            / superblock.base().blocks_per_group;
 
-        indirected_blocks.append_blocks(&free_blocks);
+        #[allow(clippy::wildcard_enum_match_arm)]
+        let free_blocks = fs.free_blocks_offset(data_blocks_to_request + indirection_blocks_to_request, start_block_group)?;
 
-        todo!();
+        drop(fs);
 
-        //        // Write everything that has to change.
-        //
-        //        let mut offset = self.io_offset;
-        //        let mut written_bytes = 0_usize;
-        //
-        //        // Direct block pointers
-        //        for block in &direct_block_pointers {
-        //            write_data_block(&self.filesystem, *block, buf, &mut offset, &mut written_bytes)?;
-        //        }
-        //
-        //        // Singly indirected block pointer
-        //        if singly_indirect_block_pointer.state == State::Updated {
-        //            write_indirect_block(&self.filesystem, singly_indirect_block_pointer.block, &singly_indirect_blocks)?;
-        //        }
-        //
-        //        for block in singly_indirect_blocks {
-        //            write_data_block(&self.filesystem, block, buf, &mut offset, &mut written_bytes)?;
-        //        }
-        //
-        //        // Doubly indirected block pointer
-        //        if doubly_indirect_block_pointer.state == State::Updated {
-        //            write_indirect_block(
-        //                &self.filesystem,
-        //                doubly_indirect_block_pointer.block,
-        //                &doubly_indirect_blocks
-        //                    .iter()
-        //                    .map(|block_pointer_with_state| block_pointer_with_state.0.block)
-        //                    .collect_vec(),
-        //            )?;
-        //        }
-        //
-        //        for block_pointer in doubly_indirect_blocks {
-        //            if block_pointer.0.state == State::Updated {
-        //                write_indirect_block(&self.filesystem, block_pointer.0.block, &block_pointer.1)?;
-        //            }
-        //
-        //            for block in block_pointer.1 {
-        //                write_data_block(&self.filesystem, block, buf, &mut offset, &mut written_bytes)?;
-        //            }
-        //        }
-        //
-        //        // Triply indirected block pointer
-        //        if triply_indirect_block_pointer.state == State::Updated {
-        //            write_indirect_block(
-        //                &self.filesystem,
-        //                triply_indirect_block_pointer.block,
-        //                &triply_indirect_blocks
-        //                    .iter()
-        //                    .map(|block_with_state| block_with_state.0.block)
-        //                    .collect_vec(),
-        //            )?;
-        //        }
-        //
-        //        for block_pointer_pointer in triply_indirect_blocks {
-        //            if block_pointer_pointer.0.state == State::Updated {
-        //                write_indirect_block(
-        //                    &self.filesystem,
-        //                    block_pointer_pointer.0.block,
-        //                    &block_pointer_pointer.1.iter().map(|block_pointer| block_pointer.0.block).collect_vec(),
-        //                )?;
-        //            }
-        //
-        //            for block_pointer in block_pointer_pointer.1 {
-        //                if block_pointer.0.state == State::Updated {
-        //                    write_indirect_block(&self.filesystem, block_pointer.0.block, &block_pointer.1)?;
-        //                }
-        //
-        //                for block in block_pointer.1 {
-        //                    write_data_block(&self.filesystem, block, buf, &mut offset, &mut written_bytes)?;
-        //                }
-        //            }
-        //        }
-        //
-        //        let mut updated_inode = self.inode;
-        //
-        //        let mut direct_block_pointers = direct_block_pointers.clone();
-        //        direct_block_pointers.append(&mut vec![0_u32; 12].into_iter().take(12 -
-        // direct_block_pointers.len()).collect_vec());        let mut updated_direct_block_pointers =
-        // updated_inode.direct_block_pointers;        updated_direct_block_pointers.clone_from_slice(&
-        // direct_block_pointers);        updated_inode.direct_block_pointers = updated_direct_block_pointers;
-        //
-        //        updated_inode.singly_indirect_block_pointer = singly_indirect_block_pointer.block;
-        //        updated_inode.doubly_indirect_block_pointer = doubly_indirect_block_pointer.block;
-        //        updated_inode.triply_indirect_block_pointer = triply_indirect_block_pointer.block;
-        //
-        //        let new_size = self.inode.data_size().max(self.io_offset + buf.len() as u64);
-        //
-        //        // SAFETY: the result cannot be greater than `u32::MAX`
-        //        updated_inode.size = unsafe { u32::try_from(new_size & u64::from(u32::MAX)).unwrap_unchecked() };
-        //        updated_inode.blocks =
-        //            // SAFETY: the total number of blocks in this filesystem is on 32 bits in the superblock
-        //            unsafe { u32::try_from(blocks_needed).unwrap_unchecked() } *
-        // self.filesystem.borrow().superblock().block_size() / 512;
-        //
-        //        assert!(u32::try_from(new_size).is_ok(), "TODO: Search how to deal with bigger files");
-        //
-        //        // SAFETY: the updated inode contains the right inode created in this function
-        //        unsafe { self.set_inode(&updated_inode) }?;
-        //
-        //        self.filesystem.as_ref().borrow_mut().allocate_blocks(&free_blocks)?;
-        //
-        //        Ok(written_bytes)
+        let (new_indirected_blocks, changed_blocks) = indirected_blocks.append_blocks_with_difference(
+            &free_blocks,
+            // SAFETY: this result points to a block which is encoded on 32 bits
+            Some(unsafe { u32::try_from(self.io_offset / u64::from(superblock.block_size())).unwrap_unchecked() }),
+        );
+
+        for (starting_index, (indirection_block, blocks)) in changed_blocks.changed_indirected_blocks() {
+            let mut block = Block::new(self.filesystem.clone(), indirection_block);
+            if starting_index != 0 {
+                block.seek(SeekFrom::Start(starting_index as u64))?;
+            }
+
+            // SAFETY: it is always possible to cast a u32 to 4 u8
+            block.write_all(unsafe { &*slice_from_raw_parts(blocks.as_ptr().cast::<u8>(), blocks.len() * 4) })?;
+        }
+
+        let mut written_bytes = 0_usize;
+
+        let changed_data_blocks = changed_blocks.changed_data_blocks();
+        let changed_data_blocks_iterator = &mut changed_data_blocks.iter();
+
+        if let Some(block_number) = changed_data_blocks_iterator.next() {
+            let mut block = Block::new(self.filesystem.clone(), *block_number);
+            block.seek(SeekFrom::Start(self.io_offset % u64::from(superblock.block_size())))?;
+            written_bytes += block.write(buf)?;
+        }
+
+        for block_number in changed_data_blocks_iterator {
+            let mut block = Block::new(self.filesystem.clone(), *block_number);
+            let buffer_end = buf
+                .get(written_bytes..written_bytes + (superblock.base().blocks_per_group as usize).min(buf_len - written_bytes))
+                .expect("The buffer have a size that does not correspond to the calculated number of data blocks.");
+
+            let new_written_bytes = block.write(buffer_end)?;
+            if new_written_bytes == 0 {
+                break;
+            }
+            written_bytes += new_written_bytes;
+        }
+
+        let mut updated_inode = self.inode;
+
+        let (
+            mut direct_block_pointers,
+            singly_indirected_block_pointer,
+            doubly_indirected_block_pointer,
+            triply_indirected_block_pointer,
+        ) = new_indirected_blocks.blocks();
+
+        direct_block_pointers.append(&mut vec![0_u32; 12].into_iter().take(12 - direct_block_pointers.len()).collect_vec());
+
+        let mut updated_direct_block_pointers = updated_inode.direct_block_pointers;
+        updated_direct_block_pointers.clone_from_slice(&direct_block_pointers);
+        updated_inode.direct_block_pointers = updated_direct_block_pointers;
+
+        updated_inode.singly_indirect_block_pointer = singly_indirected_block_pointer.0;
+        updated_inode.doubly_indirect_block_pointer = doubly_indirected_block_pointer.0;
+        updated_inode.triply_indirect_block_pointer = triply_indirected_block_pointer.0;
+
+        let new_size = self.inode.data_size().max(self.io_offset + buf_len as u64);
+
+        // SAFETY: the result cannot be greater than `u32::MAX`
+        updated_inode.size = unsafe { u32::try_from(new_size & u64::from(u32::MAX)).unwrap_unchecked() };
+        updated_inode.blocks = data_blocks_needed * self.filesystem.borrow().superblock().block_size() / 512;
+
+        assert!(u32::try_from(new_size).is_ok(), "TODO: Search how to deal with bigger files");
+
+        // SAFETY: the updated inode contains the right inode created in this function
+        unsafe { self.set_inode(&updated_inode) }?;
+
+        self.filesystem.as_ref().borrow_mut().allocate_blocks(&free_blocks)?;
+
+        Ok(written_bytes)
     }
 
     #[inline]
@@ -1081,13 +979,16 @@ mod test {
             panic!("`foo.txt` has been created as a regular file")
         };
 
-        let mut replace_text = vec![b'a'; BYTES_TO_WRITE / 2];
-        replace_text.append(&mut vec![b'b'; BYTES_TO_WRITE / 2]);
+        let mut replace_text = vec![];
+        for i in 0..=u8::MAX {
+            replace_text.append(&mut vec![i; BYTES_TO_WRITE / 256]);
+        }
+        replace_text.append(&mut vec![b'a'; BYTES_TO_WRITE - 256 * (BYTES_TO_WRITE / 256)]);
+
         foo.write(&replace_text).unwrap();
         foo.flush().unwrap();
 
         assert_eq!(foo.file.inode, Inode::parse(&ext2.borrow().device, ext2.borrow().superblock(), foo.file.inode_number).unwrap());
-
         assert_eq!(foo.read_all().unwrap().len(), BYTES_TO_WRITE);
         assert_eq!(foo.read_all().unwrap(), replace_text);
 
@@ -1121,13 +1022,16 @@ mod test {
             panic!("`foo.txt` has been created as a regular file")
         };
 
-        let mut replace_text = vec![b'a'; BYTES_TO_WRITE / 2];
-        replace_text.append(&mut vec![b'b'; BYTES_TO_WRITE / 2]);
+        let mut replace_text = vec![];
+        for i in 0..=u8::MAX {
+            replace_text.append(&mut vec![i; BYTES_TO_WRITE / 256]);
+        }
+        replace_text.append(&mut vec![b'a'; BYTES_TO_WRITE - 256 * (BYTES_TO_WRITE / 256)]);
+
         foo.write(&replace_text).unwrap();
         foo.flush().unwrap();
 
         assert_eq!(foo.file.inode, Inode::parse(&ext2.borrow().device, ext2.borrow().superblock(), foo.file.inode_number).unwrap());
-
         assert_eq!(foo.read_all().unwrap().len(), BYTES_TO_WRITE);
         assert_eq!(foo.read_all().unwrap(), replace_text);
 
@@ -1167,7 +1071,6 @@ mod test {
         foo.flush().unwrap();
 
         assert_eq!(foo.file.inode, Inode::parse(&ext2.borrow().device, ext2.borrow().superblock(), foo.file.inode_number).unwrap());
-
         assert_eq!(foo.read_all().unwrap().len(), BYTES_TO_WRITE);
         assert_eq!(foo.read_all().unwrap(), replace_text);
 

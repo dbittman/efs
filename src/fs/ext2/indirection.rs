@@ -381,38 +381,40 @@ impl<const DBPC: u32> IndirectedBlocks<DBPC> {
     /// Returns [`None`] if the given number of data blocks cannot fit on this structure.
     #[inline]
     #[must_use]
-    pub const fn necessary_indirection_block_count(data_block_count: u32, blocks_per_indirection: u32) -> Option<u32> {
-        let Some((indirection, index)) = Self::block_at_offset_remainging_in_indirection(data_block_count, blocks_per_indirection)
-        else {
-            return None;
-        };
+    pub const fn necessary_indirection_block_count(mut data_block_count: u32, blocks_per_indirection: u32) -> u32 {
+        if data_block_count <= DBPC {
+            return 0;
+        }
 
-        Some(match indirection {
-            Indirection::Direct => 0,
-            Indirection::Simple => 1,
-            Indirection::Double => 1 + 1 + index / blocks_per_indirection + if index % blocks_per_indirection == 0 { 0 } else { 1 },
-            Indirection::Triple => {
-                1 + 1
-                    + blocks_per_indirection
-                    + 1
-                    + (index / (blocks_per_indirection * blocks_per_indirection)) * (blocks_per_indirection + 1)
-                    + if index % (blocks_per_indirection * blocks_per_indirection) == 0 {
-                        0
-                    } else {
-                        let remaining_offset = index % (blocks_per_indirection * blocks_per_indirection);
-                        1 + remaining_offset / blocks_per_indirection
-                            + if remaining_offset % blocks_per_indirection == 0 { 0 } else { 1 }
-                    }
-            },
-        })
+        data_block_count -= DBPC;
+
+        if data_block_count <= blocks_per_indirection {
+            return 1;
+        }
+
+        data_block_count -= blocks_per_indirection;
+
+        if data_block_count <= blocks_per_indirection * blocks_per_indirection {
+            return 1 + 1 + 1 + (data_block_count - 1) / blocks_per_indirection;
+        }
+
+        // total_indirection_block += 1 + blocks_per_indirection;
+        data_block_count -= blocks_per_indirection * blocks_per_indirection;
+
+        1 + 1
+            + blocks_per_indirection
+            + 1
+            + 1
+            + (data_block_count - 1) / blocks_per_indirection
+            + 1
+            + ((data_block_count - 1) / blocks_per_indirection) / blocks_per_indirection
     }
 
     /// Returns the total number of indirection blocks.
     #[inline]
     #[must_use]
     pub fn indirection_block_count(&self) -> u32 {
-        // SAFETY: self contains the block at index `data_block_count - 1`
-        unsafe { Self::necessary_indirection_block_count(self.data_block_count(), self.blocks_per_indirection).unwrap_unchecked() }
+        Self::necessary_indirection_block_count(self.data_block_count(), self.blocks_per_indirection)
     }
 
     /// Appends the given `blocks` to the indirection blocks.
@@ -519,126 +521,291 @@ impl<const DBPC: u32> IndirectedBlocks<DBPC> {
         }
     }
 
-    /// Returns the [`SymmetricDifference`] between `self` and the [`IndirectedBlocks`] obtained after adding `blocks` to `self`.
+    /// Returns the result of `self.append_blocks(blocks)` and the [`SymmetricDifference`] between `self` and the
+    /// [`IndirectedBlocks`] obtained after adding `blocks` to `self`. In the resulting symmetric difference, all the blocks
+    /// starting at the given `offset` (included) are considered as modified. If the `offset` is [`None`], only the added blocks are
+    /// considered as modified.
+    #[allow(clippy::too_many_lines)]
     #[inline]
     #[must_use]
-    pub(crate) fn simulate_append_blocks(&self, blocks: &[u32]) -> SymmetricDifference<DBPC> {
-        let Some((_, (last_indirection, last_index))) = self.last_data_block_allocated() else {
-            return SymmetricDifference(Self {
-                blocks_per_indirection: self.blocks_per_indirection,
-                direct_blocks: Vec::new(),
-                singly_indirected_blocks: (0, Vec::new()),
-                doubly_indirected_blocks: (0, Vec::new()),
-                triply_indirected_blocks: (0, Vec::new()),
-            });
+    pub(crate) fn append_blocks_with_difference(&self, blocks: &[u32], offset: Option<u32>) -> (Self, SymmetricDifference<DBPC>) {
+        let (last_indirection, last_index) = match offset {
+            None => {
+                let Some((_, (last_indirection, last_index))) = self.last_data_block_allocated() else {
+                    return (self.clone(), SymmetricDifference {
+                        blocks_per_indirection: self.blocks_per_indirection,
+                        direct_blocks: (0, Vec::new()),
+                        singly_indirected_blocks: (0, (0, Vec::new())),
+                        doubly_indirected_blocks: (0, (0, Vec::new())),
+                        triply_indirected_blocks: (0, (0, Vec::new())),
+                    });
+                };
+                (last_indirection, last_index + 1)
+            },
+            Some(offset) => match Self::block_at_offset_remainging_in_indirection(offset, self.blocks_per_indirection) {
+                Some(indirection_offset) => indirection_offset,
+                None => {
+                    return (self.clone(), SymmetricDifference {
+                        blocks_per_indirection: self.blocks_per_indirection,
+                        direct_blocks: (0, Vec::new()),
+                        singly_indirected_blocks: (0, (0, Vec::new())),
+                        doubly_indirected_blocks: (0, (0, Vec::new())),
+                        triply_indirected_blocks: (0, (0, Vec::new())),
+                    });
+                },
+            },
         };
+
+        let index = last_index as usize;
 
         let mut indirection = self.clone();
         indirection.append_blocks(blocks);
+        let untouched_indirection = indirection.clone();
 
         match last_indirection {
             Indirection::Direct => {
-                for i in 0..=last_index as usize {
-                    if let Some(block) = indirection.direct_blocks.get_mut(i) {
-                        *block = 0;
-                    };
-                }
+                indirection.direct_blocks = indirection.direct_blocks.get(index..).map(<[u32]>::to_vec).unwrap_or_default();
             },
             Indirection::Simple => {
                 indirection.direct_blocks = Vec::new();
-                for i in 0..=last_index as usize {
-                    if let Some(block) = indirection.singly_indirected_blocks.1.get_mut(i) {
-                        *block = 0;
-                    }
-                }
-                if last_index + 1 == self.blocks_per_indirection {
+                indirection.singly_indirected_blocks.1 =
+                    indirection.singly_indirected_blocks.1.get(index..).map(<[_]>::to_vec).unwrap_or_default();
+
+                if indirection.singly_indirected_blocks.1.is_empty() {
                     indirection.singly_indirected_blocks.0 = 0;
                 }
             },
             Indirection::Double => {
                 indirection.direct_blocks = Vec::new();
-                indirection.singly_indirected_blocks.0 = 0;
-                indirection.singly_indirected_blocks.1 = Vec::new();
+                indirection.singly_indirected_blocks = (0, Vec::new());
 
-                for i in 0..(last_index / self.blocks_per_indirection) as usize {
-                    if let Some(simple_block_indirection) = indirection.doubly_indirected_blocks.1.get_mut(i) {
-                        simple_block_indirection.0 = 0;
-                        simple_block_indirection.1 = Vec::new();
-                    }
-                }
+                indirection.doubly_indirected_blocks.1 = indirection
+                    .doubly_indirected_blocks
+                    .1
+                    .get((last_index / self.blocks_per_indirection) as usize..)
+                    .map(<[_]>::to_vec)
+                    .unwrap_or_default();
 
-                let last_indirection_index = (last_index / self.blocks_per_indirection) as usize;
-                if let Some(simple_block_indirection) = indirection.doubly_indirected_blocks.1.get_mut(last_indirection_index) {
-                    if (last_index + 1) % self.blocks_per_indirection == 0 {
+                if let Some(simple_block_indirection) = indirection.doubly_indirected_blocks.1.first_mut() {
+                    simple_block_indirection.1 = simple_block_indirection
+                        .1
+                        .get((last_index % self.blocks_per_indirection) as usize..)
+                        .map(<[_]>::to_vec)
+                        .unwrap_or_default();
+                    if simple_block_indirection.1.is_empty() {
                         simple_block_indirection.0 = 0;
-                        simple_block_indirection.1 = Vec::new();
-                    } else {
-                        for j in 0..=(last_index % self.blocks_per_indirection) as usize {
-                            if let Some(block) = simple_block_indirection.1.get_mut(j) {
-                                *block = 0;
-                            }
-                        }
                     }
+                } else {
+                    indirection.doubly_indirected_blocks.0 = 0;
                 };
             },
             Indirection::Triple => {
                 indirection.direct_blocks = Vec::new();
-                indirection.singly_indirected_blocks.0 = 0;
-                indirection.singly_indirected_blocks.1 = Vec::new();
-                indirection.doubly_indirected_blocks.0 = 0;
-                indirection.doubly_indirected_blocks.1 = Vec::new();
+                indirection.singly_indirected_blocks = (0, Vec::new());
+                indirection.doubly_indirected_blocks = (0, Vec::new());
 
-                for i in 0..(last_index / (self.blocks_per_indirection * self.blocks_per_indirection)) as usize {
-                    if let Some(double_block_indirection) = indirection.triply_indirected_blocks.1.get_mut(i) {
-                        double_block_indirection.0 = 0;
-                        double_block_indirection.1 = Vec::new();
+                indirection.triply_indirected_blocks.1 = indirection
+                    .triply_indirected_blocks
+                    .1
+                    .get((last_index / (self.blocks_per_indirection * self.blocks_per_indirection)) as usize..)
+                    .map(<[_]>::to_vec)
+                    .unwrap_or_default();
+
+                if let Some(double_block_indirection) = indirection.triply_indirected_blocks.1.first_mut() {
+                    if last_index % (self.blocks_per_indirection * self.blocks_per_indirection) == 0 {
+                        *double_block_indirection = (0, Vec::new());
+                    } else {
+                        double_block_indirection.1 = double_block_indirection
+                            .1
+                            .get(
+                                ((last_index % (self.blocks_per_indirection * self.blocks_per_indirection))
+                                    / self.blocks_per_indirection) as usize..,
+                            )
+                            .map(<[_]>::to_vec)
+                            .unwrap_or_default();
+
+                        if let Some(simple_block_indirection) = double_block_indirection.1.first_mut() {
+                            if last_index % self.blocks_per_indirection == 0 {
+                                *simple_block_indirection = (0, Vec::new());
+                            } else {
+                                simple_block_indirection.1 = simple_block_indirection
+                                    .1
+                                    .get((last_index % self.blocks_per_indirection) as usize..)
+                                    .map(<[_]>::to_vec)
+                                    .unwrap_or_default();
+                            }
+                        }
                     }
                 }
-
-                let last_double_indirection_index =
-                    (last_index / (self.blocks_per_indirection * self.blocks_per_indirection)) as usize;
-                if let Some(double_block_indirection) =
-                    indirection.triply_indirected_blocks.1.get_mut(last_double_indirection_index)
-                {
-                    if (last_index + 1) % (self.blocks_per_indirection * self.blocks_per_indirection) == 0 {
-                        double_block_indirection.0 = 0;
-                        double_block_indirection.1 = Vec::new();
-                    } else {
-                        let last_indirection_index = last_double_indirection_index / self.blocks_per_indirection as usize;
-                        for j in 0..=last_indirection_index {
-                            if let Some(simple_block_indirection) = double_block_indirection.1.get_mut(j) {
-                                simple_block_indirection.0 = 0;
-                                simple_block_indirection.1 = Vec::new();
-                            }
-                        }
-
-                        if let Some(simple_block_indirection) = double_block_indirection.1.get_mut(last_indirection_index + 1) {
-                            if (last_index + 1) % self.blocks_per_indirection == 0 {
-                                simple_block_indirection.0 = 0;
-                                simple_block_indirection.1 = Vec::new();
-                            } else {
-                                for j in 0..=(last_index % self.blocks_per_indirection) as usize {
-                                    if let Some(block) = simple_block_indirection.1.get_mut(j) {
-                                        *block = 0;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                };
             },
         }
 
-        SymmetricDifference(indirection)
+        let starting_index = |indirect| if last_indirection == indirect { last_index as usize } else { 0 };
+
+        (untouched_indirection, SymmetricDifference {
+            blocks_per_indirection: indirection.blocks_per_indirection,
+            direct_blocks: (starting_index(Indirection::Direct), indirection.direct_blocks),
+            singly_indirected_blocks: (starting_index(Indirection::Simple), indirection.singly_indirected_blocks),
+            doubly_indirected_blocks: (starting_index(Indirection::Double), indirection.doubly_indirected_blocks),
+            triply_indirected_blocks: (starting_index(Indirection::Triple), indirection.triply_indirected_blocks),
+        })
     }
 }
+
+/// Type alias representing direct blocks and their starting offset.
+///
+/// The value `(index, blocks)` thus represents a [`DirectBlocks`] without all the leading "0": the `index` is the offset of the
+/// first element of `blocks` in the corresponding [`DirectBlocks`].
+pub(crate) type DirectBlocksOffset = (usize, DirectBlocks);
+
+/// Type alias representing a single indirection block and its starting offset.
+///
+/// See [`DirectBlocksOffset`] for more information.
+#[allow(clippy::module_name_repetitions)]
+pub(crate) type SimpleIndirectionOffset = (usize, SimpleIndirection);
+
+/// Type alias representing a double indirection block and its starting offset.
+///
+/// See [`DirectBlocksOffset`] for more information.
+#[allow(clippy::module_name_repetitions)]
+pub(crate) type DoubleIndirectionOffset = (usize, DoubleIndirection);
+
+/// Type alias representing a triple indirection block and its starting offset.
+///
+/// See [`DirectBlocksOffset`] for more information.
+#[allow(clippy::module_name_repetitions)]
+pub(crate) type TripleIndirectionOffset = (usize, TripleIndirection);
 
 /// Represents the symmetric difference between two [`IndirectedBlocks`].
 ///
 /// This can be very useful in the manipulation of [`IndirectedBlocks`] during the addition or the removal of some indirection
 /// blocks.
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) struct SymmetricDifference<const DBPC: u32>(IndirectedBlocks<DBPC>);
+pub(crate) struct SymmetricDifference<const DBPC: u32> {
+    /// Number of blocks contained in each indirection.
+    ///
+    /// In ext2 filesystems, this always should be equal to `superblock.block_size() / 4`.
+    blocks_per_indirection: u32,
+
+    /// The direct block numbers.
+    direct_blocks: DirectBlocksOffset,
+
+    /// The singly indirected block numbers.
+    singly_indirected_blocks: SimpleIndirectionOffset,
+
+    /// The doubly indirected block numbers.
+    doubly_indirected_blocks: DoubleIndirectionOffset,
+
+    /// The triply indirected block numbers.
+    triply_indirected_blocks: TripleIndirectionOffset,
+}
+
+impl<const DBPC: u32> SymmetricDifference<DBPC> {
+    /// Returns the list of all changed blocks of indirection.
+    ///
+    /// In each tuple, the first element is the index at which the first block contained in this indirection block begins, the
+    /// second element is a tuple containing the indirection block and the list of the blocks contained in this indirection block.
+    ///
+    /// All blocks, **starting at the first non-zero block** to the end, should be considered as being changed.
+    pub(crate) fn changed_indirected_blocks(&self) -> Vec<(usize, (u32, Vec<u32>))> {
+        let blocks_per_indirection = self.blocks_per_indirection as usize;
+
+        let mut indirected_blocks = Vec::new();
+
+        if self.singly_indirected_blocks.1.0 != 0 {
+            indirected_blocks.push((
+                self.singly_indirected_blocks.0,
+                (self.singly_indirected_blocks.1.0, self.singly_indirected_blocks.1.1.clone()),
+            ));
+        }
+
+        if self.doubly_indirected_blocks.1.0 != 0 {
+            indirected_blocks.push((
+                self.doubly_indirected_blocks.0 / blocks_per_indirection,
+                (
+                    self.doubly_indirected_blocks.1.0,
+                    self.doubly_indirected_blocks.1.1.iter().map(|(block, _)| *block).collect_vec(),
+                ),
+            ));
+
+            let indirect_block_iterator = &mut self.doubly_indirected_blocks.1.1.iter();
+
+            if let Some((indirection_block, blocks)) = indirect_block_iterator.next() {
+                indirected_blocks
+                    .push((self.doubly_indirected_blocks.0 % blocks_per_indirection, (*indirection_block, blocks.clone())));
+            }
+
+            for (indirection_block, blocks) in indirect_block_iterator.by_ref() {
+                indirected_blocks.push((0, (*indirection_block, blocks.clone())));
+            }
+        }
+
+        if self.triply_indirected_blocks.1.0 != 0 {
+            indirected_blocks.push((
+                self.triply_indirected_blocks.0 / (blocks_per_indirection * blocks_per_indirection),
+                (
+                    self.triply_indirected_blocks.1.0,
+                    self.triply_indirected_blocks.1.1.iter().map(|(block, _)| *block).collect_vec(),
+                ),
+            ));
+
+            let triply_indirect_block_iterator = &mut self.triply_indirected_blocks.1.1.iter();
+
+            if let Some((double_indirection_block, doubly_indirected_blocks)) = triply_indirect_block_iterator.next() {
+                indirected_blocks.push((
+                    (self.triply_indirected_blocks.0 % (blocks_per_indirection * blocks_per_indirection)) / blocks_per_indirection,
+                    (*double_indirection_block, doubly_indirected_blocks.iter().map(|(block, _)| *block).collect_vec()),
+                ));
+
+                let doubly_indirect_block_iterator = &mut doubly_indirected_blocks.iter();
+
+                if let Some((indirect_block, blocks)) = doubly_indirect_block_iterator.next() {
+                    indirected_blocks
+                        .push((self.triply_indirected_blocks.0 % blocks_per_indirection, (*indirect_block, blocks.clone())));
+                }
+
+                for (indirect_block, blocks) in doubly_indirect_block_iterator.by_ref() {
+                    indirected_blocks.push((0, (*indirect_block, blocks.clone())));
+                }
+            }
+
+            for (double_indirection_block, doubly_indirected_blocks) in triply_indirect_block_iterator {
+                indirected_blocks
+                    .push((0, (*double_indirection_block, doubly_indirected_blocks.iter().map(|(block, _)| *block).collect_vec())));
+
+                for (indirection_block, blocks) in doubly_indirected_blocks {
+                    indirected_blocks.push((0, (*indirection_block, blocks.clone())));
+                }
+            }
+        }
+
+        indirected_blocks
+    }
+
+    /// Returns the list of all changed data blocks.
+    ///
+    /// As a write is always on contiguous blocks (from [`IndirectedBlocks`] point of vue), those data blocks should also be
+    /// considered as contiguous. Thus, a write should modify every block starting at the first one returned.
+    pub(crate) fn changed_data_blocks(&self) -> Vec<u32> {
+        let mut data_blocks = Vec::new();
+
+        data_blocks.append(&mut self.direct_blocks.1.clone());
+
+        data_blocks.append(&mut self.singly_indirected_blocks.1.1.clone());
+
+        for (_, blocks) in &self.doubly_indirected_blocks.1.1 {
+            data_blocks.append(&mut blocks.clone());
+        }
+
+        for (_, indirected_blocks) in &self.triply_indirected_blocks.1.1 {
+            for (_, blocks) in indirected_blocks {
+                data_blocks.append(&mut blocks.clone());
+            }
+        }
+
+        data_blocks
+    }
+}
 
 #[cfg(test)]
 mod test {
@@ -752,13 +919,13 @@ mod test {
         );
         assert_eq!(indirected_blocks.data_block_count(), 7);
         assert_eq!(indirected_blocks.indirection_block_count(), 0);
-        assert_eq!(IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::necessary_indirection_block_count(7, 5), Some(0));
+        assert_eq!(IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::necessary_indirection_block_count(7, 5), 0);
 
         let indirected_blocks =
             IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::new(1_024, vec![1; 12], (1, vec![1, 1, 1]), (0, vec![]), (0, vec![]));
         assert_eq!(indirected_blocks.data_block_count(), 15);
         assert_eq!(indirected_blocks.indirection_block_count(), 1);
-        assert_eq!(IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::necessary_indirection_block_count(15, 5), Some(1));
+        assert_eq!(IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::necessary_indirection_block_count(15, 5), 1);
 
         let indirected_blocks = IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::new(
             5,
@@ -769,7 +936,7 @@ mod test {
         );
         assert_eq!(indirected_blocks.data_block_count(), 29);
         assert_eq!(indirected_blocks.indirection_block_count(), 5);
-        assert_eq!(IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::necessary_indirection_block_count(29, 5), Some(5));
+        assert_eq!(IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::necessary_indirection_block_count(29, 5), 5);
 
         let indirected_blocks = IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::new(
             5,
@@ -784,7 +951,17 @@ mod test {
         );
         assert_eq!(indirected_blocks.data_block_count(), 102);
         assert_eq!(indirected_blocks.indirection_block_count(), 23);
-        assert_eq!(IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::necessary_indirection_block_count(102, 5), Some(23));
+        assert_eq!(IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::necessary_indirection_block_count(102, 5), 23);
+
+        let indirected_blocks = IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::new(
+            5,
+            vec![1; 12],
+            (1, vec![1; 5]),
+            (1, vec![(1, vec![5; 1]); 5]),
+            (1, vec![(1, vec![(1, vec![1; 5]); 5]); 5]),
+        );
+        assert_eq!(indirected_blocks.data_block_count(), 167);
+        assert_eq!(indirected_blocks.indirection_block_count(), 38);
     }
 
     #[test]
@@ -893,7 +1070,7 @@ mod test {
     }
 
     #[test]
-    fn simulate_append_blocks() {
+    fn append_blocks_with_difference() {
         let indirected_blocks = IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::new(
             5,
             vec![1, 2, 3, 4, 5, 6, 7],
@@ -901,23 +1078,24 @@ mod test {
             (0, vec![]),
             (0, vec![]),
         );
-        assert_eq!(
-            indirected_blocks.simulate_append_blocks(&[8, 9, 10]),
-            SymmetricDifference(IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::new(
-                5,
-                vec![0, 0, 0, 0, 0, 0, 0, 8, 9, 10],
-                (0, vec![]),
-                (0, vec![]),
-                (0, vec![])
-            ))
-        );
+        assert_eq!(indirected_blocks.append_blocks_with_difference(&[8, 9, 10], None).1, SymmetricDifference {
+            blocks_per_indirection: 5,
+            direct_blocks: (7, vec![8, 9, 10]),
+            singly_indirected_blocks: (0, (0, vec![])),
+            doubly_indirected_blocks: (0, (0, vec![])),
+            triply_indirected_blocks: (0, (0, vec![]))
+        });
 
         let indirected_blocks =
             IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::new(5, vec![1; 12], (1, vec![1, 1, 1]), (0, vec![]), (0, vec![]));
-        assert_eq!(
-            indirected_blocks.simulate_append_blocks(&[2, 3, 4, 5]),
-            SymmetricDifference(IndirectedBlocks::new(5, vec![], (1, vec![0, 0, 0, 2, 3]), (4, vec![(5, vec![])]), (0, vec![])))
-        );
+
+        assert_eq!(indirected_blocks.append_blocks_with_difference(&[2, 3, 4, 5], None).1, SymmetricDifference {
+            blocks_per_indirection: 5,
+            direct_blocks: (0, vec![]),
+            singly_indirected_blocks: (3, (1, vec![2, 3])),
+            doubly_indirected_blocks: (0, (4, vec![(5, vec![])])),
+            triply_indirected_blocks: (0, (0, vec![]))
+        });
 
         let indirected_blocks = IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::new(
             5,
@@ -926,16 +1104,13 @@ mod test {
             (2, vec![(3, vec![3; 5]), (3, vec![3])]),
             (0, vec![]),
         );
-        assert_eq!(
-            indirected_blocks.simulate_append_blocks(&[4, 5, 6, 7, 8, 9, 10]),
-            SymmetricDifference(IndirectedBlocks::new(
-                5,
-                vec![],
-                (0, vec![]),
-                (2, vec![(0, vec![]), (3, vec![0, 4, 5, 6, 7]), (8, vec![9, 10])]),
-                (0, vec![])
-            ))
-        );
+        assert_eq!(indirected_blocks.append_blocks_with_difference(&[4, 5, 6, 7, 8, 9, 10], None).1, SymmetricDifference {
+            blocks_per_indirection: 5,
+            direct_blocks: (0, vec![]),
+            singly_indirected_blocks: (0, (0, vec![])),
+            doubly_indirected_blocks: (6, (2, vec![(3, vec![4, 5, 6, 7]), (8, vec![9, 10])])),
+            triply_indirected_blocks: (0, (0, vec![]))
+        });
 
         let indirected_blocks = IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::new(
             5,
@@ -944,15 +1119,131 @@ mod test {
             (1, vec![(1, vec![1; 5]), (1, vec![1; 5]), (1, vec![1, 1, 2, 2, 2]), (2, vec![2; 5]), (2, vec![2; 5])]),
             (2, vec![(2, vec![(2, vec![2; 5]), (2, vec![2; 3])])]),
         );
-        assert_eq!(
-            indirected_blocks.simulate_append_blocks(&[3, 4, 5, 6, 7, 8]),
-            SymmetricDifference(IndirectedBlocks::new(
-                5,
-                vec![],
-                (0, vec![]),
-                (0, vec![]),
-                (2, vec![(2, vec![(0, vec![]), (2, vec![0, 0, 0, 3, 4]), (5, vec![6, 7, 8])])])
-            ))
+        assert_eq!(indirected_blocks.append_blocks_with_difference(&[3, 4, 5, 6, 7, 8], None).1, SymmetricDifference {
+            blocks_per_indirection: 5,
+            direct_blocks: (0, vec![]),
+            singly_indirected_blocks: (0, (0, vec![])),
+            doubly_indirected_blocks: (0, (0, vec![])),
+            triply_indirected_blocks: (8, (2, vec![(2, vec![(2, vec![3, 4]), (5, vec![6, 7, 8])])]))
+        });
+
+        let indirected_blocks = IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::new(
+            5,
+            vec![1; 12],
+            (1, vec![1, 1, 1, 2, 2]),
+            (2, vec![(3, vec![3; 5]), (3, vec![3])]),
+            (0, vec![]),
         );
+        assert_eq!(indirected_blocks.append_blocks_with_difference(&[4, 5, 6, 7, 8, 9, 10], Some(0)).1, SymmetricDifference {
+            blocks_per_indirection: 5,
+            direct_blocks: (0, vec![1; 12]),
+            singly_indirected_blocks: (0, (1, vec![1, 1, 1, 2, 2])),
+            doubly_indirected_blocks: (0, (2, vec![(3, vec![3; 5]), (3, vec![3, 4, 5, 6, 7]), (8, vec![9, 10])])),
+            triply_indirected_blocks: (0, (0, vec![]))
+        });
+
+        let indirected_blocks = IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::new(
+            5,
+            vec![1; 12],
+            (1, vec![1, 1, 1, 2, 2]),
+            (2, vec![(3, vec![3; 5]), (3, vec![3])]),
+            (0, vec![]),
+        );
+        assert_eq!(indirected_blocks.append_blocks_with_difference(&[4, 5, 6, 7, 8, 9, 10], Some(13)).1, SymmetricDifference {
+            blocks_per_indirection: 5,
+            direct_blocks: (0, vec![]),
+            singly_indirected_blocks: (1, (1, vec![1, 1, 2, 2])),
+            doubly_indirected_blocks: (0, (2, vec![(3, vec![3; 5]), (3, vec![3, 4, 5, 6, 7]), (8, vec![9, 10])])),
+            triply_indirected_blocks: (0, (0, vec![]))
+        });
+
+        let indirected_blocks = IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::new(
+            5,
+            vec![1; 12],
+            (1, vec![1; 5]),
+            (1, vec![(1, vec![1; 5]), (1, vec![1; 5]), (1, vec![1, 1, 2, 2, 2]), (2, vec![2; 5]), (2, vec![2; 5])]),
+            (2, vec![(2, vec![(2, vec![2; 5]), (2, vec![2; 5]), (3, vec![3; 4])])]),
+        );
+        assert_eq!(indirected_blocks.append_blocks_with_difference(&[4, 5, 6, 7, 8, 9, 10], Some(55)).1, SymmetricDifference {
+            blocks_per_indirection: 5,
+            direct_blocks: (0, vec![]),
+            singly_indirected_blocks: (0, (0, vec![])),
+            doubly_indirected_blocks: (0, (0, vec![])),
+            triply_indirected_blocks: (13, (2, vec![(2, vec![(3, vec![3, 4]), (5, vec![6, 7, 8, 9, 10])])]))
+        });
+    }
+
+    #[test]
+    fn symmetric_difference_changes() {
+        let symmetric_difference = SymmetricDifference::<DIRECT_BLOCK_POINTER_COUNT> {
+            blocks_per_indirection: 5,
+            direct_blocks: (5, vec![1, 2, 3, 4]),
+            singly_indirected_blocks: (0, (0, vec![])),
+            doubly_indirected_blocks: (0, (0, vec![])),
+            triply_indirected_blocks: (0, (0, vec![])),
+        };
+        assert_eq!(symmetric_difference.changed_indirected_blocks(), vec![]);
+        assert_eq!(symmetric_difference.changed_data_blocks(), vec![1, 2, 3, 4]);
+
+        let symmetric_difference = SymmetricDifference::<DIRECT_BLOCK_POINTER_COUNT> {
+            blocks_per_indirection: 5,
+            direct_blocks: (10, vec![1, 2]),
+            singly_indirected_blocks: (0, (3, vec![4, 5])),
+            doubly_indirected_blocks: (0, (0, vec![])),
+            triply_indirected_blocks: (0, (0, vec![])),
+        };
+        assert_eq!(symmetric_difference.changed_indirected_blocks(), vec![(0, (3, vec![4, 5]))]);
+        assert_eq!(symmetric_difference.changed_data_blocks(), vec![1, 2, 4, 5]);
+
+        let symmetric_difference = SymmetricDifference::<DIRECT_BLOCK_POINTER_COUNT> {
+            blocks_per_indirection: 5,
+            direct_blocks: (0, vec![]),
+            singly_indirected_blocks: (3, (1, vec![2, 3])),
+            doubly_indirected_blocks: (0, (4, vec![(5, vec![6, 7, 8])])),
+            triply_indirected_blocks: (0, (0, vec![])),
+        };
+        assert_eq!(symmetric_difference.changed_indirected_blocks(), vec![
+            (3, (1, vec![2, 3])),
+            (0, (4, vec![5])),
+            (0, (5, vec![6, 7, 8]))
+        ]);
+        assert_eq!(symmetric_difference.changed_data_blocks(), vec![2, 3, 6, 7, 8]);
+
+        let symmetric_difference = SymmetricDifference::<DIRECT_BLOCK_POINTER_COUNT> {
+            blocks_per_indirection: 5,
+            direct_blocks: (0, vec![]),
+            singly_indirected_blocks: (0, (0, vec![])),
+            doubly_indirected_blocks: (19, (1, vec![(2, vec![4]), (5, vec![6, 7, 8, 9, 10])])),
+            triply_indirected_blocks: (0, (11, vec![(12, vec![(13, vec![14, 15])])])),
+        };
+        assert_eq!(symmetric_difference.changed_indirected_blocks(), vec![
+            (3, (1, vec![2, 5])),
+            (4, (2, vec![4])),
+            (0, (5, vec![6, 7, 8, 9, 10])),
+            (0, (11, vec![12])),
+            (0, (12, vec![13])),
+            (0, (13, vec![14, 15])),
+        ]);
+        assert_eq!(symmetric_difference.changed_data_blocks(), vec![4, 6, 7, 8, 9, 10, 14, 15]);
+
+        let symmetric_difference = SymmetricDifference::<DIRECT_BLOCK_POINTER_COUNT> {
+            blocks_per_indirection: 5,
+            direct_blocks: (0, vec![]),
+            singly_indirected_blocks: (0, (0, vec![])),
+            doubly_indirected_blocks: (0, (0, vec![])),
+            triply_indirected_blocks: (
+                43,
+                (1, vec![(2, vec![(3, vec![4, 5]), (6, vec![7, 8, 9, 10, 11])]), (12, vec![(13, vec![14, 15, 16])])]),
+            ),
+        };
+        assert_eq!(symmetric_difference.changed_indirected_blocks(), vec![
+            (1, (1, vec![2, 12])),
+            (3, (2, vec![3, 6])),
+            (3, (3, vec![4, 5])),
+            (0, (6, vec![7, 8, 9, 10, 11])),
+            (0, (12, vec![13])),
+            (0, (13, vec![14, 15, 16])),
+        ]);
+        assert_eq!(symmetric_difference.changed_data_blocks(), vec![4, 5, 7, 8, 9, 10, 11, 14, 15, 16]);
     }
 }

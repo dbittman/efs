@@ -506,7 +506,7 @@ impl Inode {
     ///
     /// Returns a [`Error`] if the device cannot be read.
     #[inline]
-    pub fn data_blocks<D: Device<u8, Ext2Error>>(
+    pub fn indirected_blocks<D: Device<u8, Ext2Error>>(
         &self,
         celled_device: &Celled<D>,
         superblock: &Superblock,
@@ -650,8 +650,8 @@ impl Inode {
         buffer: &mut [u8],
         mut offset: u64,
     ) -> Result<usize, Error<Ext2Error>> {
-        let data_blocks = self.data_blocks(celled_device, superblock)?;
-        let blocks = data_blocks.flatten();
+        let indirected_blocks = self.indirected_blocks(celled_device, superblock)?;
+        let blocks = indirected_blocks.flatten();
 
         let device = celled_device.borrow();
         let buffer_length = buffer.len();

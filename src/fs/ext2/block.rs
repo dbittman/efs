@@ -187,7 +187,8 @@ impl<Dev: Device<u8, Ext2Error>> Write for Block<Dev> {
         let length = ((fs.superblock().block_size() - self.io_offset) as usize).min(buf.len());
         let starting_addr = Address::new((self.number * fs.superblock().block_size() + self.io_offset) as usize);
         let mut slice = device.slice(starting_addr..starting_addr + length)?;
-        slice.clone_from_slice(buf);
+        // SAFETY: buf size is at least length
+        slice.clone_from_slice(unsafe { buf.get_unchecked(..length) });
         let commit = slice.commit();
         device.commit(commit)?;
 

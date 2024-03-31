@@ -3,6 +3,7 @@
 //! Bitmap are frequently used data types, so this is a general interface to manipulate them.
 
 use alloc::vec::Vec;
+use core::fmt::Debug;
 use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
 
@@ -31,6 +32,18 @@ pub struct Bitmap<T: Copy, E: core::error::Error, Dev: Device<T, E>> {
 
     /// Phantom data to use the `E` generic.
     phantom: PhantomData<E>,
+}
+
+impl<E: core::error::Error, T: Copy + Debug, Dev: Device<T, E>> Debug for Bitmap<T, E, Dev> {
+    #[inline]
+    fn fmt(&self, fmt: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        fmt.debug_struct("Bitmap")
+            .field("inner", &self.inner)
+            .field("starting_addr", &self.starting_addr)
+            .field("length", &self.length)
+            .field("phantom", &self.phantom)
+            .finish()
+    }
 }
 
 impl<E: core::error::Error, T: Copy, Dev: Device<T, E>> Bitmap<T, E, Dev> {
