@@ -150,7 +150,7 @@ bitflags! {
     /// The type indicator occupies the top hex digit (bits 15 to 12).
     ///
     /// The permission indicator occupies the bottom 12 bits.
-    #[derive(Debug)]
+    #[derive(Debug, Clone, Copy)]
     pub struct TypePermissions: u16 {
         // Types
 
@@ -219,7 +219,7 @@ bitflags! {
 
 bitflags! {
     /// Inode Flags
-    #[derive(Debug)]
+    #[derive(Debug, Clone, Copy)]
     pub struct Flags: u32 {
         /// Secure deletion (not used)
         const SECURE_DELETION                       =   0x0000_0001;
@@ -431,6 +431,52 @@ impl Inode {
         }
     }
 
+    /// Returns the [`Osd2`] structure given by the [`Inode`] and the [`Superblock`] structures.
+    #[inline]
+    #[must_use]
+    pub const fn osd2(&self, superblock: &Superblock) -> Osd2 {
+        let os = superblock.creator_operating_system();
+        Osd2::from_bytes(self.osd2, os)
+    }
+
+    /// Creates a new inode from all the necessary fields.
+    #[inline]
+    #[must_use]
+    #[allow(clippy::similar_names)]
+    pub const fn create(
+        superblock: &Superblock,
+        mode: TypePermissions,
+        uid: u16,
+        gid: u16,
+        flags: Flags,
+        osd1: u32,
+        osd2: [u8; 12],
+    ) -> Self {
+        Self {
+            mode: mode.bits(),
+            uid,
+            size: 0,
+            atime: superblock.base().wtime,
+            ctime: superblock.base().wtime,
+            mtime: superblock.base().wtime,
+            dtime: superblock.base().wtime,
+            gid,
+            links_count: 0,
+            blocks: 0,
+            flags: flags.bits(),
+            osd1,
+            direct_block_pointers: [0_u32; 12],
+            singly_indirect_block_pointer: 0,
+            doubly_indirect_block_pointer: 0,
+            triply_indirect_block_pointer: 0,
+            generation: 0,
+            file_acl: 0,
+            dir_acl: 0,
+            faddr: 0,
+            osd2,
+        }
+    }
+
     /// Returns the starting address of the `n`th inode.
     ///
     /// # Errors
@@ -490,14 +536,6 @@ impl Inode {
             Ok(_) => Ok(inode),
             Err(err) => Err(Error::Fs(FsError::Implementation(err))),
         }
-    }
-
-    /// Returns the [`Osd2`] structure given by the [`Inode`] and the [`Superblock`] structures.
-    #[inline]
-    #[must_use]
-    pub const fn osd2(&self, superblock: &Superblock) -> Osd2 {
-        let os = superblock.creator_operating_system();
-        Osd2::from_bytes(self.osd2, os)
     }
 
     /// Returns the complete list of block numbers containing this inode's data (indirect blocks are not considered).
@@ -699,6 +737,27 @@ impl Inode {
         }
 
         Ok(read_bytes)
+    }
+
+    /// Returns whether this inode is currently free or not from the inode bitmap in which the block resides.
+    ///
+    /// The `bitmap` argument is usually the result of the method [`get_inode_bitmap`](../struct.Ext2.html#method.get_inode_bitmap).
+    #[inline]
+    #[must_use]
+    #[allow(clippy::indexing_slicing)]
+    pub const fn is_free(inode_number: u32, superblock: &Superblock, bitmap: &[u8]) -> bool {
+        let index = Self::group_index(superblock, inode_number);
+        let offset = inode_number % 8;
+        bitmap[index as usize] >> offset & 1 == 0
+    }
+
+    /// Returns whether this inode is currently in use or not from the inode bitmap in which the block resides.
+    ///
+    /// The `bitmap` argument is usually the result of the method [`get_inode_bitmap`](../struct.Ext2.html#method.get_inode_bitmap).
+    #[inline]
+    #[must_use]
+    pub const fn is_used(inode_number: u32, superblock: &Superblock, bitmap: &[u8]) -> bool {
+        !Self::is_free(inode_number, superblock, bitmap)
     }
 }
 

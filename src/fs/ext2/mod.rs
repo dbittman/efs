@@ -9,7 +9,7 @@ use core::mem::size_of;
 use self::block_group::BlockGroupDescriptor;
 use self::error::Ext2Error;
 use self::file::{Directory, Regular, SymbolicLink};
-use self::inode::{Inode, ROOT_DIRECTORY_INODE};
+use self::inode::{Flags, Inode, TypePermissions, ROOT_DIRECTORY_INODE};
 use self::superblock::{Superblock, SUPERBLOCK_START_BYTE};
 use super::FileSystem;
 use crate::dev::bitmap::Bitmap;
@@ -226,7 +226,7 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
         self.free_blocks_offset(n, 0)
     }
 
-    /// Sets all the given `blocs` as `usage` in their bitmap, and updates the block group descriptors and the superblock
+    /// Sets all the given `blocks` as `usage` in their bitmap, and updates the block group descriptors and the superblock
     /// accordingly.
     ///
     /// # Errors
@@ -398,7 +398,7 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
                         // SAFETY: a block size is usually at most thousands of bytes, which is smaller than `u32::MAX`
                         let index = unsafe { u32::try_from(index).unwrap_unchecked() };
 
-                        return Ok(block_group_number * self.superblock().base().inodes_per_group + 8 * index + bit);
+                        return Ok(block_group_number * self.superblock().base().inodes_per_group + 8 * index + bit + 1);
                     }
                 }
             }
@@ -407,16 +407,112 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
         Err(Error::Fs(FsError::Implementation(Ext2Error::NotEnoughInodes)))
     }
 
-    /// Finds an unused inode number, writes an empty inode, sets the usage of this inode as `true` and returns the inode number.
+    /// Sets the given `inode` as `usage` in their bitmap, and updates the block group descriptors and the superblock
+    /// accordingly.
     ///
     /// # Errors
+    ///
+    /// Returns a [`InodeAlreadyFree`](Ext2Error::InodeAlreadyFree) if the given inode is already free.
+    ///
+    /// Returns a [`InodeAlreadyInUse`](Ext2Error::InodeAlreadyInUse) if the given inode is already in use.
     ///
     /// Returns a [`NotEnoughInodes`](Ext2Error::NotEnoughInodes) if no inode is currently available.
     ///
     /// Returns an [`Error`] if the device cannot be read or written.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the inode starting byte on the device does not fit on a [`usize`].
+    ///
+    /// More pratically, it could be an issue if you're using a device containing more than 2^35 bytes ~ 34.5 GB.
+    fn locate_inode(&mut self, inode_number: u32, usage: bool) -> Result<(), Error<Ext2Error>> {
+        let mut superblock = self.superblock().clone();
+        superblock.base_mut().free_blocks_count -= 1;
+        // SAFETY: one inode has been allocated
+        unsafe {
+            self.set_superblock(&superblock)?;
+        };
+
+        let block_group_number = Inode::block_group(&superblock, inode_number);
+        let block_group_descriptor = BlockGroupDescriptor::parse(&self.device, &superblock, block_group_number)?;
+
+        let mut device = self.device.borrow_mut();
+
+        let mut new_block_group_descriptor = block_group_descriptor;
+
+        if usage {
+            new_block_group_descriptor.free_inodes_count -= 1;
+        } else {
+            new_block_group_descriptor.free_inodes_count += 1;
+        }
+
+        let block_group_descriptor_starting_address = BlockGroupDescriptor::starting_addr(&superblock, block_group_number)?;
+        // SAFETY: the starting address is the one of the block group descriptor
+        unsafe {
+            device.write_at(block_group_descriptor_starting_address, new_block_group_descriptor)?;
+        };
+
+        let bitmap_starting_byte = u64::from(block_group_descriptor.inode_bitmap) * u64::from(superblock.block_size());
+
+        let inode_index = u64::from(Inode::group_index(&superblock, inode_number));
+        // SAFETY: 0 <= inode_offset < 8
+        let inode_offset = unsafe { u8::try_from(inode_number % 8).unwrap_unchecked() };
+        let bitmap_inode_address = Address::new(
+            usize::try_from(bitmap_starting_byte + inode_index).expect("Could not fit the starting byte of the inode on a usize"),
+        );
+
+        #[allow(clippy::range_plus_one)]
+        let mut slice = device.slice(bitmap_inode_address..bitmap_inode_address + 1)?;
+
+        // SAFETY: it is ensure that `slice` contains exactly 1 element
+        let byte = unsafe { slice.get_mut(0).unwrap_unchecked() };
+
+        if usage && *byte >> inode_offset & 1 == 1 {
+            return Err(Error::Fs(FsError::Implementation(Ext2Error::InodeAlreadyInUse(inode_number))));
+        } else if !usage && *byte >> inode_offset & 1 == 0 {
+            return Err(Error::Fs(FsError::Implementation(Ext2Error::InodeAlreadyFree(inode_number))));
+        }
+
+        *byte ^= 1 << inode_offset;
+
+        let commit = slice.commit();
+        device.commit(commit)
+    }
+
+    /// Writes an empty inode, sets the usage of this inode as `true` and returns the inode number.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`InodeAlreadyInUse`](Ext2Error::InodeAlreadyInUse) if the given inode is already in use.
+    ///
+    /// Returns an [`Error`] if the device cannot be read or written.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the inode starting byte on the device does not fit on a [`usize`].
+    ///
+    /// More pratically, it could be an issue if you're using a device containing more than 2^35 bytes ~ 34.5 GB.
     #[inline]
-    pub fn allocate_inode(&mut self) -> Result<u32, Error<Ext2Error>> {
-        todo!()
+    #[allow(clippy::similar_names)]
+    #[allow(clippy::too_many_arguments)] // TODO: change the arguments after the creation of the mode interface
+    pub fn allocate_inode(
+        &mut self,
+        inode_number: u32,
+        mode: TypePermissions,
+        uid: u16,
+        gid: u16,
+        flags: Flags,
+        osd1: u32,
+        osd2: [u8; 12],
+    ) -> Result<(), Error<Ext2Error>> {
+        self.locate_inode(inode_number, true)?;
+
+        let inode_starting_address = Inode::starting_addr(&self.device, self.superblock(), inode_number)?;
+        let inode = Inode::create(self.superblock(), mode, uid, gid, flags, osd1, osd2);
+
+        let mut device = self.device.borrow_mut();
+        // SAFETY: the starting address is the one for an inode
+        unsafe { device.write_at(inode_starting_address, inode) }
     }
 
     /// Sets the usage of this inode as `false` and deallocates every block used by this inode.
@@ -426,9 +522,13 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
     /// Returns a [`InodeAlreadyFree`](Ext2Error::InodeAlreadyFree) if the given inode is already free.
     ///
     /// Returns an [`Error`] if the device cannot be read or written.
+    ///
+    /// # Panics
+    ///
+    /// Panics for the same reasons as [`allocate_inode`](struct.Ext2.html#method.allocate_inode).
     #[inline]
     pub fn deallocate_inode(&mut self, inode_number: u32) -> Result<(), Error<Ext2Error>> {
-        todo!()
+        self.locate_inode(inode_number, false)
     }
 }
 
@@ -484,6 +584,7 @@ mod test {
     use crate::dev::celled::Celled;
     use crate::file::{Directory, Type, TypeWithFile};
     use crate::fs::ext2::block::Block;
+    use crate::fs::ext2::inode::{Flags, Inode, TypePermissions};
     use crate::io::Read;
     use crate::path::UnixStr;
 
@@ -620,5 +721,53 @@ mod test {
         }
 
         fs::remove_file("./tests/fs/ext2/io_operations_copy_free_block_big_allocation_deallocation.ext2").unwrap();
+    }
+
+    #[test]
+    fn free_inode_allocation_deallocation() {
+        fs::copy(
+            "./tests/fs/ext2/io_operations.ext2",
+            "./tests/fs/ext2/io_operations_copy_free_inode_allocation_deallocation.ext2",
+        )
+        .unwrap();
+
+        let device = RefCell::new(
+            File::options()
+                .read(true)
+                .write(true)
+                .open("./tests/fs/ext2/io_operations_copy_free_inode_allocation_deallocation.ext2")
+                .unwrap(),
+        );
+        let ext2 = Ext2::new(device, 0).unwrap();
+
+        let celled_fs = Celled::new(ext2);
+        let mut fs = celled_fs.borrow_mut();
+
+        let free_inode = fs.free_inode().unwrap();
+        let superblock = fs.superblock();
+        assert!(
+            Block::new(celled_fs.clone(), Inode::containing_block(superblock, free_inode))
+                .is_used(superblock, &fs.get_block_bitmap(Inode::block_group(superblock, free_inode)).unwrap())
+        );
+        let bitmap = fs.get_inode_bitmap(Inode::block_group(superblock, free_inode)).unwrap();
+        assert!(Inode::is_free(free_inode, superblock, &bitmap));
+
+        fs.allocate_inode(free_inode, TypePermissions::REGULAR_FILE, 0, 0, Flags::empty(), 0, [0; 12])
+            .unwrap();
+        let superblock = fs.superblock();
+        let bitmap = fs.get_inode_bitmap(Inode::block_group(superblock, free_inode)).unwrap();
+        assert!(Inode::is_used(free_inode, superblock, &bitmap));
+
+        assert_eq!(
+            Inode::create(superblock, TypePermissions::REGULAR_FILE, 0, 0, Flags::empty(), 0, [0; 12]),
+            Inode::parse(&fs.device, superblock, free_inode).unwrap()
+        );
+
+        fs.deallocate_inode(free_inode).unwrap();
+        let superblock = fs.superblock();
+        let bitmap = fs.get_inode_bitmap(Inode::block_group(superblock, free_inode)).unwrap();
+        assert!(Inode::is_free(free_inode, superblock, &bitmap));
+
+        fs::remove_file("./tests/fs/ext2/io_operations_copy_free_inode_allocation_deallocation.ext2").unwrap();
     }
 }

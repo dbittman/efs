@@ -231,9 +231,8 @@ impl<D: Device<u8, Ext2Error>> Read for File<D> {
 
 impl<D: Device<u8, Ext2Error>> Write for File<D> {
     #[inline]
-    #[allow(clippy::too_many_lines)]
     fn write(&mut self, buf: &[u8]) -> Result<usize, Error<Self::IOError>> {
-        let fs = self.filesystem.borrow_mut();
+        let mut fs = self.filesystem.borrow_mut();
         let superblock = fs.superblock().clone();
         let block_size = u64::from(fs.superblock().block_size());
 
@@ -264,6 +263,8 @@ impl<D: Device<u8, Ext2Error>> Write for File<D> {
 
         #[allow(clippy::wildcard_enum_match_arm)]
         let free_blocks = fs.free_blocks_offset(data_blocks_to_request + indirection_blocks_to_request, start_block_group)?;
+
+        fs.allocate_blocks(&free_blocks)?;
 
         drop(fs);
 
@@ -337,8 +338,6 @@ impl<D: Device<u8, Ext2Error>> Write for File<D> {
         // SAFETY: the updated inode contains the right inode created in this function
         unsafe { self.set_inode(&updated_inode) }?;
 
-        self.filesystem.as_ref().borrow_mut().allocate_blocks(&free_blocks)?;
-
         Ok(written_bytes)
     }
 
@@ -358,7 +357,7 @@ impl<D: Device<u8, Ext2Error>> Seek for File<D> {
         match pos {
             SeekFrom::Start(offset) => self.io_offset = offset,
             SeekFrom::End(back_offset) => {
-                self.io_offset = TryInto::<u64>::try_into(file_length - back_offset)
+                self.io_offset = TryInto::<u64>::try_into(file_length + back_offset)
                     .map_err(|_err| Ext2Error::OutOfBounds(i128::from(file_length - back_offset)))?;
             },
             SeekFrom::Current(add_offset) => {
@@ -374,7 +373,7 @@ impl<D: Device<u8, Ext2Error>> Seek for File<D> {
             },
         };
 
-        if self.io_offset >= self.inode.data_size() {
+        if self.io_offset > self.inode.data_size() {
             Err(Error::Fs(FsError::Implementation(Ext2Error::OutOfBounds(self.io_offset.into()))))
         } else {
             Ok(previous_offset)
@@ -1075,5 +1074,46 @@ mod test {
         assert_eq!(foo.read_all().unwrap(), replace_text);
 
         fs::remove_file("./tests/fs/ext2/io_operations_copy_write_file_triply_indirect_block_pointer.ext2").unwrap();
+    }
+
+    #[test]
+    fn write_file_twice() {
+        const BYTES_TO_WRITE: usize = 23_000;
+
+        fs::copy("./tests/fs/ext2/io_operations.ext2", "./tests/fs/ext2/io_operations_copy_write_file_twice.ext2").unwrap();
+
+        let file = RefCell::new(
+            File::options()
+                .read(true)
+                .write(true)
+                .open("./tests/fs/ext2/io_operations_copy_write_file_twice.ext2")
+                .unwrap(),
+        );
+        let ext2 = Celled::new(Ext2::new(file, 0).unwrap());
+        let TypeWithFile::Directory(root) = ext2.file(ROOT_DIRECTORY_INODE).unwrap() else {
+            panic!("The root is always a directory.")
+        };
+        let TypeWithFile::Regular(mut foo) =
+            crate::file::Directory::entry(&root, UnixStr::new("foo.txt").unwrap()).unwrap().unwrap()
+        else {
+            panic!("`foo.txt` has been created as a regular file")
+        };
+
+        let mut replace_text = vec![];
+        for i in 0..=u8::MAX {
+            replace_text.append(&mut vec![i; BYTES_TO_WRITE / 256]);
+        }
+        replace_text.append(&mut vec![b'a'; BYTES_TO_WRITE - 256 * (BYTES_TO_WRITE / 256)]);
+
+        foo.write(&replace_text[..BYTES_TO_WRITE / 2]).unwrap();
+        foo.seek(SeekFrom::End(0)).unwrap();
+        foo.write(&replace_text[BYTES_TO_WRITE / 2..]).unwrap();
+        foo.flush().unwrap();
+
+        assert_eq!(foo.file.inode, Inode::parse(&ext2.borrow().device, ext2.borrow().superblock(), foo.file.inode_number).unwrap());
+        assert_eq!(foo.read_all().unwrap().len(), BYTES_TO_WRITE);
+        assert_eq!(foo.read_all().unwrap(), replace_text);
+
+        fs::remove_file("./tests/fs/ext2/io_operations_copy_write_file_twice.ext2").unwrap();
     }
 }

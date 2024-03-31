@@ -58,14 +58,10 @@
     )
 )]
 #![feature(const_mut_refs)]
-#![feature(doc_cfg)]
-#![feature(doc_auto_cfg)]
 #![feature(error_in_core)]
 #![feature(exact_size_is_empty)]
 #![feature(let_chains)]
-#![feature(never_type)]
 #![feature(step_trait)]
-#![feature(stmt_expr_attributes)]
 
 extern crate alloc;
 extern crate core;

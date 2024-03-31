@@ -398,7 +398,6 @@ impl<const DBPC: u32> IndirectedBlocks<DBPC> {
             return 1 + 1 + 1 + (data_block_count - 1) / blocks_per_indirection;
         }
 
-        // total_indirection_block += 1 + blocks_per_indirection;
         data_block_count -= blocks_per_indirection * blocks_per_indirection;
 
         1 + 1

@@ -29,6 +29,9 @@ pub enum Ext2Error {
     /// Tried to set as free an inode already free.
     InodeAlreadyFree(u32),
 
+    /// Tried to set as free an inode already free.
+    InodeAlreadyInUse(u32),
+
     /// Given code does not correspond to a valid file system state.
     ///
     /// See [this table](https://wiki.osdev.org/Ext2#File_System_States) for reference.
@@ -83,6 +86,9 @@ impl Display for Ext2Error {
             },
             Self::InodeAlreadyFree(inode_number) => {
                 write!(formatter, "Inode Already Free: tried to set the inode {inode_number} as free but is already")
+            },
+            Self::InodeAlreadyInUse(inode_number) => {
+                write!(formatter, "Inode Already in Use: tried to set the inode {inode_number} in use while already being used")
             },
             Self::InvalidState(state) => write!(formatter, "Invalid State: {state} has been found while 1 or 2 was expected"),
             Self::InvalidErrorHandlingMethod(method) => {
