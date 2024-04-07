@@ -50,6 +50,9 @@ pub enum Ext2Error {
     /// Tried to access an extended field in a basic superblock.
     NoExtendedFields,
 
+    /// Tried to create a file with an unsupported type.
+    NoOtherFileType,
+
     /// Tried to access a non-existing block group.
     NonExistingBlockGroup(u32),
 
@@ -101,6 +104,7 @@ impl Display for Ext2Error {
                 formatter,
                 "No Extend Field: tried to access an extended field in a superblock that only contains basic fields"
             ),
+            Self::NoOtherFileType => write!(formatter, "No Other File Type: tried to create a file with an unsupported type"),
             Self::NonExistingBlockGroup(nth) => {
                 write!(formatter, "Non Existing Block Group: tried to access the {nth} block group which does not exist")
             },

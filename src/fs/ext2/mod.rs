@@ -2,6 +2,7 @@
 //!
 //! See [its Wikipedia page](https://fr.wikipedia.org/wiki/Ext2), [its kernel.org page](https://www.kernel.org/doc/html/latest/filesystems/ext2.html), [its OSDev page](https://wiki.osdev.org/Ext2), and the [*The Second Extended Filesystem* book](https://www.nongnu.org/ext2-doc/ext2.html) for more information.
 
+use alloc::string::ToString;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::mem::size_of;
@@ -17,8 +18,11 @@ use crate::dev::celled::Celled;
 use crate::dev::sector::Address;
 use crate::dev::Device;
 use crate::error::Error;
-use crate::file::{Type, TypeWithFile};
+use crate::file::{CreatableFileType, DirectoryEntry, Type, TypeWithFile};
 use crate::fs::error::FsError;
+use crate::path::{Path, PathError};
+use crate::permissions::Permissions;
+use crate::types::{Gid, Uid};
 
 pub mod block;
 pub mod block_group;
@@ -494,7 +498,7 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
     /// More pratically, it could be an issue if you're using a device containing more than 2^35 bytes ~ 34.5 GB.
     #[inline]
     #[allow(clippy::similar_names)]
-    #[allow(clippy::too_many_arguments)] // TODO: change the arguments after the creation of the mode interface
+    #[allow(clippy::too_many_arguments)]
     pub fn allocate_inode(
         &mut self,
         inode_number: u32,
@@ -548,7 +552,7 @@ impl<Dev: Device<u8, Ext2Error>> Celled<Ext2<Dev>> {
             Type::Regular => Ok(TypeWithFile::Regular(Regular::new(&self.clone(), inode_number)?)),
             Type::Directory => Ok(TypeWithFile::Directory(Directory::new(&self.clone(), inode_number)?)),
             Type::SymbolicLink => Ok(TypeWithFile::SymbolicLink(SymbolicLink::new(&self.clone(), inode_number)?)),
-            Type::Fifo | Type::CharacterDevice | Type::BlockDevice | Type::Socket | Type::Other => unreachable!(
+            Type::Fifo | Type::CharacterDevice | Type::BlockDevice | Type::Socket | Type::Other(_) => unreachable!(
                 "The only type of files in ext2's filesystems that are written on the device are the regular files, the directories and the symbolic links"
             ),
         }
@@ -560,7 +564,7 @@ impl<Dev: Device<u8, Ext2Error>> FileSystem<Directory<Dev>> for Celled<Ext2<Dev>
     fn root(&self) -> Result<Directory<Dev>, Error<<Directory<Dev> as crate::file::File>::Error>> {
         self.file(ROOT_DIRECTORY_INODE).and_then(|root| match root {
             TypeWithFile::Directory(root_dir) => Ok(root_dir),
-            TypeWithFile::Regular(_) | TypeWithFile::SymbolicLink(_) | TypeWithFile::Other(_) => {
+            TypeWithFile::Regular(_) | TypeWithFile::SymbolicLink(_) | TypeWithFile::Other(_, _) => {
                 Err(Error::Fs(FsError::WrongFileType(Type::Directory, root.into())))
             },
         })
@@ -569,6 +573,61 @@ impl<Dev: Device<u8, Ext2Error>> FileSystem<Directory<Dev>> for Celled<Ext2<Dev>
     #[inline]
     fn double_slash_root(&self) -> Result<Directory<Dev>, Error<<Directory<Dev> as crate::file::File>::Error>> {
         self.root()
+    }
+
+    #[inline]
+    #[allow(clippy::similar_names)]
+    fn create_file(
+        &mut self,
+        path: Path<'_>,
+        file_type: CreatableFileType,
+        uid: Uid,
+        gid: Gid,
+        permissions: Permissions,
+    ) -> Result<TypeWithFile<Directory<Dev>>, Error<<Directory<Dev> as crate::file::File>::Error>> {
+        if path.is_relative() {
+            return Err(Error::Path(PathError::AbsolutePathRequired(path.to_string())));
+        }
+
+        let Some(parent_dir_path) = path.parent() else { return Err(Error::Fs(FsError::EntryAlreadyExist(path.to_string()))) };
+        let parent_dir_file = self.get_file(&parent_dir_path, self.root()?, true)?;
+        let mut parent_dir = match parent_dir_file {
+            TypeWithFile::Directory(dir) => dir,
+            TypeWithFile::Regular(_) | TypeWithFile::SymbolicLink(_) | TypeWithFile::Other(_, _) => {
+                return Err(Error::Fs(FsError::WrongFileType(Type::Directory, parent_dir_file.into())));
+            },
+        };
+
+        let file_type_bit = match file_type {
+            CreatableFileType::Regular => TypePermissions::REGULAR_FILE,
+            CreatableFileType::Directory => TypePermissions::DIRECTORY,
+            CreatableFileType::SymbolicLink => TypePermissions::SYMBOLIC_LINK,
+            CreatableFileType::Other(_) => TypePermissions::empty(),
+        };
+        let mut fs = self.borrow_mut();
+        let inode_number = fs.free_inode()?;
+        fs.allocate_inode(
+            inode_number,
+            TypePermissions::from_bits_retain(permissions.bits()) | file_type_bit,
+            *uid,
+            *gid,
+            Flags::empty(),
+            0_u32,
+            [0_u8; 12],
+        )?;
+        drop(fs);
+        let file = match file_type {
+            CreatableFileType::Regular => TypeWithFile::Regular(Regular::new(self, inode_number)?),
+            CreatableFileType::Directory => TypeWithFile::Directory(Directory::new(self, inode_number)?),
+            CreatableFileType::SymbolicLink => TypeWithFile::SymbolicLink(SymbolicLink::new(self, inode_number)?),
+            CreatableFileType::Other(_) => return Err(Ext2Error::NoOtherFileType.into()),
+        };
+
+        crate::file::Directory::add_entry(&mut parent_dir, DirectoryEntry {
+            // SAFETY: the path is absolute and is not reduced to "/" or to "//"
+            filename: unsafe { path.file_name().unwrap_unchecked() },
+            file,
+        })
     }
 }
 

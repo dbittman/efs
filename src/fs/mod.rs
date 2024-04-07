@@ -9,9 +9,13 @@ use core::str::FromStr;
 use itertools::{Itertools, Position};
 
 use crate::error::Error;
-use crate::file::{Directory, ReadOnlyDirectory, ReadOnlySymbolicLink, ReadOnlyTypeWithFile, SymbolicLink, TypeWithFile};
+use crate::file::{
+    CreatableFileType, Directory, ReadOnlyDirectory, ReadOnlySymbolicLink, ReadOnlyTypeWithFile, SymbolicLink, TypeWithFile,
+};
 use crate::fs::error::FsError;
 use crate::path::{Component, Path};
+use crate::permissions::Permissions;
+use crate::types::{Gid, Uid};
 
 pub mod error;
 
@@ -44,6 +48,20 @@ pub trait FileSystem<Dir: Directory> {
     ///
     /// Returns a [`DevError`](crate::dev::error::DevError) if the device could not be read.
     fn double_slash_root(&self) -> Result<Dir, Error<Dir::Error>>;
+
+    /// Creates a new file with the given `file_type` at the given `path`.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`DevError`](crate::dev::error::DevError) if the device could not be read/written.
+    fn create_file(
+        &mut self,
+        path: Path<'_>,
+        file_type: CreatableFileType,
+        uid: Uid,
+        gid: Gid,
+        permissions: Permissions,
+    ) -> Result<TypeWithFile<Dir>, Error<Dir::Error>>;
 
     /// Performs a pathname resolution as described in [this POSIX definition](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap04.html#tag_04_13).
     ///

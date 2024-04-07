@@ -16,7 +16,7 @@ use super::{Celled, Ext2};
 use crate::dev::sector::Address;
 use crate::dev::Device;
 use crate::error::Error;
-use crate::file::{self, DirectoryEntry, Stat};
+use crate::file::{self, DirectoryEntry, Stat, TypeWithFile};
 use crate::fs::error::FsError;
 use crate::fs::ext2::block::Block;
 use crate::fs::ext2::indirection::IndirectedBlocks;
@@ -202,6 +202,18 @@ impl<D: Device<u8, Ext2Error>> file::File for File<D> {
     fn get_type(&self) -> file::Type {
         // SAFETY: the file type as been checked during the inode's parse
         unsafe { self.inode.file_type().unwrap_unchecked() }
+    }
+
+    fn set_mode(&mut self, mode: Mode) {
+        todo!()
+    }
+
+    fn set_uid(&mut self, uid: Uid) {
+        todo!()
+    }
+
+    fn set_gid(&mut self, gid: Gid) {
+        todo!()
     }
 }
 
@@ -423,6 +435,21 @@ impl<D: Device<u8, Ext2Error>> file::File for Regular<D> {
     fn get_type(&self) -> file::Type {
         self.file.get_type()
     }
+
+    #[inline]
+    fn set_mode(&mut self, mode: Mode) {
+        self.file.set_mode(mode);
+    }
+
+    #[inline]
+    fn set_uid(&mut self, uid: Uid) {
+        self.file.set_uid(uid);
+    }
+
+    #[inline]
+    fn set_gid(&mut self, gid: Gid) {
+        self.file.set_gid(gid);
+    }
 }
 
 impl<D: Device<u8, Ext2Error>> Base for Regular<D> {
@@ -514,6 +541,21 @@ impl<D: Device<u8, Ext2Error>> file::File for Directory<D> {
     fn get_type(&self) -> file::Type {
         self.file.get_type()
     }
+
+    #[inline]
+    fn set_mode(&mut self, mode: Mode) {
+        self.file.set_mode(mode);
+    }
+
+    #[inline]
+    fn set_uid(&mut self, uid: Uid) {
+        self.file.set_uid(uid);
+    }
+
+    #[inline]
+    fn set_gid(&mut self, gid: Gid) {
+        self.file.set_gid(gid);
+    }
 }
 
 impl<Dev: Device<u8, Ext2Error>> file::Directory for Directory<Dev> {
@@ -537,7 +579,7 @@ impl<Dev: Device<u8, Ext2Error>> file::Directory for Directory<Dev> {
     }
 
     #[inline]
-    fn add_entry(&mut self, entry: DirectoryEntry<Self>) -> Result<(), Error<Self::Error>> {
+    fn add_entry(&mut self, entry: DirectoryEntry<Self>) -> Result<TypeWithFile<Self>, Error<Self::Error>> {
         todo!()
     }
 
@@ -604,6 +646,21 @@ impl<D: Device<u8, Ext2Error>> file::File for SymbolicLink<D> {
     #[inline]
     fn get_type(&self) -> file::Type {
         self.file.get_type()
+    }
+
+    #[inline]
+    fn set_mode(&mut self, mode: Mode) {
+        self.file.set_mode(mode);
+    }
+
+    #[inline]
+    fn set_uid(&mut self, uid: Uid) {
+        self.file.set_uid(uid);
+    }
+
+    #[inline]
+    fn set_gid(&mut self, gid: Gid) {
+        self.file.set_gid(gid);
     }
 }
 

@@ -3,29 +3,16 @@
 //! An OS and architecture independent implementation of some Unix filesystems in Rust.
 
 #![no_std]
-#![deny(
-    clippy::complexity,
-    clippy::correctness,
-    clippy::nursery,
-    clippy::pedantic,
-    clippy::perf,
-    clippy::restriction,
-    clippy::style,
-    missing_docs
-)]
 #![allow(
     clippy::absolute_paths,
     clippy::arithmetic_side_effects,
     clippy::as_conversions,
-    clippy::blanket_clippy_restriction_lints,
     clippy::else_if_without_else,
     clippy::exhaustive_enums,
     clippy::exhaustive_structs,
     clippy::expect_used,
     clippy::implicit_return,
     clippy::integer_division,
-    clippy::match_same_arms,
-    clippy::match_wildcard_for_single_variants,
     clippy::missing_trait_methods,
     clippy::mod_module_files,
     clippy::panic,
@@ -40,8 +27,7 @@
     clippy::unreachable,
     clippy::use_debug,
     clippy::unwrap_in_result,
-    clippy::wildcard_in_or_patterns,
-    const_item_mutation
+    clippy::wildcard_in_or_patterns
 )]
 #![cfg_attr(
     test,
@@ -74,4 +60,5 @@ pub mod file;
 pub mod fs;
 pub mod io;
 pub mod path;
+pub mod permissions;
 pub mod types;

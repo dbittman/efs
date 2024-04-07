@@ -661,8 +661,7 @@ impl Superblock {
     #[must_use]
     pub const fn base(&self) -> &Base {
         match self {
-            Self::Basic(base) => base,
-            Self::Extended(base, _) => base,
+            Self::Basic(base) | Self::Extended(base, _) => base,
         }
     }
 
@@ -671,8 +670,7 @@ impl Superblock {
     #[must_use]
     pub(super) const fn base_mut(&mut self) -> &mut Base {
         match self {
-            Self::Basic(base) => base,
-            Self::Extended(base, _) => base,
+            Self::Basic(base) | Self::Extended(base, _) => base,
         }
     }
 

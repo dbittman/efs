@@ -1,4 +1,4 @@
-//! Definitions of needed types
+//! Definitions of needed types.
 //!
 //! See [the POSIX `<sys/types.h>` header](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/sys_types.h.html) for more information.
 

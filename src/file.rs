@@ -1,7 +1,8 @@
-//! General interface for Unix files
+//! General interface for Unix files.
 //!
 //! See [this Wikipedia page](https://en.wikipedia.org/wiki/Unix_file_types) and [the POSIX header of `<sys/stat.h>`](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/sys_stat.h.html) for more information.
 
+use alloc::string::String;
 use alloc::vec::Vec;
 
 use itertools::Itertools;
@@ -9,6 +10,7 @@ use itertools::Itertools;
 use crate::error::Error;
 use crate::io::{Read, Seek, Write};
 use crate::path::{UnixStr, PARENT_DIR};
+use crate::permissions::Permissions;
 use crate::types::{Blkcnt, Blksize, Dev, Gid, Ino, Mode, Nlink, Off, Timespec, Uid};
 
 /// Minimal stat structure.
@@ -71,6 +73,54 @@ pub trait File {
 
     /// Retrieves the [`Type`] of this file.
     fn get_type(&self) -> Type;
+
+    /// Returns the [`Permissions`] of this file.
+    fn permissions(&self) -> Permissions {
+        self.stat().mode.into()
+    }
+
+    /// Sets the [`Mode`] of this file.
+    ///
+    /// The [`Permissions`] structure can be use as it's more convenient.
+    fn set_mode(&mut self, mode: Mode);
+
+    /// Sets the [`Uid`] (identifier of the user owner) of this file.
+    fn set_uid(&mut self, uid: Uid);
+
+    /// Sets the [`Gid`] (identifier of the group) of this file.
+    fn set_gid(&mut self, gid: Gid);
+}
+
+/// Main trait for all Unix files.
+///
+/// Defined in [this POSIX definition](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap03.html#tag_03_164).
+#[allow(clippy::module_name_repetitions)]
+pub trait ReadOnlyFile {
+    /// Error type associated with the directories of the [`FileSystem`](crate::fs::FileSystem) they belong to.
+    type Error: core::error::Error;
+
+    /// Retrieves information about this file.
+    fn stat(&self) -> Stat;
+
+    /// Retrieves the [`Type`] of this file.
+    fn get_type(&self) -> Type;
+
+    /// Returns the [`Permissions`] of this file.
+    fn permissions(&self) -> Permissions {
+        self.stat().mode.into()
+    }
+}
+
+impl<F: File> ReadOnlyFile for F {
+    type Error = <Self as File>::Error;
+
+    fn stat(&self) -> Stat {
+        <Self as File>::stat(self)
+    }
+
+    fn get_type(&self) -> Type {
+        <Self as File>::get_type(self)
+    }
 }
 
 /// A file that is a randomly accessible sequence of bytes, with no further structure imposed by the system.
@@ -90,7 +140,7 @@ pub trait Regular: File + Read + Write + Seek {
 /// A read-only file that is a randomly accessible sequence of bytes, with no further structure imposed by the system.
 ///
 /// This is the read-only version of [`Regular`].
-pub trait ReadOnlyRegular: File + Read + Seek {}
+pub trait ReadOnlyRegular: ReadOnlyFile + Read + Seek {}
 
 impl<R: Regular> ReadOnlyRegular for R {}
 
@@ -161,7 +211,7 @@ pub trait Directory: Sized + File {
     /// Returns an [`EntryAlreadyExist`](crate::fs::error::FsError::EntryAlreadyExist) error if the entry already exist.
     ///
     /// Returns an [`DevError`](crate::dev::error::DevError) if the device on which the directory is located could not be written.
-    fn add_entry(&mut self, entry: DirectoryEntry<Self>) -> Result<(), Error<Self::Error>>;
+    fn add_entry(&mut self, entry: DirectoryEntry<Self>) -> Result<TypeWithFile<Self>, Error<Self::Error>>;
 
     /// Removes an entry from the directory.
     ///
@@ -204,7 +254,7 @@ pub trait Directory: Sized + File {
 /// A read-only file that contains directory entries. No two directory entries in the same directory have the same name.
 ///
 /// This is the read-only version of [`Directory`].
-pub trait ReadOnlyDirectory: Sized + File {
+pub trait ReadOnlyDirectory: Sized + ReadOnlyFile {
     /// Type of the regular files in the [`FileSystem`](crate::fs::FileSystem) this directory belongs to.
     type Regular: ReadOnlyRegular<Error = Self::Error>;
 
@@ -288,7 +338,7 @@ pub trait SymbolicLink: File {
 /// file is used to modify the pathname resolution.
 ///
 /// This is the read-only version of [`SymbolicLink`].
-pub trait ReadOnlySymbolicLink: File {
+pub trait ReadOnlySymbolicLink: ReadOnlyFile {
     /// Returns the string stored in this symbolic link.
     ///
     /// # Errors
@@ -305,7 +355,7 @@ impl<Symlink: SymbolicLink> ReadOnlySymbolicLink for Symlink {
 }
 
 /// Enumeration of possible file types in a standard UNIX-like filesystem.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
     /// Storage unit of a filesystem.
     Regular,
@@ -329,7 +379,34 @@ pub enum Type {
     Socket,
 
     /// A file system dependant file (e.g [the Doors](https://en.wikipedia.org/wiki/Doors_(computing)) on Solaris systems).
-    Other,
+    Other(String),
+}
+
+/// Enumeration of possible file types in a standard UNIX-like filesystem.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CreatableFileType {
+    /// Storage unit of a filesystem.
+    Regular,
+
+    /// Node containing other nodes.
+    Directory,
+
+    /// Node pointing towards an other node in the filesystem.
+    SymbolicLink,
+
+    /// A file system dependant file (e.g [the Doors](https://en.wikipedia.org/wiki/Doors_(computing)) on Solaris systems).
+    Other(String),
+}
+
+impl From<CreatableFileType> for Type {
+    fn from(value: CreatableFileType) -> Self {
+        match value {
+            CreatableFileType::Regular => Self::Regular,
+            CreatableFileType::Directory => Self::Directory,
+            CreatableFileType::SymbolicLink => Self::SymbolicLink,
+            CreatableFileType::Other(name) => Self::Other(name),
+        }
+    }
 }
 
 /// Enumeration of possible file types in a standard UNIX-like filesystem with an attached file object.
@@ -353,7 +430,7 @@ pub enum TypeWithFile<Dir: Directory> {
     SymbolicLink(Dir::SymbolicLink),
 
     /// A file system dependant file (e.g [the Doors](https://en.wikipedia.org/wiki/Doors_(computing)) on Solaris systems).
-    Other(Dir::File),
+    Other(String, Dir::File),
 }
 
 /// Enumeration of possible file types in a standard UNIX-like filesystem with an attached file object.
@@ -371,7 +448,7 @@ pub enum ReadOnlyTypeWithFile<RoDir: ReadOnlyDirectory> {
     SymbolicLink(RoDir::SymbolicLink),
 
     /// A file system dependant file (e.g [the Doors](https://en.wikipedia.org/wiki/Doors_(computing)) on Solaris systems).
-    Other(RoDir::File),
+    Other(String, RoDir::File),
 }
 
 impl<Dir: Directory> From<TypeWithFile<Dir>> for ReadOnlyTypeWithFile<Dir> {
@@ -381,7 +458,7 @@ impl<Dir: Directory> From<TypeWithFile<Dir>> for ReadOnlyTypeWithFile<Dir> {
             TypeWithFile::Regular(file) => Self::Regular(file),
             TypeWithFile::Directory(file) => Self::Directory(file),
             TypeWithFile::SymbolicLink(file) => Self::SymbolicLink(file),
-            TypeWithFile::Other(file) => Self::Other(file),
+            TypeWithFile::Other(name, file) => Self::Other(name, file),
         }
     }
 }
@@ -393,7 +470,19 @@ impl<Dir: Directory> From<TypeWithFile<Dir>> for Type {
             TypeWithFile::Regular(_) => Self::Regular,
             TypeWithFile::Directory(_) => Self::Directory,
             TypeWithFile::SymbolicLink(_) => Self::SymbolicLink,
-            TypeWithFile::Other(_) => Self::Other,
+            TypeWithFile::Other(name, _) => Self::Other(name),
+        }
+    }
+}
+
+impl<Dir: Directory> From<TypeWithFile<Dir>> for CreatableFileType {
+    #[inline]
+    fn from(value: TypeWithFile<Dir>) -> Self {
+        match value {
+            TypeWithFile::Regular(_) => Self::Regular,
+            TypeWithFile::Directory(_) => Self::Directory,
+            TypeWithFile::SymbolicLink(_) => Self::SymbolicLink,
+            TypeWithFile::Other(name, _) => Self::Other(name),
         }
     }
 }

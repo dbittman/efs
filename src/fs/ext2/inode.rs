@@ -19,6 +19,7 @@ use crate::dev::Device;
 use crate::error::Error;
 use crate::file::Type;
 use crate::fs::error::FsError;
+use crate::permissions::Permissions;
 
 /// Number of direct block pointers in an inode.
 pub const DIRECT_BLOCK_POINTER_COUNT: u32 = 12;
@@ -214,6 +215,12 @@ bitflags! {
 
         /// Set user ID
         const SET_USER_ID       =   0x0800;
+    }
+}
+
+impl From<TypePermissions> for Permissions {
+    fn from(value: TypePermissions) -> Self {
+        Self::from_bits_truncate(value.bits())
     }
 }
 
