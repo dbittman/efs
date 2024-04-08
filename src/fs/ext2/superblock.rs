@@ -628,7 +628,7 @@ impl Superblock {
     ///
     /// Returns an [`Error`] if the device could not be read.
     #[inline]
-    pub fn parse<D: Device<u8, Ext2Error>>(celled_device: &Celled<D>) -> Result<Self, Error<Ext2Error>> {
+    pub fn parse<Dev: Device<u8, Ext2Error>>(celled_device: &Celled<Dev>) -> Result<Self, Error<Ext2Error>> {
         let device = celled_device.borrow();
 
         // SAFETY: all the possible failures are catched in the resulting error

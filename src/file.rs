@@ -2,7 +2,6 @@
 //!
 //! See [this Wikipedia page](https://en.wikipedia.org/wiki/Unix_file_types) and [the POSIX header of `<sys/stat.h>`](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/sys_stat.h.html) for more information.
 
-use alloc::string::String;
 use alloc::vec::Vec;
 
 use itertools::Itertools;
@@ -82,13 +81,25 @@ pub trait File {
     /// Sets the [`Mode`] of this file.
     ///
     /// The [`Permissions`] structure can be use as it's more convenient.
-    fn set_mode(&mut self, mode: Mode);
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`DevError`](crate::dev::error::DevError) if the device on which the directory is located could not be read.
+    fn set_mode(&mut self, mode: Mode) -> Result<(), Error<Self::Error>>;
 
     /// Sets the [`Uid`] (identifier of the user owner) of this file.
-    fn set_uid(&mut self, uid: Uid);
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`DevError`](crate::dev::error::DevError) if the device on which the directory is located could not be read.
+    fn set_uid(&mut self, uid: Uid) -> Result<(), Error<Self::Error>>;
 
     /// Sets the [`Gid`] (identifier of the group) of this file.
-    fn set_gid(&mut self, gid: Gid);
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`DevError`](crate::dev::error::DevError) if the device on which the directory is located could not be read.
+    fn set_gid(&mut self, gid: Gid) -> Result<(), Error<Self::Error>>;
 }
 
 /// Main trait for all Unix files.
@@ -190,8 +201,17 @@ pub trait Directory: Sized + File {
     /// Type of the symbolic links in the [`FileSystem`](crate::fs::FileSystem) this directory belongs to.
     type SymbolicLink: SymbolicLink<Error = Self::Error>;
 
-    /// Type of the other files (if any) in the [`FileSystem`](crate::fs::FileSystem) this directory belongs to.
-    type File: File<Error = Self::Error>;
+    /// Type of the fifo in the [`FileSystem`](crate::fs::FileSystem) this directory belongs to.
+    type Fifo: Fifo<Error = Self::Error>;
+
+    /// Type of the character device in the [`FileSystem`](crate::fs::FileSystem) this directory belongs to.
+    type CharDev: CharacterDevice<Error = Self::Error>;
+
+    /// Type of the character device in the [`FileSystem`](crate::fs::FileSystem) this directory belongs to.
+    type BlockDev: BlockDevice<Error = Self::Error>;
+
+    /// Type of the UNIX socket in the [`FileSystem`](crate::fs::FileSystem) this directory belongs to.
+    type Socket: Socket<Error = Self::Error>;
 
     /// Returns the directory entries contained.
     ///
@@ -261,8 +281,17 @@ pub trait ReadOnlyDirectory: Sized + ReadOnlyFile {
     /// Type of the symbolic links in the [`FileSystem`](crate::fs::FileSystem) this directory belongs to.
     type SymbolicLink: ReadOnlySymbolicLink<Error = Self::Error>;
 
-    /// Type of the other files (if any) in the [`FileSystem`](crate::fs::FileSystem) this directory belongs to.
-    type File: File<Error = Self::Error>;
+    /// Type of the fifo in the [`FileSystem`](crate::fs::FileSystem) this directory belongs to.
+    type Fifo: Fifo<Error = Self::Error>;
+
+    /// Type of the character device in the [`FileSystem`](crate::fs::FileSystem) this directory belongs to.
+    type CharDev: CharacterDevice<Error = Self::Error>;
+
+    /// Type of the character device in the [`FileSystem`](crate::fs::FileSystem) this directory belongs to.
+    type BlockDev: BlockDevice<Error = Self::Error>;
+
+    /// Type of the UNIX socket in the [`FileSystem`](crate::fs::FileSystem) this directory belongs to.
+    type Socket: Socket<Error = Self::Error>;
 
     /// Returns the directory entries contained.
     ///
@@ -304,8 +333,11 @@ pub trait ReadOnlyDirectory: Sized + ReadOnlyFile {
 }
 
 impl<Dir: Directory> ReadOnlyDirectory for Dir {
-    type File = Dir::File;
+    type BlockDev = Dir::BlockDev;
+    type CharDev = Dir::CharDev;
+    type Fifo = Dir::Fifo;
     type Regular = Dir::Regular;
+    type Socket = Dir::Socket;
     type SymbolicLink = Dir::SymbolicLink;
 
     #[inline]
@@ -354,8 +386,31 @@ impl<Symlink: SymbolicLink> ReadOnlySymbolicLink for Symlink {
     }
 }
 
+/// A type of file with the property that data written to such a file is read on a first-in-first-out basis.
+///
+/// Defined in [this POSIX defintion](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap03.html#tag_03_163)
+pub trait Fifo: File {}
+
+/// A file that refers to a device (such as a terminal device file) or that has special properties (such as /dev/null).
+///
+/// Defined in [this POSIX definition](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap03.html#tag_03_91)
+pub trait CharacterDevice: File {}
+
+/// A file that refers to a device. A block special file is normally distinguished from a character special file by providing access
+/// to the device in a manner such that the hardware characteristics of the device are not visible.
+///
+/// Defined in [this POSIX definition](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap03.html#tag_03_79)
+pub trait BlockDevice: File {}
+
+/// A file of a particular type that is used as a communications endpoint for process-to-process communication as described in the
+/// System Interfaces volume of POSIX.1-2017.
+///
+/// Defined in [this POSIX definition](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap03.html#tag_03_356)
+pub trait Socket: File {}
+
 /// Enumeration of possible file types in a standard UNIX-like filesystem.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Type {
     /// Storage unit of a filesystem.
     Regular,
@@ -377,47 +432,9 @@ pub enum Type {
 
     /// Communication flow between two processes.
     Socket,
-
-    /// A file system dependant file (e.g [the Doors](https://en.wikipedia.org/wiki/Doors_(computing)) on Solaris systems).
-    Other(String),
-}
-
-/// Enumeration of possible file types in a standard UNIX-like filesystem.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CreatableFileType {
-    /// Storage unit of a filesystem.
-    Regular,
-
-    /// Node containing other nodes.
-    Directory,
-
-    /// Node pointing towards an other node in the filesystem.
-    SymbolicLink,
-
-    /// A file system dependant file (e.g [the Doors](https://en.wikipedia.org/wiki/Doors_(computing)) on Solaris systems).
-    Other(String),
-}
-
-impl From<CreatableFileType> for Type {
-    fn from(value: CreatableFileType) -> Self {
-        match value {
-            CreatableFileType::Regular => Self::Regular,
-            CreatableFileType::Directory => Self::Directory,
-            CreatableFileType::SymbolicLink => Self::SymbolicLink,
-            CreatableFileType::Other(name) => Self::Other(name),
-        }
-    }
 }
 
 /// Enumeration of possible file types in a standard UNIX-like filesystem with an attached file object.
-///
-/// # Note
-///
-/// This enum does not contain the [`Fifo`](Type::Fifo), [`CharacterDevice`](Type::CharacterDevice),
-/// [`BlockDevice`](Type::BlockDevice) or [`Socket`](Type::Socket) as those are special files that have no real presence in the
-/// filesystem: they are abstractions created by the kernel. Thus, only the [`Regular`](Type::Regular),
-/// [`Directory`](Type::Directory) and the [`SymbolicLink`](Type::SymbolicLink) can be found (and the files not described in the
-/// POSIX norm).
 #[allow(clippy::module_name_repetitions)]
 pub enum TypeWithFile<Dir: Directory> {
     /// Storage unit of a filesystem.
@@ -429,8 +446,17 @@ pub enum TypeWithFile<Dir: Directory> {
     /// Node pointing towards an other node in the filesystem.
     SymbolicLink(Dir::SymbolicLink),
 
-    /// A file system dependant file (e.g [the Doors](https://en.wikipedia.org/wiki/Doors_(computing)) on Solaris systems).
-    Other(String, Dir::File),
+    /// Special node containing a [`Fifo`].
+    Fifo(Dir::Fifo),
+
+    /// Special node containing a [`CharacterDevice`].
+    CharacterDevice(Dir::CharDev),
+
+    /// Special node containing a [`BlockDevice`].
+    BlockDevice(Dir::BlockDev),
+
+    /// Special node containing a [`Socket`].
+    Socket(Dir::Socket),
 }
 
 /// Enumeration of possible file types in a standard UNIX-like filesystem with an attached file object.
@@ -447,8 +473,17 @@ pub enum ReadOnlyTypeWithFile<RoDir: ReadOnlyDirectory> {
     /// Node pointing towards an other node in the filesystem.
     SymbolicLink(RoDir::SymbolicLink),
 
-    /// A file system dependant file (e.g [the Doors](https://en.wikipedia.org/wiki/Doors_(computing)) on Solaris systems).
-    Other(String, RoDir::File),
+    /// Special node containing a [`Fifo`].
+    Fifo(RoDir::Fifo),
+
+    /// Special node containing a [`CharacterDevice`].
+    CharacterDevice(RoDir::CharDev),
+
+    /// Special node containing a [`BlockDevice`].
+    BlockDevice(RoDir::BlockDev),
+
+    /// Special node containing a [`Socket`].
+    Socket(RoDir::Socket),
 }
 
 impl<Dir: Directory> From<TypeWithFile<Dir>> for ReadOnlyTypeWithFile<Dir> {
@@ -458,7 +493,10 @@ impl<Dir: Directory> From<TypeWithFile<Dir>> for ReadOnlyTypeWithFile<Dir> {
             TypeWithFile::Regular(file) => Self::Regular(file),
             TypeWithFile::Directory(file) => Self::Directory(file),
             TypeWithFile::SymbolicLink(file) => Self::SymbolicLink(file),
-            TypeWithFile::Other(name, file) => Self::Other(name, file),
+            TypeWithFile::Fifo(file) => Self::Fifo(file),
+            TypeWithFile::CharacterDevice(file) => Self::CharacterDevice(file),
+            TypeWithFile::BlockDevice(file) => Self::BlockDevice(file),
+            TypeWithFile::Socket(file) => Self::Socket(file),
         }
     }
 }
@@ -470,19 +508,10 @@ impl<Dir: Directory> From<TypeWithFile<Dir>> for Type {
             TypeWithFile::Regular(_) => Self::Regular,
             TypeWithFile::Directory(_) => Self::Directory,
             TypeWithFile::SymbolicLink(_) => Self::SymbolicLink,
-            TypeWithFile::Other(name, _) => Self::Other(name),
-        }
-    }
-}
-
-impl<Dir: Directory> From<TypeWithFile<Dir>> for CreatableFileType {
-    #[inline]
-    fn from(value: TypeWithFile<Dir>) -> Self {
-        match value {
-            TypeWithFile::Regular(_) => Self::Regular,
-            TypeWithFile::Directory(_) => Self::Directory,
-            TypeWithFile::SymbolicLink(_) => Self::SymbolicLink,
-            TypeWithFile::Other(name, _) => Self::Other(name),
+            TypeWithFile::Fifo(_) => Self::Fifo,
+            TypeWithFile::CharacterDevice(_) => Self::CharacterDevice,
+            TypeWithFile::BlockDevice(_) => Self::BlockDevice,
+            TypeWithFile::Socket(_) => Self::Socket,
         }
     }
 }

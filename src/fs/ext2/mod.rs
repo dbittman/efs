@@ -9,7 +9,7 @@ use core::mem::size_of;
 
 use self::block_group::BlockGroupDescriptor;
 use self::error::Ext2Error;
-use self::file::{Directory, Regular, SymbolicLink};
+use self::file::{BlockDevice, CharacterDevice, Directory, Fifo, Regular, Socket, SymbolicLink};
 use self::inode::{Flags, Inode, TypePermissions, ROOT_DIRECTORY_INODE};
 use self::superblock::{Superblock, SUPERBLOCK_START_BYTE};
 use super::FileSystem;
@@ -18,7 +18,7 @@ use crate::dev::celled::Celled;
 use crate::dev::sector::Address;
 use crate::dev::Device;
 use crate::error::Error;
-use crate::file::{CreatableFileType, DirectoryEntry, Type, TypeWithFile};
+use crate::file::{DirectoryEntry, Type, TypeWithFile};
 use crate::fs::error::FsError;
 use crate::path::{Path, PathError};
 use crate::permissions::Permissions;
@@ -552,7 +552,7 @@ impl<Dev: Device<u8, Ext2Error>> Celled<Ext2<Dev>> {
             Type::Regular => Ok(TypeWithFile::Regular(Regular::new(&self.clone(), inode_number)?)),
             Type::Directory => Ok(TypeWithFile::Directory(Directory::new(&self.clone(), inode_number)?)),
             Type::SymbolicLink => Ok(TypeWithFile::SymbolicLink(SymbolicLink::new(&self.clone(), inode_number)?)),
-            Type::Fifo | Type::CharacterDevice | Type::BlockDevice | Type::Socket | Type::Other(_) => unreachable!(
+            Type::Fifo | Type::CharacterDevice | Type::BlockDevice | Type::Socket => unreachable!(
                 "The only type of files in ext2's filesystems that are written on the device are the regular files, the directories and the symbolic links"
             ),
         }
@@ -564,9 +564,12 @@ impl<Dev: Device<u8, Ext2Error>> FileSystem<Directory<Dev>> for Celled<Ext2<Dev>
     fn root(&self) -> Result<Directory<Dev>, Error<<Directory<Dev> as crate::file::File>::Error>> {
         self.file(ROOT_DIRECTORY_INODE).and_then(|root| match root {
             TypeWithFile::Directory(root_dir) => Ok(root_dir),
-            TypeWithFile::Regular(_) | TypeWithFile::SymbolicLink(_) | TypeWithFile::Other(_, _) => {
-                Err(Error::Fs(FsError::WrongFileType(Type::Directory, root.into())))
-            },
+            TypeWithFile::Regular(_)
+            | TypeWithFile::SymbolicLink(_)
+            | TypeWithFile::Fifo(_)
+            | TypeWithFile::CharacterDevice(_)
+            | TypeWithFile::BlockDevice(_)
+            | TypeWithFile::Socket(_) => Err(Error::Fs(FsError::WrongFileType(Type::Directory, root.into()))),
         })
     }
 
@@ -580,7 +583,7 @@ impl<Dev: Device<u8, Ext2Error>> FileSystem<Directory<Dev>> for Celled<Ext2<Dev>
     fn create_file(
         &mut self,
         path: Path<'_>,
-        file_type: CreatableFileType,
+        file_type: Type,
         uid: Uid,
         gid: Gid,
         permissions: Permissions,
@@ -593,17 +596,17 @@ impl<Dev: Device<u8, Ext2Error>> FileSystem<Directory<Dev>> for Celled<Ext2<Dev>
         let parent_dir_file = self.get_file(&parent_dir_path, self.root()?, true)?;
         let mut parent_dir = match parent_dir_file {
             TypeWithFile::Directory(dir) => dir,
-            TypeWithFile::Regular(_) | TypeWithFile::SymbolicLink(_) | TypeWithFile::Other(_, _) => {
+            TypeWithFile::Regular(_)
+            | TypeWithFile::SymbolicLink(_)
+            | TypeWithFile::Fifo(_)
+            | TypeWithFile::CharacterDevice(_)
+            | TypeWithFile::BlockDevice(_)
+            | TypeWithFile::Socket(_) => {
                 return Err(Error::Fs(FsError::WrongFileType(Type::Directory, parent_dir_file.into())));
             },
         };
 
-        let file_type_bit = match file_type {
-            CreatableFileType::Regular => TypePermissions::REGULAR_FILE,
-            CreatableFileType::Directory => TypePermissions::DIRECTORY,
-            CreatableFileType::SymbolicLink => TypePermissions::SYMBOLIC_LINK,
-            CreatableFileType::Other(_) => TypePermissions::empty(),
-        };
+        let file_type_bit = TypePermissions::from(file_type);
         let mut fs = self.borrow_mut();
         let inode_number = fs.free_inode()?;
         fs.allocate_inode(
@@ -617,10 +620,13 @@ impl<Dev: Device<u8, Ext2Error>> FileSystem<Directory<Dev>> for Celled<Ext2<Dev>
         )?;
         drop(fs);
         let file = match file_type {
-            CreatableFileType::Regular => TypeWithFile::Regular(Regular::new(self, inode_number)?),
-            CreatableFileType::Directory => TypeWithFile::Directory(Directory::new(self, inode_number)?),
-            CreatableFileType::SymbolicLink => TypeWithFile::SymbolicLink(SymbolicLink::new(self, inode_number)?),
-            CreatableFileType::Other(_) => return Err(Ext2Error::NoOtherFileType.into()),
+            Type::Regular => TypeWithFile::Regular(Regular::new(self, inode_number)?),
+            Type::Directory => TypeWithFile::Directory(Directory::new(self, inode_number)?),
+            Type::SymbolicLink => TypeWithFile::SymbolicLink(SymbolicLink::new(self, inode_number)?),
+            Type::Fifo => TypeWithFile::Fifo(Fifo::new(self, inode_number)?),
+            Type::CharacterDevice => TypeWithFile::CharacterDevice(CharacterDevice::new(self, inode_number)?),
+            Type::BlockDevice => TypeWithFile::BlockDevice(BlockDevice::new(self, inode_number)?),
+            Type::Socket => TypeWithFile::Socket(Socket::new(self, inode_number)?),
         };
 
         crate::file::Directory::add_entry(&mut parent_dir, DirectoryEntry {

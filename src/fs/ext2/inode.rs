@@ -224,6 +224,20 @@ impl From<TypePermissions> for Permissions {
     }
 }
 
+impl From<Type> for TypePermissions {
+    fn from(value: Type) -> Self {
+        match value {
+            Type::Regular => Self::REGULAR_FILE,
+            Type::Directory => Self::DIRECTORY,
+            Type::SymbolicLink => Self::SYMBOLIC_LINK,
+            Type::Fifo => Self::FIFO,
+            Type::CharacterDevice => Self::CHARACTER_DEVICE,
+            Type::BlockDevice => Self::BLOCK_DEVICE,
+            Type::Socket => Self::SOCKET,
+        }
+    }
+}
+
 bitflags! {
     /// Inode Flags
     #[derive(Debug, Clone, Copy)]
@@ -493,8 +507,8 @@ impl Inode {
     ///
     /// Otherwise, returns an [`Error`] if the device cannot be read.
     #[inline]
-    pub fn starting_addr<D: Device<u8, Ext2Error>>(
-        celled_device: &Celled<D>,
+    pub fn starting_addr<Dev: Device<u8, Ext2Error>>(
+        celled_device: &Celled<Dev>,
         superblock: &Superblock,
         n: u32,
     ) -> Result<Address, Error<Ext2Error>> {
@@ -528,8 +542,8 @@ impl Inode {
     ///
     /// Returns an [`Error`] if the device could not be read.
     #[inline]
-    pub fn parse<D: Device<u8, Ext2Error>>(
-        celled_device: &Celled<D>,
+    pub fn parse<Dev: Device<u8, Ext2Error>>(
+        celled_device: &Celled<Dev>,
         superblock: &Superblock,
         n: u32,
     ) -> Result<Self, Error<Ext2Error>> {
@@ -551,15 +565,15 @@ impl Inode {
     ///
     /// Returns a [`Error`] if the device cannot be read.
     #[inline]
-    pub fn indirected_blocks<D: Device<u8, Ext2Error>>(
+    pub fn indirected_blocks<Dev: Device<u8, Ext2Error>>(
         &self,
-        celled_device: &Celled<D>,
+        celled_device: &Celled<Dev>,
         superblock: &Superblock,
     ) -> Result<IndirectedBlocks<DIRECT_BLOCK_POINTER_COUNT>, Error<Ext2Error>> {
         /// Returns the list of block addresses contained in the given indirect block.
         #[allow(clippy::cast_ptr_alignment)]
-        fn read_indirect_block<D: Device<u8, Ext2Error>>(
-            celled_device: &Celled<D>,
+        fn read_indirect_block<Dev: Device<u8, Ext2Error>>(
+            celled_device: &Celled<Dev>,
             superblock: &Superblock,
             block_number: u32,
         ) -> Result<Vec<u32>, Error<Ext2Error>> {
@@ -688,9 +702,9 @@ impl Inode {
     ///
     /// Returns an [`Error`] if the device could not be read.
     #[inline]
-    pub fn read_data<D: Device<u8, Ext2Error>>(
+    pub fn read_data<Dev: Device<u8, Ext2Error>>(
         &self,
-        celled_device: &Celled<D>,
+        celled_device: &Celled<Dev>,
         superblock: &Superblock,
         buffer: &mut [u8],
         mut offset: u64,

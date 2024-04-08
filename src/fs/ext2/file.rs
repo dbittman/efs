@@ -11,7 +11,7 @@ use itertools::Itertools;
 
 use super::directory::Entry;
 use super::error::Ext2Error;
-use super::inode::Inode;
+use super::inode::{Inode, TypePermissions};
 use super::{Celled, Ext2};
 use crate::dev::sector::Address;
 use crate::dev::Device;
@@ -23,15 +23,15 @@ use crate::fs::ext2::indirection::IndirectedBlocks;
 use crate::fs::ext2::inode::DIRECT_BLOCK_POINTER_COUNT;
 use crate::fs::PATH_MAX;
 use crate::io::{Base, Read, Seek, SeekFrom, Write};
-use crate::types::{Blkcnt, Blksize, Dev, Gid, Ino, Mode, Nlink, Off, Time, Timespec, Uid};
+use crate::types::{Blkcnt, Blksize, Gid, Ino, Mode, Nlink, Off, Time, Timespec, Uid};
 
 /// Limit in bytes for the length of a pointed path of a symbolic link to be store in an inode and not in a separate data block.
 pub const SYMBOLIC_LINK_INODE_STORE_LIMIT: usize = 60;
 
 /// General file implementation.
-pub struct File<D: Device<u8, Ext2Error>> {
+pub struct File<Dev: Device<u8, Ext2Error>> {
     /// Ext2 object associated with the device containing this file.
-    filesystem: Celled<Ext2<D>>,
+    filesystem: Celled<Ext2<Dev>>,
 
     /// Inode number of the inode corresponding to the file.
     inode_number: u32,
@@ -43,7 +43,7 @@ pub struct File<D: Device<u8, Ext2Error>> {
     io_offset: u64,
 }
 
-impl<D: Device<u8, Ext2Error>> Debug for File<D> {
+impl<Dev: Device<u8, Ext2Error>> Debug for File<Dev> {
     #[inline]
     fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         formatter
@@ -56,14 +56,14 @@ impl<D: Device<u8, Ext2Error>> Debug for File<D> {
     }
 }
 
-impl<D: Device<u8, Ext2Error>> File<D> {
+impl<Dev: Device<u8, Ext2Error>> File<Dev> {
     /// Returns a new ext2's [`File`] from an [`Ext2`] instance and the inode number of the file.
     ///
     /// # Errors
     ///
     /// Returns the same errors as [`Inode::parse`].
     #[inline]
-    pub fn new(filesystem: &Celled<Ext2<D>>, inode_number: u32) -> Result<Self, Error<Ext2Error>> {
+    pub fn new(filesystem: &Celled<Ext2<Dev>>, inode_number: u32) -> Result<Self, Error<Ext2Error>> {
         let fs = filesystem.borrow();
         let inode = Inode::parse(&fs.device, &fs.superblock, inode_number)?;
         Ok(Self {
@@ -165,7 +165,7 @@ impl<D: Device<u8, Ext2Error>> File<D> {
     }
 }
 
-impl<D: Device<u8, Ext2Error>> file::File for File<D> {
+impl<Dev: Device<u8, Ext2Error>> file::File for File<Dev> {
     type Error = Ext2Error;
 
     #[inline]
@@ -173,13 +173,13 @@ impl<D: Device<u8, Ext2Error>> file::File for File<D> {
         let filesystem = self.filesystem.borrow();
 
         Stat {
-            dev: Dev(filesystem.device_id),
+            dev: crate::types::Dev(filesystem.device_id),
             ino: Ino(self.inode_number),
             mode: Mode(self.inode.mode),
             nlink: Nlink(u32::from(self.inode.links_count)),
             uid: Uid(self.inode.uid),
             gid: Gid(self.inode.gid),
-            rdev: Dev::default(),
+            rdev: crate::types::Dev::default(),
             size: Off(self.inode.data_size().try_into().unwrap_or_default()),
             atim: Timespec {
                 tv_sec: Time(self.inode.atime.try_into().unwrap_or_default()),
@@ -204,31 +204,40 @@ impl<D: Device<u8, Ext2Error>> file::File for File<D> {
         unsafe { self.inode.file_type().unwrap_unchecked() }
     }
 
-    fn set_mode(&mut self, mode: Mode) {
-        todo!()
+    fn set_mode(&mut self, mode: Mode) -> Result<(), Error<Self::Error>> {
+        let mut new_inode = self.inode;
+        new_inode.mode = *mode;
+        // SAFETY: only the mode has changed
+        unsafe { self.set_inode(&new_inode) }
     }
 
-    fn set_uid(&mut self, uid: Uid) {
-        todo!()
+    fn set_uid(&mut self, uid: Uid) -> Result<(), Error<Self::Error>> {
+        let mut new_inode = self.inode;
+        new_inode.uid = *uid;
+        // SAFETY: only the UID has changed
+        unsafe { self.set_inode(&new_inode) }
     }
 
-    fn set_gid(&mut self, gid: Gid) {
-        todo!()
+    fn set_gid(&mut self, gid: Gid) -> Result<(), Error<Self::Error>> {
+        let mut new_inode = self.inode;
+        new_inode.gid = *gid;
+        // SAFETY: only the GID has changed
+        unsafe { self.set_inode(&new_inode) }
     }
 }
 
 /// Implementation of a regular file.
 #[derive(Debug)]
-pub struct Regular<D: Device<u8, Ext2Error>> {
+pub struct Regular<Dev: Device<u8, Ext2Error>> {
     /// Inner file containing the regular file.
-    file: File<D>,
+    file: File<Dev>,
 }
 
-impl<D: Device<u8, Ext2Error>> Base for File<D> {
+impl<Dev: Device<u8, Ext2Error>> Base for File<Dev> {
     type IOError = Ext2Error;
 }
 
-impl<D: Device<u8, Ext2Error>> Read for File<D> {
+impl<Dev: Device<u8, Ext2Error>> Read for File<Dev> {
     #[inline]
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, Error<Self::IOError>> {
         let filesystem = self.filesystem.borrow();
@@ -241,7 +250,7 @@ impl<D: Device<u8, Ext2Error>> Read for File<D> {
     }
 }
 
-impl<D: Device<u8, Ext2Error>> Write for File<D> {
+impl<Dev: Device<u8, Ext2Error>> Write for File<Dev> {
     #[inline]
     fn write(&mut self, buf: &[u8]) -> Result<usize, Error<Self::IOError>> {
         let mut fs = self.filesystem.borrow_mut();
@@ -359,7 +368,7 @@ impl<D: Device<u8, Ext2Error>> Write for File<D> {
     }
 }
 
-impl<D: Device<u8, Ext2Error>> Seek for File<D> {
+impl<Dev: Device<u8, Ext2Error>> Seek for File<Dev> {
     #[inline]
     fn seek(&mut self, pos: SeekFrom) -> Result<u64, Error<Ext2Error>> {
         // SAFETY: it is safe to assume that the file length is smaller than 2^63 bytes long
@@ -393,14 +402,14 @@ impl<D: Device<u8, Ext2Error>> Seek for File<D> {
     }
 }
 
-impl<D: Device<u8, Ext2Error>> Regular<D> {
+impl<Dev: Device<u8, Ext2Error>> Regular<Dev> {
     /// Returns a new ext2's [`Regular`] from an [`Ext2`] instance and the inode number of the file.
     ///
     /// # Errors
     ///
     /// Returns the same errors as [`Ext2::inode`].
     #[inline]
-    pub fn new(filesystem: &Celled<Ext2<D>>, inode_number: u32) -> Result<Self, Error<Ext2Error>> {
+    pub fn new(filesystem: &Celled<Ext2<Dev>>, inode_number: u32) -> Result<Self, Error<Ext2Error>> {
         Ok(Self {
             file: File::new(&filesystem.clone(), inode_number)?,
         })
@@ -423,7 +432,7 @@ impl<D: Device<u8, Ext2Error>> Regular<D> {
     }
 }
 
-impl<D: Device<u8, Ext2Error>> file::File for Regular<D> {
+impl<Dev: Device<u8, Ext2Error>> file::File for Regular<Dev> {
     type Error = Ext2Error;
 
     #[inline]
@@ -437,33 +446,34 @@ impl<D: Device<u8, Ext2Error>> file::File for Regular<D> {
     }
 
     #[inline]
-    fn set_mode(&mut self, mode: Mode) {
-        self.file.set_mode(mode);
+    fn set_mode(&mut self, mode: Mode) -> Result<(), Error<Self::Error>> {
+        self.file
+            .set_mode(Mode((TypePermissions::from_bits_truncate(*mode) | TypePermissions::from(self.file.get_type())).bits()))
     }
 
     #[inline]
-    fn set_uid(&mut self, uid: Uid) {
-        self.file.set_uid(uid);
+    fn set_uid(&mut self, uid: Uid) -> Result<(), Error<Self::Error>> {
+        self.file.set_uid(uid)
     }
 
     #[inline]
-    fn set_gid(&mut self, gid: Gid) {
-        self.file.set_gid(gid);
+    fn set_gid(&mut self, gid: Gid) -> Result<(), Error<Self::Error>> {
+        self.file.set_gid(gid)
     }
 }
 
-impl<D: Device<u8, Ext2Error>> Base for Regular<D> {
+impl<Dev: Device<u8, Ext2Error>> Base for Regular<Dev> {
     type IOError = Ext2Error;
 }
 
-impl<D: Device<u8, Ext2Error>> Read for Regular<D> {
+impl<Dev: Device<u8, Ext2Error>> Read for Regular<Dev> {
     #[inline]
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, Error<Ext2Error>> {
         self.file.read(buf)
     }
 }
 
-impl<D: Device<u8, Ext2Error>> Write for Regular<D> {
+impl<Dev: Device<u8, Ext2Error>> Write for Regular<Dev> {
     #[inline]
     fn write(&mut self, buf: &[u8]) -> Result<usize, Error<Ext2Error>> {
         self.file.write(buf)
@@ -475,14 +485,14 @@ impl<D: Device<u8, Ext2Error>> Write for Regular<D> {
     }
 }
 
-impl<D: Device<u8, Ext2Error>> Seek for Regular<D> {
+impl<Dev: Device<u8, Ext2Error>> Seek for Regular<Dev> {
     #[inline]
     fn seek(&mut self, pos: SeekFrom) -> Result<u64, Error<Ext2Error>> {
         self.file.seek(pos)
     }
 }
 
-impl<D: Device<u8, Ext2Error>> file::Regular for Regular<D> {
+impl<Dev: Device<u8, Ext2Error>> file::Regular for Regular<Dev> {
     #[inline]
     fn truncate(&mut self, size: u64) -> Result<(), Error<<Self as file::File>::Error>> {
         self.file.truncate(size)
@@ -491,22 +501,22 @@ impl<D: Device<u8, Ext2Error>> file::Regular for Regular<D> {
 
 /// Interface for ext2's directories.
 #[derive(Debug)]
-pub struct Directory<D: Device<u8, Ext2Error>> {
+pub struct Directory<Dev: Device<u8, Ext2Error>> {
     /// Inner file containing the regular file.
-    file: File<D>,
+    file: File<Dev>,
 
     /// Entries contained in this directory.
     entries: Vec<Entry>,
 }
 
-impl<D: Device<u8, Ext2Error>> Directory<D> {
+impl<Dev: Device<u8, Ext2Error>> Directory<Dev> {
     /// Returns the directory located at the given inode number.
     ///
     /// # Errors
     ///
     /// Returns the same errors as [`Entry::parse`].
     #[inline]
-    pub fn new(filesystem: &Celled<Ext2<D>>, inode_number: u32) -> Result<Self, Error<Ext2Error>> {
+    pub fn new(filesystem: &Celled<Ext2<Dev>>, inode_number: u32) -> Result<Self, Error<Ext2Error>> {
         let file = File::new(filesystem, inode_number)?;
         let fs = filesystem.borrow();
 
@@ -529,7 +539,7 @@ impl<D: Device<u8, Ext2Error>> Directory<D> {
     }
 }
 
-impl<D: Device<u8, Ext2Error>> file::File for Directory<D> {
+impl<Dev: Device<u8, Ext2Error>> file::File for Directory<Dev> {
     type Error = Ext2Error;
 
     #[inline]
@@ -543,24 +553,27 @@ impl<D: Device<u8, Ext2Error>> file::File for Directory<D> {
     }
 
     #[inline]
-    fn set_mode(&mut self, mode: Mode) {
-        self.file.set_mode(mode);
+    fn set_mode(&mut self, mode: Mode) -> Result<(), Error<Self::Error>> {
+        self.file.set_mode(mode)
     }
 
     #[inline]
-    fn set_uid(&mut self, uid: Uid) {
-        self.file.set_uid(uid);
+    fn set_uid(&mut self, uid: Uid) -> Result<(), Error<Self::Error>> {
+        self.file.set_uid(uid)
     }
 
     #[inline]
-    fn set_gid(&mut self, gid: Gid) {
-        self.file.set_gid(gid);
+    fn set_gid(&mut self, gid: Gid) -> Result<(), Error<Self::Error>> {
+        self.file.set_gid(gid)
     }
 }
 
 impl<Dev: Device<u8, Ext2Error>> file::Directory for Directory<Dev> {
-    type File = File<Dev>;
+    type BlockDev = BlockDevice<Dev>;
+    type CharDev = CharacterDevice<Dev>;
+    type Fifo = Fifo<Dev>;
     type Regular = Regular<Dev>;
+    type Socket = Socket<Dev>;
     type SymbolicLink = SymbolicLink<Dev>;
 
     #[inline]
@@ -591,16 +604,16 @@ impl<Dev: Device<u8, Ext2Error>> file::Directory for Directory<Dev> {
 
 /// Interface for ext2's symbolic links.
 #[derive(Debug)]
-pub struct SymbolicLink<D: Device<u8, Ext2Error>> {
+pub struct SymbolicLink<Dev: Device<u8, Ext2Error>> {
     /// Inner file containing the symbolic link.
-    file: File<D>,
+    file: File<Dev>,
 
     /// Read/Write offset (can be manipulated with [`Seek`]).
     pointed_file: String,
 }
 
-impl<D: Device<u8, Ext2Error>> SymbolicLink<D> {
-    /// Returns a new ext2's [`Regular`] from an [`Ext2`] instance and the inode number of the file.
+impl<Dev: Device<u8, Ext2Error>> SymbolicLink<Dev> {
+    /// Returns a new ext2's [`SymbolicLink`] from an [`Ext2`] instance and the inode number of the file.
     ///
     /// # Errors
     ///
@@ -611,7 +624,7 @@ impl<D: Device<u8, Ext2Error>> SymbolicLink<D> {
     ///
     /// Otherwise, returns the same errors as [`Ext2::inode`].
     #[inline]
-    pub fn new(filesystem: &Celled<Ext2<D>>, inode_number: u32) -> Result<Self, Error<Ext2Error>> {
+    pub fn new(filesystem: &Celled<Ext2<Dev>>, inode_number: u32) -> Result<Self, Error<Ext2Error>> {
         let fs = filesystem.borrow();
         let file = File::new(&filesystem.clone(), inode_number)?;
 
@@ -635,7 +648,7 @@ impl<D: Device<u8, Ext2Error>> SymbolicLink<D> {
     }
 }
 
-impl<D: Device<u8, Ext2Error>> file::File for SymbolicLink<D> {
+impl<Dev: Device<u8, Ext2Error>> file::File for SymbolicLink<Dev> {
     type Error = Ext2Error;
 
     #[inline]
@@ -649,22 +662,22 @@ impl<D: Device<u8, Ext2Error>> file::File for SymbolicLink<D> {
     }
 
     #[inline]
-    fn set_mode(&mut self, mode: Mode) {
-        self.file.set_mode(mode);
+    fn set_mode(&mut self, mode: Mode) -> Result<(), Error<Self::Error>> {
+        self.file.set_mode(mode)
     }
 
     #[inline]
-    fn set_uid(&mut self, uid: Uid) {
-        self.file.set_uid(uid);
+    fn set_uid(&mut self, uid: Uid) -> Result<(), Error<Self::Error>> {
+        self.file.set_uid(uid)
     }
 
     #[inline]
-    fn set_gid(&mut self, gid: Gid) {
-        self.file.set_gid(gid);
+    fn set_gid(&mut self, gid: Gid) -> Result<(), Error<Self::Error>> {
+        self.file.set_gid(gid)
     }
 }
 
-impl<D: Device<u8, Ext2Error>> file::SymbolicLink for SymbolicLink<D> {
+impl<Dev: Device<u8, Ext2Error>> file::SymbolicLink for SymbolicLink<Dev> {
     #[inline]
     fn get_pointed_file(&self) -> Result<&str, Error<Self::Error>> {
         Ok(&self.pointed_file)
@@ -704,6 +717,56 @@ impl<D: Device<u8, Ext2Error>> file::SymbolicLink for SymbolicLink<D> {
     }
 }
 
+macro_rules! generic_file {
+    ($id:ident) => {
+        #[doc = concat!("Basic implementation of a [`", stringify!($id), "`](crate::file::", stringify!($id), ") for ext2.")]
+        pub struct $id<Dev: Device<u8, Ext2Error>>(File<Dev>);
+
+        impl<Dev: Device<u8, Ext2Error>> crate::file::File for $id<Dev> {
+            type Error = Ext2Error;
+
+            fn stat(&self) -> Stat {
+                self.0.stat()
+            }
+
+            fn get_type(&self) -> file::Type {
+                self.0.get_type()
+            }
+
+            fn set_mode(&mut self, mode: Mode) -> Result<(), Error<Self::Error>> {
+                self.0.set_mode(mode)
+            }
+
+            fn set_uid(&mut self, uid: Uid) -> Result<(), Error<Self::Error>> {
+                self.0.set_uid(uid)
+            }
+
+            fn set_gid(&mut self, gid: Gid) -> Result<(), Error<Self::Error>> {
+                self.0.set_gid(gid)
+            }
+        }
+
+        impl<Dev: Device<u8, Ext2Error>> $id<Dev> {
+            #[doc = concat!("Returns a new ext2's [`", stringify!($id), "`] from an [`Ext2`] instance and the inode number of the file.")]
+            ///
+            /// # Errors
+            ///
+            /// Returns the same errors as [`File::new`].
+            #[inline]
+            pub fn new(filesystem: &Celled<Ext2<Dev>>, inode_number: u32) -> Result<Self, Error<Ext2Error>> {
+                Ok(Self(File::new(filesystem, inode_number)?))
+            }
+        }
+
+        impl<Dev: Device<u8, Ext2Error>> crate::file::$id for $id<Dev> {}
+    };
+}
+
+generic_file!(Fifo);
+generic_file!(CharacterDevice);
+generic_file!(BlockDevice);
+generic_file!(Socket);
+
 #[cfg(test)]
 mod test {
     use alloc::string::{String, ToString};
@@ -715,14 +778,16 @@ mod test {
     use itertools::Itertools;
 
     use crate::dev::sector::Address;
-    use crate::file::TypeWithFile;
+    use crate::file::{Type, TypeWithFile};
     use crate::fs::ext2::directory::Entry;
     use crate::fs::ext2::file::Directory;
-    use crate::fs::ext2::inode::{Inode, ROOT_DIRECTORY_INODE};
+    use crate::fs::ext2::inode::{Inode, TypePermissions, ROOT_DIRECTORY_INODE};
     use crate::fs::ext2::superblock::Superblock;
     use crate::fs::ext2::{Celled, Ext2};
     use crate::io::{Seek, SeekFrom, Write};
     use crate::path::UnixStr;
+    use crate::permissions::Permissions;
+    use crate::types::{Gid, Mode, Uid};
 
     #[test]
     fn parse_root() {
@@ -1172,5 +1237,50 @@ mod test {
         assert_eq!(foo.read_all().unwrap(), replace_text);
 
         fs::remove_file("./tests/fs/ext2/io_operations_copy_write_file_twice.ext2").unwrap();
+    }
+
+    #[test]
+    #[allow(clippy::similar_names)]
+    fn file_mode() {
+        fs::copy("./tests/fs/ext2/io_operations.ext2", "./tests/fs/ext2/io_operations_copy_file_mode.ext2").unwrap();
+
+        let file = RefCell::new(
+            File::options()
+                .read(true)
+                .write(true)
+                .open("./tests/fs/ext2/io_operations_copy_file_mode.ext2")
+                .unwrap(),
+        );
+        let ext2 = Celled::new(Ext2::new(file, 0).unwrap());
+        let TypeWithFile::Directory(root) = ext2.file(ROOT_DIRECTORY_INODE).unwrap() else {
+            panic!("The root is always a directory.")
+        };
+        let TypeWithFile::Regular(mut foo) =
+            crate::file::Directory::entry(&root, UnixStr::new("foo.txt").unwrap()).unwrap().unwrap()
+        else {
+            panic!("`foo.txt` has been created as a regular file")
+        };
+
+        assert_eq!(crate::file::File::get_type(&foo), Type::Regular);
+        assert_eq!(
+            crate::file::File::permissions(&foo),
+            Permissions::USER_READ | Permissions::USER_WRITE | Permissions::GROUP_READ | Permissions::OTHER_READ
+        );
+
+        crate::file::File::set_mode(&mut foo, Mode::from(Permissions::USER_READ | Permissions::USER_WRITE)).unwrap();
+        crate::file::File::set_uid(&mut foo, Uid(1)).unwrap();
+        crate::file::File::set_gid(&mut foo, Gid(2)).unwrap();
+
+        let fs = ext2.borrow();
+        let inode = Inode::parse(&fs.device, fs.superblock(), foo.file.inode_number).unwrap();
+
+        let mode = inode.mode;
+        assert_eq!(mode, (TypePermissions::REGULAR_FILE | TypePermissions::USER_R | TypePermissions::USER_W).bits());
+        let uid = inode.uid;
+        assert_eq!(uid, 1);
+        let gid = inode.gid;
+        assert_eq!(gid, 2);
+
+        fs::remove_file("./tests/fs/ext2/io_operations_copy_file_mode.ext2").unwrap();
     }
 }

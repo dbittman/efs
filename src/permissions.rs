@@ -38,7 +38,7 @@ bitflags! {
     /// Permissions bits.
     ///
     /// The permission indicator occupies the bottom 12 bits.
-    #[derive(Debug, Clone, Copy)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub struct Permissions: u16 {
         /// Other - execute permission
         const OTHER_EXECUTION   =   0o000_001;
@@ -115,6 +115,12 @@ impl Display for Permissions {
 impl From<Mode> for Permissions {
     fn from(value: Mode) -> Self {
         Self::from_bits_truncate(value.0)
+    }
+}
+
+impl From<Permissions> for Mode {
+    fn from(value: Permissions) -> Self {
+        Self(value.bits())
     }
 }
 

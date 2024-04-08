@@ -75,8 +75,8 @@ impl BlockGroupDescriptor {
     ///
     /// Returns an [`Error`] if the device could not be read.
     #[inline]
-    pub fn parse<D: Device<u8, Ext2Error>>(
-        celled_device: &RefCell<D>,
+    pub fn parse<Dev: Device<u8, Ext2Error>>(
+        celled_device: &RefCell<Dev>,
         superblock: &Superblock,
         n: u32,
     ) -> Result<Self, Error<Ext2Error>> {
