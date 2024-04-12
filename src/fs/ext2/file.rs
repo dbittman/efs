@@ -114,13 +114,15 @@ impl<Dev: Device<u8, Ext2Error>> File<Dev> {
     /// Same as [`truncate`](file::Regular::truncate).
     #[inline]
     pub fn truncate(&mut self, size: u64) -> Result<(), Error<Ext2Error>> {
-        // TODO: deallocate unused blocks
-
-        if u64::from(self.inode.size) <= size {
+        if self.inode.data_size() <= size {
             return Ok(());
         }
 
-        let fs = self.filesystem.borrow();
+        let mut fs = self.filesystem.borrow_mut();
+
+        // SAFETY: the result is a u32 as `size` is valid (it has been checked)
+        let previous_data_block_number =
+            unsafe { u32::try_from(self.inode.data_size() / u64::from(fs.superblock().block_size())).unwrap_unchecked() };
 
         let mut new_inode = self.inode;
         // SAFETY: the result is smaller than `u32::MAX`
@@ -132,6 +134,23 @@ impl<Dev: Device<u8, Ext2Error>> File<Dev> {
         unsafe {
             fs.device.borrow_mut().write_at(starting_addr, new_inode)?;
         };
+
+        // SAFETY: the result is a u32 as `size` is valid (it has been checked)
+        let kept_data_blocks_number = unsafe { u32::try_from(size / u64::from(fs.superblock().block_size())).unwrap_unchecked() };
+        let mut indirection_blocks = self.inode.indirected_blocks(&fs.device, fs.superblock())?;
+        indirection_blocks.truncate_back_data_blocks(previous_data_block_number);
+        let symmetrical_difference =
+            indirection_blocks.truncate_front_data_blocks(previous_data_block_number - kept_data_blocks_number);
+
+        let mut deallocated_blocks = symmetrical_difference.changed_data_blocks();
+        deallocated_blocks.append(
+            &mut symmetrical_difference
+                .changed_indirected_blocks()
+                .into_iter()
+                .map(|(_, (indirection_block, _))| indirection_block)
+                .collect_vec(),
+        );
+        fs.deallocate_blocks(&deallocated_blocks)?;
 
         drop(fs);
 
@@ -778,7 +797,7 @@ mod test {
     use itertools::Itertools;
 
     use crate::dev::sector::Address;
-    use crate::file::{Type, TypeWithFile};
+    use crate::file::{Regular, Type, TypeWithFile};
     use crate::fs::ext2::directory::Entry;
     use crate::fs::ext2::file::Directory;
     use crate::fs::ext2::inode::{Inode, TypePermissions, ROOT_DIRECTORY_INODE};
@@ -1282,5 +1301,51 @@ mod test {
         assert_eq!(gid, 2);
 
         fs::remove_file("./tests/fs/ext2/io_operations_copy_file_mode.ext2").unwrap();
+    }
+
+    #[test]
+    fn file_truncation() {
+        const BYTES_TO_WRITE: usize = 400_000;
+
+        fs::copy("./tests/fs/ext2/io_operations.ext2", "./tests/fs/ext2/io_operations_copy_file_truncation.ext2").unwrap();
+
+        let file = RefCell::new(
+            File::options()
+                .read(true)
+                .write(true)
+                .open("./tests/fs/ext2/io_operations_copy_file_truncation.ext2")
+                .unwrap(),
+        );
+        let ext2 = Celled::new(Ext2::new(file, 0).unwrap());
+        let TypeWithFile::Directory(root) = ext2.file(ROOT_DIRECTORY_INODE).unwrap() else {
+            panic!("The root is always a directory.")
+        };
+        let TypeWithFile::Regular(mut foo) =
+            crate::file::Directory::entry(&root, UnixStr::new("foo.txt").unwrap()).unwrap().unwrap()
+        else {
+            panic!("`foo.txt` has been created as a regular file")
+        };
+
+        let initial_free_block_number = ext2.borrow().superblock().base().free_blocks_count;
+        let initial_foo_size = foo.file.inode.data_size();
+
+        let replace_text = vec![b'a'; BYTES_TO_WRITE];
+        foo.write(&replace_text).unwrap();
+        foo.flush().unwrap();
+
+        assert_eq!(foo.file.inode.data_size(), BYTES_TO_WRITE as u64);
+
+        foo.truncate(10000).unwrap();
+
+        assert_eq!(foo.file.inode.data_size(), 10000);
+        assert_eq!(foo.read_all().unwrap().len(), 10000);
+
+        foo.truncate(initial_foo_size).unwrap();
+        let new_free_block_number = ext2.borrow().superblock().base().free_blocks_count;
+
+        assert_eq!(foo.file.inode.data_size(), initial_foo_size);
+        assert!(new_free_block_number >= initial_free_block_number); // Non used blocks could be deallocated
+
+        fs::remove_file("./tests/fs/ext2/io_operations_copy_file_truncation.ext2").unwrap();
     }
 }

@@ -61,6 +61,13 @@ pub trait FileSystem<Dir: Directory> {
         permissions: Permissions,
     ) -> Result<TypeWithFile<Dir>, Error<Dir::Error>>;
 
+    /// Removes the file at the given `path`.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`DevError`](crate::dev::error::DevError) if the device could not be read/written.
+    fn remove_file(&mut self, path: Path<'_>) -> Result<(), Error<Dir::Error>>;
+
     /// Performs a pathname resolution as described in [this POSIX definition](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap04.html#tag_04_13).
     ///
     /// Returns the file of this filesystem corresponding to the given `path`, starting at the `current_dir`.

@@ -635,6 +635,29 @@ impl<Dev: Device<u8, Ext2Error>> FileSystem<Directory<Dev>> for Celled<Ext2<Dev>
             file,
         })
     }
+
+    fn remove_file(&mut self, path: Path<'_>) -> Result<(), Error<<Directory<Dev> as crate::file::File>::Error>> {
+        if path.is_relative() {
+            return Err(Error::Path(PathError::AbsolutePathRequired(path.to_string())));
+        }
+
+        let Some(parent_dir_path) = path.parent() else { return Err(Error::Fs(FsError::EntryAlreadyExist(path.to_string()))) };
+        let parent_dir_file = self.get_file(&parent_dir_path, self.root()?, true)?;
+        let mut parent_dir = match parent_dir_file {
+            TypeWithFile::Directory(dir) => dir,
+            TypeWithFile::Regular(_)
+            | TypeWithFile::SymbolicLink(_)
+            | TypeWithFile::Fifo(_)
+            | TypeWithFile::CharacterDevice(_)
+            | TypeWithFile::BlockDevice(_)
+            | TypeWithFile::Socket(_) => {
+                return Err(Error::Fs(FsError::WrongFileType(Type::Directory, parent_dir_file.into())));
+            },
+        };
+
+        // SAFETY: the path is absolute and is not reduced to "/" or to "//"
+        crate::file::Directory::remove_entry(&mut parent_dir, unsafe { path.file_name().unwrap_unchecked() })
+    }
 }
 
 #[cfg(test)]

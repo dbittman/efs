@@ -710,7 +710,7 @@ impl Inode {
         mut offset: u64,
     ) -> Result<usize, Error<Ext2Error>> {
         let indirected_blocks = self.indirected_blocks(celled_device, superblock)?;
-        let blocks = indirected_blocks.flatten();
+        let blocks = indirected_blocks.flatten_data_blocks();
 
         let device = celled_device.borrow();
         let buffer_length = buffer.len();
