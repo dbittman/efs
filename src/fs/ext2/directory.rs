@@ -15,7 +15,7 @@ use crate::error::Error;
 use crate::fs::error::FsError;
 
 /// Subset of the [`Entry`] structure to make easier its read on the device.
-#[repr(packed)]
+#[repr(C, packed)]
 #[derive(Debug, Clone, Copy)]
 struct Subfields {
     /// Inode index.

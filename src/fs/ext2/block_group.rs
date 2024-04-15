@@ -17,7 +17,7 @@ pub const BLOCK_GROUP_DESCRIPTOR_SIZE: usize = 32;
 /// Block group descriptor.
 ///
 /// Contains information regarding where important data structures for that block group are located.
-#[repr(packed)]
+#[repr(C, packed)]
 #[derive(Debug, Clone, Copy)]
 #[allow(clippy::module_name_repetitions)]
 pub struct BlockGroupDescriptor {

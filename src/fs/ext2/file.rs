@@ -11,7 +11,7 @@ use itertools::Itertools;
 
 use super::directory::Entry;
 use super::error::Ext2Error;
-use super::inode::{Inode, TypePermissions};
+use super::inode::Inode;
 use super::{Celled, Ext2};
 use crate::dev::sector::Address;
 use crate::dev::Device;
@@ -24,6 +24,11 @@ use crate::fs::ext2::inode::DIRECT_BLOCK_POINTER_COUNT;
 use crate::fs::PATH_MAX;
 use crate::io::{Base, Read, Seek, SeekFrom, Write};
 use crate::types::{Blkcnt, Blksize, Gid, Ino, Mode, Nlink, Off, Time, Timespec, Uid};
+
+/// Minimal allocation in bytes for a file.
+///
+/// This does not directly come from an ext2's doc but [this paragraph](https://www.kernel.org/doc/html/v6.7/filesystems/ext4/overview.html#block-and-inode-allocation-policy) from the ext4's doc.
+pub const MINIMAL_FILE_ALLOCATION: u64 = 8_192;
 
 /// Limit in bytes for the length of a pointed path of a symbolic link to be store in an inode and not in a separate data block.
 pub const SYMBOLIC_LINK_INODE_STORE_LIMIT: usize = 60;
@@ -225,7 +230,7 @@ impl<Dev: Device<u8, Ext2Error>> file::File for File<Dev> {
 
     fn set_mode(&mut self, mode: Mode) -> Result<(), Error<Self::Error>> {
         let mut new_inode = self.inode;
-        new_inode.mode = *mode;
+        new_inode.mode = *mode | self.inode.type_permissions().file_type().bits();
         // SAFETY: only the mode has changed
         unsafe { self.set_inode(&new_inode) }
     }
@@ -245,11 +250,32 @@ impl<Dev: Device<u8, Ext2Error>> file::File for File<Dev> {
     }
 }
 
-/// Implementation of a regular file.
-#[derive(Debug)]
-pub struct Regular<Dev: Device<u8, Ext2Error>> {
-    /// Inner file containing the regular file.
-    file: File<Dev>,
+macro_rules! impl_file {
+    ($id:ident) => {
+        impl<Dev: Device<u8, Ext2Error>> crate::file::File for $id<Dev> {
+            type Error = Ext2Error;
+
+            fn stat(&self) -> Stat {
+                self.file.stat()
+            }
+
+            fn get_type(&self) -> file::Type {
+                self.file.get_type()
+            }
+
+            fn set_mode(&mut self, mode: Mode) -> Result<(), Error<Self::Error>> {
+                self.file.set_mode(mode)
+            }
+
+            fn set_uid(&mut self, uid: Uid) -> Result<(), Error<Self::Error>> {
+                self.file.set_uid(uid)
+            }
+
+            fn set_gid(&mut self, gid: Gid) -> Result<(), Error<Self::Error>> {
+                self.file.set_gid(gid)
+            }
+        }
+    };
 }
 
 impl<Dev: Device<u8, Ext2Error>> Base for File<Dev> {
@@ -282,7 +308,7 @@ impl<Dev: Device<u8, Ext2Error>> Write for File<Dev> {
         }
 
         // Calcul of the number of needed data blocks
-        let bytes_to_write = buf_len as u64;
+        let bytes_to_write = (buf_len as u64).max(MINIMAL_FILE_ALLOCATION);
         let data_blocks_needed =
             // SAFETY: there are at most u32::MAX blocks on the filesystem
             1 + unsafe { u32::try_from((bytes_to_write + self.io_offset - 1) / block_size).unwrap_unchecked() };
@@ -337,9 +363,11 @@ impl<Dev: Device<u8, Ext2Error>> Write for File<Dev> {
 
         for block_number in changed_data_blocks_iterator {
             let mut block = Block::new(self.filesystem.clone(), *block_number);
-            let buffer_end = buf
-                .get(written_bytes..written_bytes + (superblock.base().blocks_per_group as usize).min(buf_len - written_bytes))
-                .expect("The buffer have a size that does not correspond to the calculated number of data blocks.");
+            let Some(buffer_end) =
+                buf.get(written_bytes..written_bytes + (superblock.base().blocks_per_group as usize).min(buf_len - written_bytes))
+            else {
+                break;
+            };
 
             let new_written_bytes = block.write(buffer_end)?;
             if new_written_bytes == 0 {
@@ -421,6 +449,13 @@ impl<Dev: Device<u8, Ext2Error>> Seek for File<Dev> {
     }
 }
 
+/// Implementation of a regular file.
+#[derive(Debug)]
+pub struct Regular<Dev: Device<u8, Ext2Error>> {
+    /// Inner file containing the generic file.
+    file: File<Dev>,
+}
+
 impl<Dev: Device<u8, Ext2Error>> Regular<Dev> {
     /// Returns a new ext2's [`Regular`] from an [`Ext2`] instance and the inode number of the file.
     ///
@@ -451,35 +486,7 @@ impl<Dev: Device<u8, Ext2Error>> Regular<Dev> {
     }
 }
 
-impl<Dev: Device<u8, Ext2Error>> file::File for Regular<Dev> {
-    type Error = Ext2Error;
-
-    #[inline]
-    fn stat(&self) -> Stat {
-        self.file.stat()
-    }
-
-    #[inline]
-    fn get_type(&self) -> file::Type {
-        self.file.get_type()
-    }
-
-    #[inline]
-    fn set_mode(&mut self, mode: Mode) -> Result<(), Error<Self::Error>> {
-        self.file
-            .set_mode(Mode((TypePermissions::from_bits_truncate(*mode) | TypePermissions::from(self.file.get_type())).bits()))
-    }
-
-    #[inline]
-    fn set_uid(&mut self, uid: Uid) -> Result<(), Error<Self::Error>> {
-        self.file.set_uid(uid)
-    }
-
-    #[inline]
-    fn set_gid(&mut self, gid: Gid) -> Result<(), Error<Self::Error>> {
-        self.file.set_gid(gid)
-    }
-}
+impl_file!(Regular);
 
 impl<Dev: Device<u8, Ext2Error>> Base for Regular<Dev> {
     type IOError = Ext2Error;
@@ -521,7 +528,7 @@ impl<Dev: Device<u8, Ext2Error>> file::Regular for Regular<Dev> {
 /// Interface for ext2's directories.
 #[derive(Debug)]
 pub struct Directory<Dev: Device<u8, Ext2Error>> {
-    /// Inner file containing the regular file.
+    /// Inner file containing the generic file.
     file: File<Dev>,
 
     /// Entries contained in this directory.
@@ -558,34 +565,7 @@ impl<Dev: Device<u8, Ext2Error>> Directory<Dev> {
     }
 }
 
-impl<Dev: Device<u8, Ext2Error>> file::File for Directory<Dev> {
-    type Error = Ext2Error;
-
-    #[inline]
-    fn stat(&self) -> Stat {
-        self.file.stat()
-    }
-
-    #[inline]
-    fn get_type(&self) -> file::Type {
-        self.file.get_type()
-    }
-
-    #[inline]
-    fn set_mode(&mut self, mode: Mode) -> Result<(), Error<Self::Error>> {
-        self.file.set_mode(mode)
-    }
-
-    #[inline]
-    fn set_uid(&mut self, uid: Uid) -> Result<(), Error<Self::Error>> {
-        self.file.set_uid(uid)
-    }
-
-    #[inline]
-    fn set_gid(&mut self, gid: Gid) -> Result<(), Error<Self::Error>> {
-        self.file.set_gid(gid)
-    }
-}
+impl_file!(Directory);
 
 impl<Dev: Device<u8, Ext2Error>> file::Directory for Directory<Dev> {
     type BlockDev = BlockDevice<Dev>;
@@ -624,7 +604,7 @@ impl<Dev: Device<u8, Ext2Error>> file::Directory for Directory<Dev> {
 /// Interface for ext2's symbolic links.
 #[derive(Debug)]
 pub struct SymbolicLink<Dev: Device<u8, Ext2Error>> {
-    /// Inner file containing the symbolic link.
+    /// Inner file containing the generic file.
     file: File<Dev>,
 
     /// Read/Write offset (can be manipulated with [`Seek`]).
@@ -667,34 +647,7 @@ impl<Dev: Device<u8, Ext2Error>> SymbolicLink<Dev> {
     }
 }
 
-impl<Dev: Device<u8, Ext2Error>> file::File for SymbolicLink<Dev> {
-    type Error = Ext2Error;
-
-    #[inline]
-    fn stat(&self) -> Stat {
-        self.file.stat()
-    }
-
-    #[inline]
-    fn get_type(&self) -> file::Type {
-        self.file.get_type()
-    }
-
-    #[inline]
-    fn set_mode(&mut self, mode: Mode) -> Result<(), Error<Self::Error>> {
-        self.file.set_mode(mode)
-    }
-
-    #[inline]
-    fn set_uid(&mut self, uid: Uid) -> Result<(), Error<Self::Error>> {
-        self.file.set_uid(uid)
-    }
-
-    #[inline]
-    fn set_gid(&mut self, gid: Gid) -> Result<(), Error<Self::Error>> {
-        self.file.set_gid(gid)
-    }
-}
+impl_file!(SymbolicLink);
 
 impl<Dev: Device<u8, Ext2Error>> file::SymbolicLink for SymbolicLink<Dev> {
     #[inline]
@@ -707,17 +660,37 @@ impl<Dev: Device<u8, Ext2Error>> file::SymbolicLink for SymbolicLink<Dev> {
         let bytes = pointed_file.as_bytes();
 
         if bytes.len() > PATH_MAX {
-            Err(Error::Fs(FsError::NameTooLong(pointed_file.to_owned())))
+            return Err(Error::Fs(FsError::NameTooLong(pointed_file.to_owned())));
         } else if bytes.len() > SYMBOLIC_LINK_INODE_STORE_LIMIT {
+            if self.pointed_file.len() <= SYMBOLIC_LINK_INODE_STORE_LIMIT {
+                let mut new_inode = self.file.inode;
+
+                let data_ptr = addr_of_mut!(new_inode.direct_block_pointers).cast::<u8>();
+                // SAFETY: there are `SYMBOLIC_LINK_INODE_STORE_LIMIT` bytes available to store the data
+                let data_slice = unsafe { core::slice::from_raw_parts_mut(data_ptr, SYMBOLIC_LINK_INODE_STORE_LIMIT) };
+                data_slice.clone_from_slice(&[b'\0'; SYMBOLIC_LINK_INODE_STORE_LIMIT]);
+
+                let fs = self.file.filesystem.borrow();
+                let starting_addr = Inode::starting_addr(&fs.device, fs.superblock(), self.file.inode_number)?;
+                // SAFETY: the starting address correspond to the one of this inode
+                unsafe {
+                    fs.device.borrow_mut().write_at(starting_addr, new_inode)?;
+                };
+
+                drop(fs);
+
+                self.file.update_inner_inode()?;
+            }
+
             self.file.seek(SeekFrom::Start(0))?;
             self.file.write(bytes)?;
-            self.file.truncate(bytes.len() as u64)
+            self.file.truncate(bytes.len() as u64)?;
         } else {
             let mut new_inode = self.file.inode;
             // SAFETY: `bytes.len() < PATH_MAX << u32::MAX`
             new_inode.size = unsafe { u32::try_from(bytes.len()).unwrap_unchecked() };
 
-            let data_ptr = addr_of_mut!(new_inode.blocks).cast::<u8>();
+            let data_ptr = addr_of_mut!(new_inode.direct_block_pointers).cast::<u8>();
             // SAFETY: there are `SYMBOLIC_LINK_INODE_STORE_LIMIT` bytes available to store the data
             let data_slice = unsafe { core::slice::from_raw_parts_mut(data_ptr, bytes.len()) };
             data_slice.clone_from_slice(bytes);
@@ -731,39 +704,23 @@ impl<Dev: Device<u8, Ext2Error>> file::SymbolicLink for SymbolicLink<Dev> {
 
             drop(fs);
 
-            self.file.update_inner_inode()
+            self.file.update_inner_inode()?;
         }
+
+        self.pointed_file = pointed_file.to_owned();
+        Ok(())
     }
 }
 
 macro_rules! generic_file {
     ($id:ident) => {
         #[doc = concat!("Basic implementation of a [`", stringify!($id), "`](crate::file::", stringify!($id), ") for ext2.")]
-        pub struct $id<Dev: Device<u8, Ext2Error>>(File<Dev>);
-
-        impl<Dev: Device<u8, Ext2Error>> crate::file::File for $id<Dev> {
-            type Error = Ext2Error;
-
-            fn stat(&self) -> Stat {
-                self.0.stat()
-            }
-
-            fn get_type(&self) -> file::Type {
-                self.0.get_type()
-            }
-
-            fn set_mode(&mut self, mode: Mode) -> Result<(), Error<Self::Error>> {
-                self.0.set_mode(mode)
-            }
-
-            fn set_uid(&mut self, uid: Uid) -> Result<(), Error<Self::Error>> {
-                self.0.set_uid(uid)
-            }
-
-            fn set_gid(&mut self, gid: Gid) -> Result<(), Error<Self::Error>> {
-                self.0.set_gid(gid)
-            }
+        pub struct $id<Dev: Device<u8, Ext2Error>> {
+            /// Inner file containing the generic file.
+            file: File<Dev>,
         }
+
+        impl_file!($id);
 
         impl<Dev: Device<u8, Ext2Error>> $id<Dev> {
             #[doc = concat!("Returns a new ext2's [`", stringify!($id), "`] from an [`Ext2`] instance and the inode number of the file.")]
@@ -773,7 +730,7 @@ macro_rules! generic_file {
             /// Returns the same errors as [`File::new`].
             #[inline]
             pub fn new(filesystem: &Celled<Ext2<Dev>>, inode_number: u32) -> Result<Self, Error<Ext2Error>> {
-                Ok(Self(File::new(filesystem, inode_number)?))
+                Ok(Self { file: File::new(filesystem, inode_number)? })
             }
         }
 
@@ -797,7 +754,7 @@ mod test {
     use itertools::Itertools;
 
     use crate::dev::sector::Address;
-    use crate::file::{Regular, Type, TypeWithFile};
+    use crate::file::{Regular, SymbolicLink, Type, TypeWithFile};
     use crate::fs::ext2::directory::Entry;
     use crate::fs::ext2::file::Directory;
     use crate::fs::ext2::inode::{Inode, TypePermissions, ROOT_DIRECTORY_INODE};
@@ -1347,5 +1304,45 @@ mod test {
         assert!(new_free_block_number >= initial_free_block_number); // Non used blocks could be deallocated
 
         fs::remove_file("./tests/fs/ext2/io_operations_copy_file_truncation.ext2").unwrap();
+    }
+
+    #[test]
+    fn file_simlinks() {
+        fs::copy("./tests/fs/ext2/io_operations.ext2", "./tests/fs/ext2/io_operations_copy_file_simlinks.ext2").unwrap();
+
+        let file = RefCell::new(
+            File::options()
+                .read(true)
+                .write(true)
+                .open("./tests/fs/ext2/io_operations_copy_file_simlinks.ext2")
+                .unwrap(),
+        );
+        let ext2 = Celled::new(Ext2::new(file, 0).unwrap());
+        let TypeWithFile::Directory(root) = ext2.file(ROOT_DIRECTORY_INODE).unwrap() else {
+            panic!("The root is always a directory.");
+        };
+        let TypeWithFile::SymbolicLink(mut bar) =
+            crate::file::Directory::entry(&root, UnixStr::new("bar.txt").unwrap()).unwrap().unwrap()
+        else {
+            panic!("`bar.txt` has been created as a symbolic link");
+        };
+
+        assert_eq!(crate::file::File::get_type(&bar), Type::SymbolicLink);
+
+        assert_eq!(bar.get_pointed_file().unwrap(), "foo.txt");
+        assert_eq!(bar.file.inode.data_size(), 7);
+
+        bar.set_pointed_file("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+            .unwrap();
+        assert_eq!(bar.get_pointed_file().unwrap(), "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        assert_eq!(bar.file.read_all().unwrap(), b"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        assert_eq!(bar.file.inode.data_size(), 70);
+
+        bar.set_pointed_file("foo.txt").unwrap();
+        assert_eq!(bar.get_pointed_file().unwrap(), "foo.txt");
+        assert!(bar.file.read_all().is_err());
+        assert_eq!(bar.file.inode.data_size(), 7);
+
+        fs::remove_file("./tests/fs/ext2/io_operations_copy_file_simlinks.ext2").unwrap();
     }
 }

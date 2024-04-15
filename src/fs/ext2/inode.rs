@@ -45,7 +45,7 @@ pub const UNDELETED_DIRECTORY_INODE: u32 = 6;
 /// Inode.
 ///
 /// **Inode addresses start at 1.**
-#[repr(packed)]
+#[repr(C, packed)]
 #[derive(Debug, Clone, Copy)]
 pub struct Inode {
     /// Type and Permissions.
@@ -118,6 +118,7 @@ pub struct Inode {
     pub osd2: [u8; 12],
 }
 
+#[cfg(test)]
 impl PartialEq for Inode {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
@@ -142,8 +143,6 @@ impl PartialEq for Inode {
             && self.osd2 == other.osd2
     }
 }
-
-impl Eq for Inode {}
 
 bitflags! {
     /// Indicators of the inode type and permissions.
@@ -235,6 +234,15 @@ impl From<Type> for TypePermissions {
             Type::BlockDevice => Self::BLOCK_DEVICE,
             Type::Socket => Self::SOCKET,
         }
+    }
+}
+
+impl TypePermissions {
+    /// Returns the type component of the [`TypePermissions`].
+    #[inline]
+    #[must_use]
+    pub const fn file_type(self) -> Self {
+        Self::from_bits_truncate((self.bits() >> 12) << 12)
     }
 }
 
@@ -701,6 +709,10 @@ impl Inode {
     /// # Errors
     ///
     /// Returns an [`Error`] if the device could not be read.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the data block starting addresses do not fit on a [`usize`].
     #[inline]
     pub fn read_data<Dev: Device<u8, Ext2Error>>(
         &self,
@@ -723,7 +735,10 @@ impl Inode {
 
             if offset == 0 {
                 let count = (superblock.block_size() as usize).min(buffer_length - read_bytes);
-                let block_addr = Address::from((block_number * superblock.block_size()) as usize);
+                let block_addr = Address::from(
+                    usize::try_from(u64::from(block_number) * u64::from(superblock.block_size()))
+                        .expect("Could not fit the requested block address on a usize"),
+                );
                 let slice = device.slice(block_addr..block_addr + count)?;
 
                 // SAFETY: buffer contains at least `block_size.min(remaining_bytes_count)` since `remaining_bytes_count <=

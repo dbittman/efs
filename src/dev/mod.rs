@@ -397,6 +397,7 @@ impl<E: core::error::Error> Device<u8, E> for RefCell<File> {
             ))
         })?;
         let mut slice = alloc::vec![0; len];
+        let file_size = Device::<u8, E>::size(self);
         let mut file = self.borrow_mut();
         match file
             .seek(std::io::SeekFrom::Start(starting_addr.index().try_into().expect("Could not convert `usize` to `u64`")))
@@ -409,7 +410,7 @@ impl<E: core::error::Error> Device<u8, E> for RefCell<File> {
                         "address",
                         // SAFETY: `usize::MAX <= i128::MAX`
                         unsafe { i128::try_from(usize::from(starting_addr + len)).unwrap_unchecked() },
-                        (0, Device::<u8, E>::size(self).0.into()),
+                        (0, file_size.0.into()),
                     )))
                 } else {
                     Err(Error::IO(err))

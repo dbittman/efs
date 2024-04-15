@@ -28,7 +28,7 @@ pub const SUPERBLOCK_SIZE: usize = 1024;
 ///
 /// See the [`ExtendedFields`] struct for the extended fields of the superblock (if the [`major
 /// version`](struct.Base.html#structfield.rev_level) is greater than or equal to 1).
-#[repr(packed)]
+#[repr(C, packed)]
 #[derive(Debug, Clone, Copy)]
 pub struct Base {
     /// Total number of inodes in file system
@@ -116,6 +116,7 @@ pub struct Base {
     pub def_resgid: u16,
 }
 
+#[cfg(test)]
 impl PartialEq for Base {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
@@ -142,8 +143,6 @@ impl PartialEq for Base {
             && self.def_resgid == other.def_resgid
     }
 }
-
-impl Eq for Base {}
 
 /// File System States.
 ///
@@ -373,7 +372,7 @@ impl Base {
 ///
 /// These fields are only present if [`major`](struct.Base.html#structfield.rev_level) version is greater than or equal to
 /// 1.
-#[repr(packed)]
+#[repr(C, packed)]
 #[derive(Debug, Clone, Copy)]
 pub struct ExtendedFields {
     /// First non-reserved inode in file system. (In versions < 1.0, this is fixed as 11)
@@ -445,6 +444,7 @@ pub struct ExtendedFields {
     pub first_meta_bg: u32,
 }
 
+#[cfg(test)]
 impl PartialEq for ExtendedFields {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
@@ -471,8 +471,6 @@ impl PartialEq for ExtendedFields {
             && self.first_meta_bg == other.first_meta_bg
     }
 }
-
-impl Eq for ExtendedFields {}
 
 bitflags! {
     /// These are optional features for an implementation to support, but offer performance or reliability gains to
@@ -610,7 +608,7 @@ impl ExtendedFields {
 }
 
 /// Superblock of the Ext2 filesystem.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub enum Superblock {
     /// Basic superblock (with a [`major version`](struct.Base.html#structfield.rev_level) lower than 1)
     Basic(Base),
