@@ -313,7 +313,12 @@ impl<Dev: Device<u8, Ext2Error>> Write for File<Dev> {
             // SAFETY: there are at most u32::MAX blocks on the filesystem
             1 + unsafe { u32::try_from((bytes_to_write + self.io_offset - 1) / block_size).unwrap_unchecked() };
 
-        let indirected_blocks = self.inode.indirected_blocks(&fs.device, fs.superblock())?;
+        let mut indirected_blocks: IndirectedBlocks<12> = self.inode.indirected_blocks(&fs.device, fs.superblock())?;
+        // SAFETY: there are at most u32::MAX blocks on the filesystem
+        indirected_blocks.truncate_back_data_blocks(unsafe {
+            // In case of blocks that are not used and not 0
+            1 + u32::try_from((self.inode.data_size().max(MINIMAL_FILE_ALLOCATION) - 1) / block_size).unwrap_unchecked()
+        });
 
         let current_data_block_count = indirected_blocks.data_block_count();
         let data_blocks_to_request = data_blocks_needed.saturating_sub(current_data_block_count);

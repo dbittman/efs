@@ -527,6 +527,10 @@ impl<const DBPC: u32> IndirectedBlocks<DBPC> {
     ///
     /// In other words, only the `n` first data blocks will be kept.
     pub fn truncate_back_data_blocks(&mut self, mut n: u32) {
+        if n > self.data_block_count() {
+            return;
+        }
+
         if n <= DBPC {
             self.direct_blocks.drain(n as usize..);
             self.singly_indirected_blocks = (0, Vec::new());
