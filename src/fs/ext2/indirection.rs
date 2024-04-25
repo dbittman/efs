@@ -46,21 +46,18 @@ trait Indirected {
 }
 
 impl Indirected for DirectBlocks {
-    #[inline]
     fn resolve_indirection(&self, offset: u32, _blocks_per_indirection: u32) -> Option<u32> {
         self.get(offset as usize).copied()
     }
 }
 
 impl Indirected for SimpleIndirection {
-    #[inline]
     fn resolve_indirection(&self, offset: u32, _blocks_per_indirection: u32) -> Option<u32> {
         self.1.get(offset as usize).copied()
     }
 }
 
 impl Indirected for DoubleIndirection {
-    #[inline]
     fn resolve_indirection(&self, offset: u32, blocks_per_indirection: u32) -> Option<u32> {
         let double_indirection_index = offset / blocks_per_indirection;
         let simple_indirection_index = offset % blocks_per_indirection;
@@ -73,7 +70,6 @@ impl Indirected for DoubleIndirection {
 }
 
 impl Indirected for TripleIndirection {
-    #[inline]
     fn resolve_indirection(&self, offset: u32, blocks_per_indirection: u32) -> Option<u32> {
         let triple_indirection_index = offset / (blocks_per_indirection * blocks_per_indirection);
         let double_indirection_index = offset % (blocks_per_indirection * blocks_per_indirection);
@@ -110,7 +106,7 @@ pub struct IndirectedBlocks<const DBPC: u32> {
 
 impl<const DBPC: u32> IndirectedBlocks<DBPC> {
     /// Creates a new instance from complete list of data blocks.
-    #[inline]
+
     #[must_use]
     pub(crate) fn new(
         blocks_per_indirection: u32,
@@ -129,7 +125,7 @@ impl<const DBPC: u32> IndirectedBlocks<DBPC> {
     }
 
     /// Returns every data block with the indirected blocks.
-    #[inline]
+
     #[must_use]
     pub fn blocks(self) -> (DirectBlocks, SimpleIndirection, DoubleIndirection, TripleIndirection) {
         (self.direct_blocks, self.singly_indirected_blocks, self.doubly_indirected_blocks, self.triply_indirected_blocks)
@@ -137,7 +133,7 @@ impl<const DBPC: u32> IndirectedBlocks<DBPC> {
 
     /// Returns the complete list of block numbers containing this inode's data (indirect blocks are not considered) in a single
     /// continuous vector.
-    #[inline]
+
     #[must_use]
     pub fn flatten_data_blocks_with_indirection(&self) -> Vec<(u32, (Indirection, u32))> {
         let block_with_indirection = |indirection| {
@@ -233,7 +229,7 @@ impl<const DBPC: u32> IndirectedBlocks<DBPC> {
 
     /// Returns the complete list of block numbers containing this inode's data (indirect blocks are not considered) in a single
     /// continuous vector.
-    #[inline]
+
     #[must_use]
     pub fn flatten_data_blocks(&self) -> Vec<u32> {
         self.flatten_data_blocks_with_indirection()
@@ -246,7 +242,6 @@ impl<const DBPC: u32> IndirectedBlocks<DBPC> {
     ///
     /// Returns [`None`] if the offset points a block outside the range of this structure.
     #[allow(clippy::suspicious_operation_groupings)]
-    #[inline]
     #[must_use]
     pub const fn block_at_offset_remainging_in_indirection(offset: u32, blocks_per_indirection: u32) -> Option<(Indirection, u32)> {
         if offset < 12 {
@@ -272,7 +267,7 @@ impl<const DBPC: u32> IndirectedBlocks<DBPC> {
     /// This is easily usable in pair with
     /// [`block_at_offset_remainging_in_indirection`](struct.IndirectedBlocks.html#method.block_at_offset_remainging_in_indirection)
     /// or with [`last_data_block_allocated`](struct.IndirectedBlocks.html#method.last_data_block_allocated).
-    #[inline]
+
     #[must_use]
     pub fn block_at_offset_in_indirection(&self, indirection: Indirection, offset: u32) -> Option<u32> {
         match indirection {
@@ -284,7 +279,7 @@ impl<const DBPC: u32> IndirectedBlocks<DBPC> {
     }
 
     /// Returns the block at the given offset.
-    #[inline]
+
     #[must_use]
     pub fn block_at_offset(&self, offset: u32) -> Option<u32> {
         let (indirection, remaining_offset) = Self::block_at_offset_remainging_in_indirection(offset, self.blocks_per_indirection)?;
@@ -293,7 +288,7 @@ impl<const DBPC: u32> IndirectedBlocks<DBPC> {
 
     /// Returns the last allocated block of the complete structure, if it exists, with its indirection and its the remaining offset
     /// in the redirection.
-    #[inline]
+
     #[must_use]
     pub fn last_data_block_allocated(&self) -> Option<(u32, (Indirection, u32))> {
         let last_triply_indirected = self
@@ -360,7 +355,7 @@ impl<const DBPC: u32> IndirectedBlocks<DBPC> {
     }
 
     /// Returns the total number of data blocks.
-    #[inline]
+
     #[must_use]
     pub fn data_block_count(&self) -> u32 {
         match self.last_data_block_allocated() {
@@ -382,7 +377,7 @@ impl<const DBPC: u32> IndirectedBlocks<DBPC> {
     /// Returns the number of necessary indirection blocks to have `data_block_count` blocks of data.
     ///
     /// Returns [`None`] if the given number of data blocks cannot fit on this structure.
-    #[inline]
+
     #[must_use]
     pub const fn necessary_indirection_block_count(mut data_block_count: u32, blocks_per_indirection: u32) -> u32 {
         if data_block_count <= DBPC {
@@ -413,7 +408,7 @@ impl<const DBPC: u32> IndirectedBlocks<DBPC> {
     }
 
     /// Returns the total number of indirection blocks.
-    #[inline]
+
     #[must_use]
     pub fn indirection_block_count(&self) -> u32 {
         Self::necessary_indirection_block_count(self.data_block_count(), self.blocks_per_indirection)
@@ -424,7 +419,6 @@ impl<const DBPC: u32> IndirectedBlocks<DBPC> {
     /// The given blocks are used **both for data and indirection blocks**.
     ///
     /// If more blocks than necessary to complete all the structure, only the first one will be used.
-    #[inline]
     pub fn append_blocks(&mut self, blocks: &[u32]) {
         let blocks_per_indirection = self.blocks_per_indirection as usize;
 
@@ -581,7 +575,7 @@ impl<const DBPC: u32> IndirectedBlocks<DBPC> {
     /// Truncates the start of the indirected blocks at the `n`th data block (excluded).
     ///
     /// In other words, all the data blocks but the `n` firsts will be kept.
-    #[inline]
+
     #[must_use]
     pub fn truncate_front_data_blocks(self, mut n: u32) -> SymmetricDifference<DBPC> {
         let blocks_per_indirection = self.blocks_per_indirection;
@@ -658,7 +652,6 @@ impl<const DBPC: u32> IndirectedBlocks<DBPC> {
     ///
     /// If the `offset` is [`None`], only the added blocks are considered as modified.
     #[allow(clippy::too_many_lines)]
-    #[inline]
     #[must_use]
     pub(crate) fn append_blocks_with_difference(&self, blocks: &[u32], offset: Option<u32>) -> (Self, SymmetricDifference<DBPC>) {
         let (last_indirection, last_index) = match offset {

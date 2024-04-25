@@ -54,11 +54,11 @@ pub trait FileSystem<Dir: Directory> {
     /// Returns a [`DevError`](crate::dev::error::DevError) if the device could not be read/written.
     fn create_file(
         &mut self,
-        path: Path<'_>,
+        path: &Path<'_>,
         file_type: Type,
-        uid: Uid,
-        gid: Gid,
         permissions: Permissions,
+        user_id: Uid,
+        group_id: Gid,
     ) -> Result<TypeWithFile<Dir>, Error<Dir::Error>>;
 
     /// Removes the file at the given `path`.
@@ -86,14 +86,13 @@ pub trait FileSystem<Dir: Directory> {
     /// Returns an [`NameTooLong`](FsError::NameTooLong) error if the complete path contains more than [`PATH_MAX`] characters.
     ///
     /// Returns an [`NoEnt`](FsError::NoEnt) error if an encountered symlink points to a non-existing file.
-    #[inline]
+
     fn get_file(&self, path: &Path, current_dir: Dir, symlink_resolution: bool) -> Result<TypeWithFile<Dir>, Error<Dir::Error>>
     where
         Self: Sized,
     {
         /// Auxiliary function used to store the visited symlinks during the pathname resolution to detect loops caused bt symbolic
         /// links.
-        #[inline]
         fn path_resolution<E: core::error::Error, D: Directory<Error = E>>(
             fs: &impl FileSystem<D>,
             path: &Path,
@@ -158,9 +157,8 @@ pub trait FileSystem<Dir: Directory> {
                             //   3. The function is required to act on the symbolic link itself, or certain arguments direct that
                             //      the function act on the symbolic link itself.
                             TypeWithFile::SymbolicLink(symlink)
-                                if (pos != Position::Last && pos != Position::Only)
-                                    || !trailing_blackslash
-                                    || !symlink_resolution =>
+                                if (pos != Position::Last && pos != Position::Only && !trailing_blackslash)
+                                    || symlink_resolution =>
                             {
                                 let pointed_file = SymbolicLink::get_pointed_file(&symlink)?.to_owned();
                                 if pointed_file.is_empty() {
@@ -248,7 +246,7 @@ pub trait ReadOnlyFileSystem<RoDir: ReadOnlyDirectory> {
     /// Returns an [`NameTooLong`](FsError::NameTooLong) error if the complete path contains more than [`PATH_MAX`] characters.
     ///
     /// Returns an [`NoEnt`](FsError::NoEnt) error if an encountered symlink points to a non-existing file.
-    #[inline]
+
     fn get_file(
         &self,
         path: &Path,
@@ -260,7 +258,6 @@ pub trait ReadOnlyFileSystem<RoDir: ReadOnlyDirectory> {
     {
         /// Auxiliary function used to store the visited symlinks during the pathname resolution to detect loops caused bt symbolic
         /// links.
-        #[inline]
         fn path_resolution<E: core::error::Error, D: ReadOnlyDirectory<Error = E>>(
             fs: &impl ReadOnlyFileSystem<D>,
             path: &Path,

@@ -35,7 +35,6 @@ pub struct Bitmap<T: Copy, E: core::error::Error, Dev: Device<T, E>> {
 }
 
 impl<E: core::error::Error, T: Copy + Debug, Dev: Device<T, E>> Debug for Bitmap<T, E, Dev> {
-    #[inline]
     fn fmt(&self, fmt: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         fmt.debug_struct("Bitmap")
             .field("inner", &self.inner)
@@ -52,7 +51,6 @@ impl<E: core::error::Error, T: Copy, Dev: Device<T, E>> Bitmap<T, E, Dev> {
     /// # Errors
     ///
     /// Returns an [`Error`] if the device cannot be read.
-    #[inline]
     pub fn new(celled_device: Celled<Dev>, starting_addr: Address, length: usize) -> Result<Self, Error<E>> {
         let inner = celled_device.borrow().slice(starting_addr..(starting_addr + length))?.to_vec();
         Ok(Self {
@@ -65,14 +63,12 @@ impl<E: core::error::Error, T: Copy, Dev: Device<T, E>> Bitmap<T, E, Dev> {
     }
 
     /// Returns the length of the bitmap.
-    #[inline]
     #[must_use]
     pub const fn length(&self) -> usize {
         self.length
     }
 
     /// Returns the starting address of the bitmap.
-    #[inline]
     #[must_use]
     pub const fn starting_address(&self) -> Address {
         self.starting_addr
@@ -83,7 +79,6 @@ impl<E: core::error::Error, T: Copy, Dev: Device<T, E>> Bitmap<T, E, Dev> {
     /// # Errors
     ///
     /// Returns an [`Error`] if the device cannot be written.
-    #[inline]
     pub fn write_back(&mut self) -> Result<(), Error<E>> {
         let mut device = self.device.borrow_mut();
         let mut slice = device.slice(self.starting_addr..(self.starting_addr + self.length))?;
@@ -99,7 +94,6 @@ impl<E: core::error::Error, T: Copy, Dev: Device<T, E>> Bitmap<T, E, Dev> {
     /// Returns the indices and the value of those elements, keeping only the ones satisfying `count(el) > 0`.
     ///
     /// If the sum of all `count(el)` is lesser than `n`, returns all the elements `el` such that `count(el) > 0`.
-    #[inline]
     pub fn find_to_count<F: Fn(&T) -> usize>(&self, n: usize, count: F) -> Vec<(usize, T)> {
         let mut counter = 0_usize;
         let mut element_taken = Vec::new();
@@ -122,7 +116,6 @@ impl<E: core::error::Error, T: Copy, Dev: Device<T, E>> Bitmap<T, E, Dev> {
 impl<E: core::error::Error, Dev: Device<u8, E>> Bitmap<u8, E, Dev> {
     /// Specialization of [`find_to_count`](struct.Bitmap.html#method.find_to_count) to find the first bytes such that the sum of
     /// set bits is at least `n`.
-    #[inline]
     #[must_use]
     pub fn find_n_set_bits(&self, n: usize) -> Vec<(usize, u8)> {
         self.find_to_count(n, |byte| {
@@ -135,7 +128,6 @@ impl<E: core::error::Error, Dev: Device<u8, E>> Bitmap<u8, E, Dev> {
 
     /// Specialization of [`find_to_count`](struct.Bitmap.html#method.find_to_count) to find the first bytes such that the sum of
     /// unset bits is at least `n`.
-    #[inline]
     #[must_use]
     pub fn find_n_unset_bits(&self, n: usize) -> Vec<(usize, u8)> {
         self.find_to_count(n, |byte| {
@@ -151,7 +143,6 @@ impl<E: core::error::Error, T: Copy, Dev: Device<T, E>> IntoIterator for Bitmap<
     type IntoIter = <Vec<T> as IntoIterator>::IntoIter;
     type Item = T;
 
-    #[inline]
     fn into_iter(self) -> Self::IntoIter {
         self.inner.into_iter()
     }
@@ -160,14 +151,12 @@ impl<E: core::error::Error, T: Copy, Dev: Device<T, E>> IntoIterator for Bitmap<
 impl<E: core::error::Error, T: Copy, Dev: Device<T, E>> Deref for Bitmap<T, E, Dev> {
     type Target = [T];
 
-    #[inline]
     fn deref(&self) -> &Self::Target {
         &self.inner
     }
 }
 
 impl<E: core::error::Error, T: Copy, Dev: Device<T, E>> DerefMut for Bitmap<T, E, Dev> {
-    #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
     }

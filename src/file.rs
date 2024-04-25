@@ -182,7 +182,6 @@ pub struct ReadOnlyDirectoryEntry<'path, RoDir: ReadOnlyDirectory> {
 }
 
 impl<'path, Dir: Directory> From<DirectoryEntry<'path, Dir>> for ReadOnlyDirectoryEntry<'path, Dir> {
-    #[inline]
     fn from(value: DirectoryEntry<'path, Dir>) -> Self {
         Self {
             filename: value.filename,
@@ -231,7 +230,14 @@ pub trait Directory: Sized + File {
     /// Returns an [`EntryAlreadyExist`](crate::fs::error::FsError::EntryAlreadyExist) error if the entry already exist.
     ///
     /// Returns an [`DevError`](crate::dev::error::DevError) if the device on which the directory is located could not be written.
-    fn add_entry(&mut self, entry: DirectoryEntry<Self>) -> Result<TypeWithFile<Self>, Error<Self::Error>>;
+    fn add_entry(
+        &mut self,
+        name: UnixStr<'_>,
+        file_type: Type,
+        permissions: Permissions,
+        user_id: Uid,
+        group_id: Gid,
+    ) -> Result<TypeWithFile<Self>, Error<Self::Error>>;
 
     /// Removes an entry from the directory.
     ///
@@ -249,7 +255,7 @@ pub trait Directory: Sized + File {
     ///
     /// Returns an [`DevError`](crate::dev::error::DevError) if the device on which the directory is located could not be read.
     #[allow(clippy::type_complexity)]
-    #[inline]
+
     fn entry(&self, name: UnixStr) -> Result<Option<TypeWithFile<Self>>, Error<Self::Error>> {
         let children = self.entries()?;
         Ok(children.into_iter().find(|entry| entry.filename == name).map(|entry| entry.file))
@@ -262,7 +268,7 @@ pub trait Directory: Sized + File {
     /// # Errors
     ///
     /// Returns an [`DevError`](crate::dev::error::DevError) if the device on which the directory is located could not be read.
-    #[inline]
+
     fn parent(&self) -> Result<Self, Error<Self::Error>> {
         let Some(TypeWithFile::Directory(parent_entry)) = self.entry(PARENT_DIR.clone())? else {
             unreachable!("`entries` must return `..` that corresponds to the parent directory.")
@@ -310,7 +316,7 @@ pub trait ReadOnlyDirectory: Sized + ReadOnlyFile {
     ///
     /// Returns an [`DevError`](crate::dev::error::DevError) if the device on which the directory is located could not be read.
     #[allow(clippy::type_complexity)]
-    #[inline]
+
     fn entry(&self, name: UnixStr) -> Result<Option<ReadOnlyTypeWithFile<Self>>, Error<Self::Error>> {
         let children = self.entries()?;
         Ok(children.into_iter().find(|entry| entry.filename == name).map(|entry| entry.file))
@@ -323,7 +329,7 @@ pub trait ReadOnlyDirectory: Sized + ReadOnlyFile {
     /// # Errors
     ///
     /// Returns an [`DevError`](crate::dev::error::DevError) if the device on which the directory is located could not be read.
-    #[inline]
+
     fn parent(&self) -> Result<Self, Error<Self::Error>> {
         let Some(ReadOnlyTypeWithFile::Directory(parent_entry)) = self.entry(PARENT_DIR.clone())? else {
             unreachable!("`entries` must return `..` that corresponds to the parent directory.")
@@ -340,7 +346,6 @@ impl<Dir: Directory> ReadOnlyDirectory for Dir {
     type Socket = Dir::Socket;
     type SymbolicLink = Dir::SymbolicLink;
 
-    #[inline]
     fn entries(&self) -> Result<Vec<ReadOnlyDirectoryEntry<Self>>, Error<Self::Error>> {
         <Self as Directory>::entries(self).map(|entries| entries.into_iter().map(Into::into).collect_vec())
     }
@@ -380,7 +385,6 @@ pub trait ReadOnlySymbolicLink: ReadOnlyFile {
 }
 
 impl<Symlink: SymbolicLink> ReadOnlySymbolicLink for Symlink {
-    #[inline]
     fn get_pointed_file(&self) -> Result<&str, Error<Self::Error>> {
         <Self as SymbolicLink>::get_pointed_file(self)
     }
@@ -436,6 +440,7 @@ pub enum Type {
 
 /// Enumeration of possible file types in a standard UNIX-like filesystem with an attached file object.
 #[allow(clippy::module_name_repetitions)]
+#[derive(Debug)]
 pub enum TypeWithFile<Dir: Directory> {
     /// Storage unit of a filesystem.
     Regular(Dir::Regular),
@@ -457,6 +462,99 @@ pub enum TypeWithFile<Dir: Directory> {
 
     /// Special node containing a [`Socket`].
     Socket(Dir::Socket),
+}
+
+impl<Dir: Directory> TypeWithFile<Dir> {
+    /// Whether this file is a regular file or not.
+    pub const fn is_regular(&self) -> bool {
+        match self {
+            Self::Regular(_) => true,
+            Self::Directory(_)
+            | Self::SymbolicLink(_)
+            | Self::Fifo(_)
+            | Self::CharacterDevice(_)
+            | Self::BlockDevice(_)
+            | Self::Socket(_) => false,
+        }
+    }
+
+    /// Whether this file is a directory or not.
+    pub const fn is_directory(&self) -> bool {
+        match self {
+            Self::Directory(_) => true,
+            Self::Regular(_)
+            | Self::SymbolicLink(_)
+            | Self::Fifo(_)
+            | Self::CharacterDevice(_)
+            | Self::BlockDevice(_)
+            | Self::Socket(_) => false,
+        }
+    }
+
+    /// Whether this file is a symbolic link or not.
+    pub const fn is_symlink(&self) -> bool {
+        match self {
+            Self::SymbolicLink(_) => true,
+            Self::Regular(_)
+            | Self::Directory(_)
+            | Self::Fifo(_)
+            | Self::CharacterDevice(_)
+            | Self::BlockDevice(_)
+            | Self::Socket(_) => false,
+        }
+    }
+
+    /// Whether this file is a fifo or not.
+    pub const fn is_fifo(&self) -> bool {
+        match self {
+            Self::Fifo(_) => true,
+            Self::Regular(_)
+            | Self::Directory(_)
+            | Self::SymbolicLink(_)
+            | Self::CharacterDevice(_)
+            | Self::BlockDevice(_)
+            | Self::Socket(_) => false,
+        }
+    }
+
+    /// Whether this file is a character device or not.
+    pub const fn is_character_device(&self) -> bool {
+        match self {
+            Self::CharacterDevice(_) => true,
+            Self::Regular(_)
+            | Self::Directory(_)
+            | Self::SymbolicLink(_)
+            | Self::Fifo(_)
+            | Self::BlockDevice(_)
+            | Self::Socket(_) => false,
+        }
+    }
+
+    /// Whether this file is a block device or not.
+    pub const fn is_block_device(&self) -> bool {
+        match self {
+            Self::BlockDevice(_) => true,
+            Self::Regular(_)
+            | Self::Directory(_)
+            | Self::SymbolicLink(_)
+            | Self::Fifo(_)
+            | Self::CharacterDevice(_)
+            | Self::Socket(_) => false,
+        }
+    }
+
+    /// Whether this file is a UNIX socket or not.
+    pub const fn is_socket(&self) -> bool {
+        match self {
+            Self::Socket(_) => true,
+            Self::Regular(_)
+            | Self::Directory(_)
+            | Self::SymbolicLink(_)
+            | Self::Fifo(_)
+            | Self::CharacterDevice(_)
+            | Self::BlockDevice(_) => false,
+        }
+    }
 }
 
 /// Enumeration of possible file types in a standard UNIX-like filesystem with an attached file object.
@@ -487,7 +585,6 @@ pub enum ReadOnlyTypeWithFile<RoDir: ReadOnlyDirectory> {
 }
 
 impl<Dir: Directory> From<TypeWithFile<Dir>> for ReadOnlyTypeWithFile<Dir> {
-    #[inline]
     fn from(value: TypeWithFile<Dir>) -> Self {
         match value {
             TypeWithFile::Regular(file) => Self::Regular(file),
@@ -501,8 +598,21 @@ impl<Dir: Directory> From<TypeWithFile<Dir>> for ReadOnlyTypeWithFile<Dir> {
     }
 }
 
+impl<Dir: Directory> From<&TypeWithFile<Dir>> for Type {
+    fn from(value: &TypeWithFile<Dir>) -> Self {
+        match value {
+            TypeWithFile::Regular(_) => Self::Regular,
+            TypeWithFile::Directory(_) => Self::Directory,
+            TypeWithFile::SymbolicLink(_) => Self::SymbolicLink,
+            TypeWithFile::Fifo(_) => Self::Fifo,
+            TypeWithFile::CharacterDevice(_) => Self::CharacterDevice,
+            TypeWithFile::BlockDevice(_) => Self::BlockDevice,
+            TypeWithFile::Socket(_) => Self::Socket,
+        }
+    }
+}
+
 impl<Dir: Directory> From<TypeWithFile<Dir>> for Type {
-    #[inline]
     fn from(value: TypeWithFile<Dir>) -> Self {
         match value {
             TypeWithFile::Regular(_) => Self::Regular,

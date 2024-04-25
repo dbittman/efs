@@ -118,7 +118,6 @@ pub struct Base {
 
 #[cfg(test)]
 impl PartialEq for Base {
-    #[inline]
     fn eq(&self, other: &Self) -> bool {
         self.inodes_count == other.inodes_count
             && self.blocks_count == other.blocks_count
@@ -163,7 +162,7 @@ impl State {
     /// # Errors
     ///
     /// Returns an [`Ext2Error::InvalidState`] error if the give bytes does not correspond to a valid state.
-    #[inline]
+
     pub const fn try_from_bytes(bytes: u16) -> Result<Self, Ext2Error> {
         match bytes {
             0x0001 => Ok(Self::Clean),
@@ -176,14 +175,12 @@ impl State {
 impl TryFrom<u16> for State {
     type Error = Ext2Error;
 
-    #[inline]
     fn try_from(value: u16) -> Result<Self, Self::Error> {
         Self::try_from_bytes(value)
     }
 }
 
 impl From<State> for u16 {
-    #[inline]
     fn from(value: State) -> Self {
         value as Self
     }
@@ -212,7 +209,7 @@ impl ErrorHandlingMethod {
     /// # Errors
     ///
     /// Returns an [`Ext2Error::InvalidErrorHandlingMethod`] error if the give bytes does not correspond to a valid state.
-    #[inline]
+
     pub const fn try_from_bytes(bytes: u16) -> Result<Self, Ext2Error> {
         match bytes {
             0x0001 => Ok(Self::Ignore),
@@ -226,14 +223,12 @@ impl ErrorHandlingMethod {
 impl TryFrom<u16> for ErrorHandlingMethod {
     type Error = Ext2Error;
 
-    #[inline]
     fn try_from(value: u16) -> Result<Self, Self::Error> {
         Self::try_from_bytes(value)
     }
 }
 
 impl From<ErrorHandlingMethod> for u16 {
-    #[inline]
     fn from(value: ErrorHandlingMethod) -> Self {
         value as Self
     }
@@ -269,7 +264,7 @@ pub enum OperatingSystem {
 impl OperatingSystem {
     /// Returns the [`OperatingSystem`] corresponding to the [`creator_os`](struct.Base.html#structfield.creator_os) field in the
     /// [`Base`] structure.
-    #[inline]
+
     #[must_use]
     pub const fn from_bytes(bytes: u32) -> Self {
         match bytes {
@@ -284,14 +279,12 @@ impl OperatingSystem {
 }
 
 impl From<u32> for OperatingSystem {
-    #[inline]
     fn from(value: u32) -> Self {
         Self::from_bytes(value)
     }
 }
 
 impl From<OperatingSystem> for u32 {
-    #[inline]
     fn from(value: OperatingSystem) -> Self {
         match value {
             OperatingSystem::Linux => 0x0000_0000,
@@ -308,21 +301,21 @@ impl Base {
     /// Returns the number of block groups.
     ///
     /// It is equal to the round up of the total number of blocks divided by the number of blocks per block group.
-    #[inline]
+
     #[must_use]
     pub const fn block_group_count(&self) -> u32 {
         self.blocks_count.div_ceil(self.blocks_per_group)
     }
 
     /// Returns the size of a block in the filesystem described by this superblock.
-    #[inline]
+
     #[must_use]
     pub const fn block_size(&self) -> u32 {
         1024 << self.log_block_size
     }
 
     /// Returns the size of a fragment in the filesystem described by this superblock.
-    #[inline]
+
     #[must_use]
     pub const fn frag_size(&self) -> u32 {
         1024 << self.log_frag_size
@@ -333,7 +326,7 @@ impl Base {
     /// # Errors
     ///
     /// Returns an [`Ext2Error::InvalidState`] if an invalid state has been found.
-    #[inline]
+
     pub const fn state(&self) -> Result<State, Ext2Error> {
         State::try_from_bytes(self.state)
     }
@@ -343,20 +336,20 @@ impl Base {
     /// # Errors
     ///
     /// Returns an [`Ext2Error::InvalidErrorHandlingMethod`] if an invalid state has been found.
-    #[inline]
+
     pub const fn error_handling_method(&self) -> Result<ErrorHandlingMethod, Ext2Error> {
         ErrorHandlingMethod::try_from_bytes(self.errors)
     }
 
     /// Returns the Operating system from which the filesystem on this volume was created.
-    #[inline]
+
     #[must_use]
     pub const fn creator_operating_system(&self) -> OperatingSystem {
         OperatingSystem::from_bytes(self.creator_os)
     }
 
     /// Returns the maximal size in bytes for a single file.
-    #[inline]
+
     #[must_use]
     pub const fn max_file_size(&self) -> u64 {
         let block_size = self.block_size() as u64;
@@ -446,7 +439,6 @@ pub struct ExtendedFields {
 
 #[cfg(test)]
 impl PartialEq for ExtendedFields {
-    #[inline]
     fn eq(&self, other: &Self) -> bool {
         let self_hash_seed = self.hash_seed;
         let other_hash_seed = other.hash_seed;
@@ -558,7 +550,6 @@ pub enum CompressionAlgorithm {
 impl TryFrom<u32> for CompressionAlgorithm {
     type Error = Ext2Error;
 
-    #[inline]
     fn try_from(value: u32) -> Result<Self, Self::Error> {
         match value {
             0x0000_0001 => Ok(Self::LZV1),
@@ -572,7 +563,6 @@ impl TryFrom<u32> for CompressionAlgorithm {
 }
 
 impl From<CompressionAlgorithm> for u32 {
-    #[inline]
     fn from(value: CompressionAlgorithm) -> Self {
         value as Self
     }
@@ -582,7 +572,7 @@ impl ExtendedFields {
     /// Returns the [`OptionalFeatures`] described in thoses extended fields.
     ///
     /// Returns [`None`] if an unknown feature is set.
-    #[inline]
+
     #[must_use]
     pub const fn optional_features(&self) -> Option<OptionalFeatures> {
         OptionalFeatures::from_bits(self.feature_compat)
@@ -591,7 +581,7 @@ impl ExtendedFields {
     /// Returns the [`RequiredFeatures`] described in thoses extended fields.
     ///
     /// Returns [`None`] if an unknown feature is set.
-    #[inline]
+
     #[must_use]
     pub const fn required_features(&self) -> Option<RequiredFeatures> {
         RequiredFeatures::from_bits(self.feature_incompat)
@@ -600,7 +590,7 @@ impl ExtendedFields {
     /// Returns the [`ReadOnlyFeatures`] described in thoses extended fields.
     ///
     /// Returns [`None`] if an unknown feature is set.
-    #[inline]
+
     #[must_use]
     pub const fn read_only_features(&self) -> Option<ReadOnlyFeatures> {
         ReadOnlyFeatures::from_bits(self.feature_ro_compat)
@@ -625,7 +615,6 @@ impl Superblock {
     /// Returns [`Ext2Error::BadMagic`] if the magic number found in the superblock is not equal to [`EXT2_SIGNATURE`].
     ///
     /// Returns an [`Error`] if the device could not be read.
-    #[inline]
     pub fn parse<Dev: Device<u8, Ext2Error>>(celled_device: &Celled<Dev>) -> Result<Self, Error<Ext2Error>> {
         let device = celled_device.borrow();
 
@@ -645,7 +634,7 @@ impl Superblock {
     }
 
     /// Does the superblock contain the extended fields ?
-    #[inline]
+
     #[must_use]
     pub const fn is_extended(&self) -> bool {
         match self {
@@ -655,7 +644,7 @@ impl Superblock {
     }
 
     /// Returns the base fields of the superblock.
-    #[inline]
+
     #[must_use]
     pub const fn base(&self) -> &Base {
         match self {
@@ -664,7 +653,7 @@ impl Superblock {
     }
 
     /// Returns the mutable base fields of the superblock.
-    #[inline]
+
     #[must_use]
     pub(super) const fn base_mut(&mut self) -> &mut Base {
         match self {
@@ -673,7 +662,7 @@ impl Superblock {
     }
 
     /// Returns the extended fields of the superblock (if they exist).
-    #[inline]
+
     #[must_use]
     pub const fn extended_fields(&self) -> Option<&ExtendedFields> {
         match self {
@@ -687,7 +676,7 @@ impl Superblock {
     /// # Errors
     ///
     /// Returns an [`Ext2Error::InvalidState`] if an invalid state has been found.
-    #[inline]
+
     pub const fn state(&self) -> Result<State, Ext2Error> {
         self.base().state()
     }
@@ -697,13 +686,13 @@ impl Superblock {
     /// # Errors
     ///
     /// Returns an [`Ext2Error::InvalidState`] if an invalid state has been found.
-    #[inline]
+
     pub const fn error_handling_method(&self) -> Result<ErrorHandlingMethod, Ext2Error> {
         self.base().error_handling_method()
     }
 
     /// Returns the Operating system from which the filesystem on this volume was created.
-    #[inline]
+
     #[must_use]
     pub const fn creator_operating_system(&self) -> OperatingSystem {
         self.base().creator_operating_system()
@@ -712,28 +701,28 @@ impl Superblock {
     /// Returns the number of block groups.
     ///
     /// It is equal to the round up of the total number of blocks divided by the number of blocks per block group.
-    #[inline]
+
     #[must_use]
     pub const fn block_group_count(&self) -> u32 {
         self.base().block_group_count()
     }
 
     /// Returns the size of a block in the filesystem described by this superblock.
-    #[inline]
+
     #[must_use]
     pub const fn block_size(&self) -> u32 {
         self.base().block_size()
     }
 
     /// Returns the size of a fragment in the filesystem described by this superblock.
-    #[inline]
+
     #[must_use]
     pub const fn frag_size(&self) -> u32 {
         self.base().frag_size()
     }
 
     /// Returns the first non-reserved inode in file system.
-    #[inline]
+
     #[must_use]
     pub const fn first_non_reserved_inode(&self) -> u32 {
         match self {
@@ -743,7 +732,7 @@ impl Superblock {
     }
 
     /// Returns the size of each inode in bytes.
-    #[inline]
+
     #[must_use]
     pub const fn inode_size(&self) -> u16 {
         match self {
@@ -753,7 +742,7 @@ impl Superblock {
     }
 
     /// Returns the maximal size in bytes for a single file.
-    #[inline]
+
     #[must_use]
     pub const fn max_file_size(&self) -> u64 {
         self.base().max_file_size()
@@ -766,7 +755,7 @@ impl Superblock {
     /// # Errors
     ///
     /// Returns a [`Ext2Error::NoExtendedFields`] if the given superblock does not contain the extended fields.
-    #[inline]
+
     pub const fn optional_features(&self) -> Result<Option<OptionalFeatures>, Ext2Error> {
         match self {
             Self::Basic(_) => Err(Ext2Error::NoExtendedFields),
@@ -781,7 +770,7 @@ impl Superblock {
     /// # Errors
     ///
     /// Returns a [`Ext2Error::NoExtendedFields`] if the given superblock does not contain the extended fields.
-    #[inline]
+
     pub const fn required_features(&self) -> Result<Option<RequiredFeatures>, Ext2Error> {
         match self {
             Self::Basic(_) => Err(Ext2Error::NoExtendedFields),
@@ -796,7 +785,7 @@ impl Superblock {
     /// # Errors
     ///
     /// Returns a [`Ext2Error::NoExtendedFields`] if the given superblock does not contain the extended fields.
-    #[inline]
+
     pub const fn read_only_features(&self) -> Result<Option<ReadOnlyFeatures>, Ext2Error> {
         match self {
             Self::Basic(_) => Err(Ext2Error::NoExtendedFields),

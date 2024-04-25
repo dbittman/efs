@@ -1,5 +1,6 @@
 //! Errors related to Ext2 manipulation.
 
+use alloc::string::String;
 use core::error;
 use core::fmt::{self, Display};
 
@@ -47,11 +48,11 @@ pub enum Ext2Error {
     /// See [this table](https://www.nongnu.org/ext2-doc/ext2.html#s-algo-bitmap) for reference.
     InvalidCompressionAlgorithm(u32),
 
+    /// The given name is too long to fit in a directory entry.
+    NameTooLong(String),
+
     /// Tried to access an extended field in a basic superblock.
     NoExtendedFields,
-
-    /// Tried to create a file with an unsupported type.
-    NoOtherFileType,
 
     /// Tried to access a non-existing block group.
     NonExistingBlockGroup(u32),
@@ -73,7 +74,6 @@ pub enum Ext2Error {
 }
 
 impl Display for Ext2Error {
-    #[inline]
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::BadFileType(mode) => {
@@ -100,11 +100,11 @@ impl Display for Ext2Error {
             Self::InvalidCompressionAlgorithm(id) => {
                 write!(formatter, "Invalid Compression Algorithm: {id} was found while 0, 1, 2, 3 or 4 was expected")
             },
+            Self::NameTooLong(name) => write!(formatter, "Name Too Long: {name} is too long to be written in a directory entry"),
             Self::NoExtendedFields => write!(
                 formatter,
                 "No Extend Field: tried to access an extended field in a superblock that only contains basic fields"
             ),
-            Self::NoOtherFileType => write!(formatter, "No Other File Type: tried to create a file with an unsupported type"),
             Self::NonExistingBlockGroup(nth) => {
                 write!(formatter, "Non Existing Block Group: tried to access the {nth} block group which does not exist")
             },

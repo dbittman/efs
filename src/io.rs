@@ -39,7 +39,7 @@ pub trait Read: Base {
     ///
     /// Otherwise, returns the same errors as [`read`](Read::read).
     #[allow(clippy::indexing_slicing)]
-    #[inline]
+
     fn read_exact(&mut self, mut buf: &mut [u8]) -> Result<(), Error<Self::IOError>> {
         while !buf.is_empty() {
             match self.read(buf) {
@@ -91,7 +91,7 @@ pub trait Write: Base {
     ///
     /// Otherwise, returns the same errors as [`write`](Write::write).
     #[allow(clippy::indexing_slicing)]
-    #[inline]
+
     fn write_all(&mut self, mut buf: &[u8]) -> Result<(), Error<Self::IOError>> {
         while !buf.is_empty() {
             match self.write(buf) {
@@ -127,7 +127,6 @@ pub enum SeekFrom {
 
 #[cfg(any(feature = "std", test))]
 impl From<std::io::SeekFrom> for SeekFrom {
-    #[inline]
     fn from(value: std::io::SeekFrom) -> Self {
         match value {
             std::io::SeekFrom::Start(value) => Self::Start(value),
@@ -139,7 +138,6 @@ impl From<std::io::SeekFrom> for SeekFrom {
 
 #[cfg(any(feature = "std", test))]
 impl From<SeekFrom> for std::io::SeekFrom {
-    #[inline]
     fn from(value: SeekFrom) -> Self {
         match value {
             SeekFrom::Start(value) => Self::Start(value),
@@ -176,7 +174,7 @@ pub struct StdIOWrapper<S> {
 #[cfg(any(feature = "std", test))]
 impl<S> StdIOWrapper<S> {
     /// Creates an [`StdIOWrapper`] from the object it wraps.
-    #[inline]
+
     #[must_use]
     pub const fn new(inner: S) -> Self {
         Self { inner }
@@ -190,7 +188,6 @@ impl<S> Base for StdIOWrapper<S> {
 
 #[cfg(any(feature = "std", test))]
 impl<S: std::io::Read> Read for StdIOWrapper<S> {
-    #[inline]
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, Error<Self::IOError>> {
         self.inner.read(buf).map_err(Error::IO)
     }
@@ -198,12 +195,10 @@ impl<S: std::io::Read> Read for StdIOWrapper<S> {
 
 #[cfg(any(feature = "std", test))]
 impl<S: std::io::Write> Write for StdIOWrapper<S> {
-    #[inline]
     fn write(&mut self, buf: &[u8]) -> Result<usize, Error<Self::IOError>> {
         self.inner.write(buf).map_err(Error::IO)
     }
 
-    #[inline]
     fn flush(&mut self) -> Result<(), Error<Self::IOError>> {
         self.inner.flush().map_err(Error::IO)
     }
@@ -211,7 +206,6 @@ impl<S: std::io::Write> Write for StdIOWrapper<S> {
 
 #[cfg(any(feature = "std", test))]
 impl<S: std::io::Seek> Seek for StdIOWrapper<S> {
-    #[inline]
     fn seek(&mut self, pos: SeekFrom) -> Result<u64, Error<Self::IOError>> {
         self.inner.seek(pos.into()).map_err(Error::IO)
     }
@@ -219,7 +213,6 @@ impl<S: std::io::Seek> Seek for StdIOWrapper<S> {
 
 #[cfg(any(feature = "std", test))]
 impl<S> From<S> for StdIOWrapper<S> {
-    #[inline]
     fn from(value: S) -> Self {
         Self::new(value)
     }

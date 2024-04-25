@@ -31,6 +31,9 @@ pub enum FsError<E: core::error::Error> {
     /// Indicates that this error is coming from the filesystem's implementation.
     Implementation(E),
 
+    /// Tried to remove the current directory or a parent directory, which is not allowed.
+    RemoveRefused,
+
     /// Tried to assign a wrong type to a file.
     ///
     /// `WrongFileType(expected, given)`
@@ -38,7 +41,6 @@ pub enum FsError<E: core::error::Error> {
 }
 
 impl<E: core::error::Error> Display for FsError<E> {
-    #[inline]
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::EntryAlreadyExist(file) => write!(formatter, "Entry Already Exist: \"{file}\" already exist in given directory"),
@@ -48,6 +50,10 @@ impl<E: core::error::Error> Display for FsError<E> {
             Self::NoEnt(filename) => write!(formatter, "No entry: \"{filename}\" is an symbolic link pointing at an empty string"),
             Self::NotFound(filename) => write!(formatter, "Not found: \"{filename}\" has not been found"),
             Self::Implementation(err) => write!(formatter, "{err}"),
+            Self::RemoveRefused => write!(
+                formatter,
+                "Remove Refused: Tried to remove the current directory or a parent directory, which is not allowed"
+            ),
             Self::WrongFileType(expected, given) => {
                 write!(formatter, "Wrong File Type: {expected:?} file type expected, {given:?} given")
             },

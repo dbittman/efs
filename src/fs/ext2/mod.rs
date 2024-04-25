@@ -9,7 +9,7 @@ use core::mem::size_of;
 
 use self::block_group::BlockGroupDescriptor;
 use self::error::Ext2Error;
-use self::file::{BlockDevice, CharacterDevice, Directory, Fifo, Regular, Socket, SymbolicLink};
+use self::file::{Directory, Regular, SymbolicLink, SYMBOLIC_LINK_INODE_STORE_LIMIT};
 use self::inode::{Flags, Inode, TypePermissions, ROOT_DIRECTORY_INODE};
 use self::superblock::{Superblock, SUPERBLOCK_START_BYTE};
 use super::FileSystem;
@@ -18,7 +18,7 @@ use crate::dev::celled::Celled;
 use crate::dev::sector::Address;
 use crate::dev::Device;
 use crate::error::Error;
-use crate::file::{DirectoryEntry, Type, TypeWithFile};
+use crate::file::{Type, TypeWithFile};
 use crate::fs::error::FsError;
 use crate::path::{Path, PathError};
 use crate::permissions::Permissions;
@@ -56,7 +56,6 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
     /// # Errors
     ///
     /// Returns an [`Error`] if the device could not be read of if no ext2 filesystem is found on this device.
-    #[inline]
     pub fn new(device: Dev, device_id: u32) -> Result<Self, Error<Ext2Error>> {
         let celled_device = Celled::new(device);
         let superblock = Superblock::parse(&celled_device)?;
@@ -72,7 +71,6 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
     /// # Errors
     ///
     /// Returns an [`Error`] if the device could not be read of if no ext2 filesystem is found on this device.
-    #[inline]
     pub fn new_celled(celled_device: Celled<Dev>, device_id: u32) -> Result<Self, Error<Ext2Error>> {
         let superblock = Superblock::parse(&celled_device)?;
         Ok(Self {
@@ -83,7 +81,7 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
     }
 
     /// Returns the [`Superblock`] of this filesystem.
-    #[inline]
+
     #[must_use]
     pub const fn superblock(&self) -> &Superblock {
         &self.superblock
@@ -94,7 +92,6 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
     /// # Errors
     ///
     /// Returns the same errors as [`Inode::parse`].
-    #[inline]
     pub fn inode(&self, inode_number: u32) -> Result<Inode, Error<Ext2Error>> {
         Inode::parse(&self.device, &self.superblock, inode_number)
     }
@@ -152,7 +149,6 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
     /// # Errors
     ///
     /// Returns the same errors as [`BlockGroupDescriptor::parse`](block_group/struct.BlockGroupDescriptor.html#method.parse).
-    #[inline]
     pub fn get_block_bitmap(&self, block_group_number: u32) -> Result<Bitmap<u8, Ext2Error, Dev>, Error<Ext2Error>> {
         let superblock = self.superblock();
 
@@ -172,7 +168,6 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
     /// Returns an [`NotEnoughFreeBlocks`](Ext2Error::NotEnoughFreeBlocks) error if requested more free blocks than available.
     ///
     /// Returns an [`Error`] if the device cannot be read.
-    #[inline]
     pub fn free_blocks_offset(&self, n: u32, start_block_group: u32) -> Result<Vec<u32>, Error<Ext2Error>> {
         if n == 0 {
             return Ok(vec![]);
@@ -225,7 +220,6 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
     /// # Errors
     ///
     /// Returns the same errors as [`free_blocks_offset`](struct.Celled.html#method.free_blocks_offset).
-    #[inline]
     pub fn free_blocks(&self, n: u32) -> Result<Vec<u32>, Error<Ext2Error>> {
         self.free_blocks_offset(n, 0)
     }
@@ -243,7 +237,7 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
     /// Returns an [`NonExistingBlock`](Ext2Error::NonExistingBlock) error if a given block does not exist.
     ///
     /// Otherwise, returns the same errors as [`get_block_bitmap`](struct.Ext2.html#method.get_block_bitmap).
-    #[inline]
+
     fn locate_blocks(&mut self, blocks: &[u32], usage: bool) -> Result<(), Error<Ext2Error>> {
         /// Updates the block group bitmap and the free block count in the descriptor.
         ///
@@ -350,7 +344,6 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
     /// Returns an [`BlockAlreadyInUse`](Ext2Error::BlockAlreadyInUse) error if the given block was already in use.
     ///
     /// Otherwise, returns the same errors as [`get_block_bitmap`](struct.Ext2.html#method.get_block_bitmap).
-    #[inline]
     pub fn allocate_blocks(&mut self, blocks: &[u32]) -> Result<(), Error<Ext2Error>> {
         self.locate_blocks(blocks, true)
     }
@@ -362,7 +355,6 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
     /// Returns an [`BlockAlreadyFree`](Ext2Error::BlockAlreadyFree) error if the given block was already in use.
     ///
     /// Otherwise, returns the same errors as [`get_block_bitmap`](struct.Ext2.html#method.get_block_bitmap).
-    #[inline]
     pub fn deallocate_blocks(&mut self, blocks: &[u32]) -> Result<(), Error<Ext2Error>> {
         self.locate_blocks(blocks, false)
     }
@@ -372,7 +364,6 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
     /// # Errors
     ///
     /// Returns the same errors as [`BlockGroupDescriptor::parse`](block_group/struct.BlockGroupDescriptor.html#method.parse).
-    #[inline]
     pub fn get_inode_bitmap(&self, block_group_number: u32) -> Result<Bitmap<u8, Ext2Error, Dev>, Error<Ext2Error>> {
         let superblock = self.superblock();
 
@@ -390,7 +381,6 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
     /// Returns a [`NotEnoughInodes`](Ext2Error::NotEnoughInodes) if no inode is currently available.
     ///
     /// Returns an [`Error`] if the device cannot be read or written.
-    #[inline]
     pub fn free_inode(&mut self) -> Result<u32, Error<Ext2Error>> {
         for block_group_number in 0..self.superblock().block_group_count() {
             let inode_bitmap = self.get_inode_bitmap(block_group_number)?;
@@ -431,7 +421,12 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
     /// More pratically, it could be an issue if you're using a device containing more than 2^35 bytes ~ 34.5 GB.
     fn locate_inode(&mut self, inode_number: u32, usage: bool) -> Result<(), Error<Ext2Error>> {
         let mut superblock = self.superblock().clone();
-        superblock.base_mut().free_blocks_count -= 1;
+        if usage {
+            superblock.base_mut().free_inodes_count -= 1;
+        } else {
+            superblock.base_mut().free_inodes_count += 1;
+        }
+
         // SAFETY: one inode has been allocated
         unsafe {
             self.set_superblock(&superblock)?;
@@ -458,9 +453,9 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
 
         let bitmap_starting_byte = u64::from(block_group_descriptor.inode_bitmap) * u64::from(superblock.block_size());
 
-        let inode_index = u64::from(Inode::group_index(&superblock, inode_number));
+        let inode_index = u64::from(Inode::group_index(&superblock, inode_number)) / 8;
         // SAFETY: 0 <= inode_offset < 8
-        let inode_offset = unsafe { u8::try_from(inode_number % 8).unwrap_unchecked() };
+        let inode_offset = unsafe { u8::try_from((inode_number - 1) % 8).unwrap_unchecked() };
         let bitmap_inode_address = Address::new(
             usize::try_from(bitmap_starting_byte + inode_index).expect("Could not fit the starting byte of the inode on a usize"),
         );
@@ -496,7 +491,6 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
     /// Panics if the inode starting byte on the device does not fit on a [`usize`].
     ///
     /// More pratically, it could be an issue if you're using a device containing more than 2^35 bytes ~ 34.5 GB.
-    #[inline]
     #[allow(clippy::similar_names)]
     #[allow(clippy::too_many_arguments)]
     pub fn allocate_inode(
@@ -519,7 +513,8 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
         unsafe { device.write_at(inode_starting_address, inode) }
     }
 
-    /// Sets the usage of this inode as `false` and deallocates every block used by this inode.
+    /// Decreases the hard link count of this inode by 1. If the hard link count reaches 0, sets the usage of this inode as `false`
+    /// and deallocates every block used by this inode.
     ///
     /// # Errors
     ///
@@ -530,9 +525,24 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
     /// # Panics
     ///
     /// Panics for the same reasons as [`allocate_inode`](struct.Ext2.html#method.allocate_inode).
-    #[inline]
     pub fn deallocate_inode(&mut self, inode_number: u32) -> Result<(), Error<Ext2Error>> {
-        self.locate_inode(inode_number, false)
+        let mut inode = self.inode(inode_number)?;
+
+        inode.links_count -= 1;
+        if inode.links_count == 0 {
+            let file_type = inode.file_type()?;
+            if file_type == Type::Regular
+                || file_type == Type::Directory
+                || (file_type == Type::SymbolicLink && inode.data_size() >= SYMBOLIC_LINK_INODE_STORE_LIMIT as u64)
+            {
+                let superblock = self.superblock();
+                let indirected_blocks = inode.indirected_blocks(&self.device, superblock)?;
+                self.deallocate_blocks(&indirected_blocks.flatten_data_blocks())?;
+            }
+            self.locate_inode(inode_number, false)
+        } else {
+            Ok(())
+        }
     }
 }
 
@@ -544,7 +554,6 @@ impl<Dev: Device<u8, Ext2Error>> Celled<Ext2<Dev>> {
     /// Returns an [`BadFileType`](Ext2Error::BadFileType) if the type of the file pointed by the given inode is ill-formed.
     ///
     /// Otherwise, returns the same errors as [`Inode::parse`].
-    #[inline]
     pub fn file(&self, inode_number: u32) -> Result<Ext2TypeWithFile<Dev>, Error<Ext2Error>> {
         let filesystem = self.borrow();
         let inode = filesystem.inode(inode_number)?;
@@ -560,7 +569,6 @@ impl<Dev: Device<u8, Ext2Error>> Celled<Ext2<Dev>> {
 }
 
 impl<Dev: Device<u8, Ext2Error>> FileSystem<Directory<Dev>> for Celled<Ext2<Dev>> {
-    #[inline]
     fn root(&self) -> Result<Directory<Dev>, Error<<Directory<Dev> as crate::file::File>::Error>> {
         self.file(ROOT_DIRECTORY_INODE).and_then(|root| match root {
             TypeWithFile::Directory(root_dir) => Ok(root_dir),
@@ -573,20 +581,17 @@ impl<Dev: Device<u8, Ext2Error>> FileSystem<Directory<Dev>> for Celled<Ext2<Dev>
         })
     }
 
-    #[inline]
     fn double_slash_root(&self) -> Result<Directory<Dev>, Error<<Directory<Dev> as crate::file::File>::Error>> {
         self.root()
     }
 
-    #[inline]
-    #[allow(clippy::similar_names)]
     fn create_file(
         &mut self,
-        path: Path<'_>,
+        path: &Path<'_>,
         file_type: Type,
-        uid: Uid,
-        gid: Gid,
         permissions: Permissions,
+        user_id: Uid,
+        group_id: Gid,
     ) -> Result<TypeWithFile<Directory<Dev>>, Error<<Directory<Dev> as crate::file::File>::Error>> {
         if path.is_relative() {
             return Err(Error::Path(PathError::AbsolutePathRequired(path.to_string())));
@@ -612,28 +617,23 @@ impl<Dev: Device<u8, Ext2Error>> FileSystem<Directory<Dev>> for Celled<Ext2<Dev>
         fs.allocate_inode(
             inode_number,
             TypePermissions::from_bits_retain(permissions.bits()) | file_type_bit,
-            *uid,
-            *gid,
+            *user_id,
+            *group_id,
             Flags::empty(),
             0_u32,
             [0_u8; 12],
         )?;
         drop(fs);
-        let file = match file_type {
-            Type::Regular => TypeWithFile::Regular(Regular::new(self, inode_number)?),
-            Type::Directory => TypeWithFile::Directory(Directory::new(self, inode_number)?),
-            Type::SymbolicLink => TypeWithFile::SymbolicLink(SymbolicLink::new(self, inode_number)?),
-            Type::Fifo => TypeWithFile::Fifo(Fifo::new(self, inode_number)?),
-            Type::CharacterDevice => TypeWithFile::CharacterDevice(CharacterDevice::new(self, inode_number)?),
-            Type::BlockDevice => TypeWithFile::BlockDevice(BlockDevice::new(self, inode_number)?),
-            Type::Socket => TypeWithFile::Socket(Socket::new(self, inode_number)?),
-        };
 
-        crate::file::Directory::add_entry(&mut parent_dir, DirectoryEntry {
+        crate::file::Directory::add_entry(
+            &mut parent_dir,
             // SAFETY: the path is absolute and is not reduced to "/" or to "//"
-            filename: unsafe { path.file_name().unwrap_unchecked() },
-            file,
-        })
+            unsafe { path.file_name().unwrap_unchecked() },
+            file_type,
+            permissions,
+            user_id,
+            group_id,
+        )
     }
 
     fn remove_file(&mut self, path: Path<'_>) -> Result<(), Error<<Directory<Dev> as crate::file::File>::Error>> {
@@ -838,12 +838,14 @@ mod test {
                 .is_used(superblock, &fs.get_block_bitmap(Inode::block_group(superblock, free_inode)).unwrap())
         );
         let bitmap = fs.get_inode_bitmap(Inode::block_group(superblock, free_inode)).unwrap();
+        std::println!("{bitmap:?}");
         assert!(Inode::is_free(free_inode, superblock, &bitmap));
 
         fs.allocate_inode(free_inode, TypePermissions::REGULAR_FILE, 0, 0, Flags::empty(), 0, [0; 12])
             .unwrap();
         let superblock = fs.superblock();
         let bitmap = fs.get_inode_bitmap(Inode::block_group(superblock, free_inode)).unwrap();
+        std::println!("{bitmap:?}");
         assert!(Inode::is_used(free_inode, superblock, &bitmap));
 
         assert_eq!(

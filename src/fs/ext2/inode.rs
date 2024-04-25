@@ -120,7 +120,6 @@ pub struct Inode {
 
 #[cfg(test)]
 impl PartialEq for Inode {
-    #[inline]
     fn eq(&self, other: &Self) -> bool {
         let self_direct_block_pointers = self.direct_block_pointers;
         let other_direct_block_pointers = other.direct_block_pointers;
@@ -237,9 +236,15 @@ impl From<Type> for TypePermissions {
     }
 }
 
+impl From<Permissions> for TypePermissions {
+    fn from(value: Permissions) -> Self {
+        Self::from_bits_truncate(value.bits())
+    }
+}
+
 impl TypePermissions {
     /// Returns the type component of the [`TypePermissions`].
-    #[inline]
+
     #[must_use]
     pub const fn file_type(self) -> Self {
         Self::from_bits_truncate((self.bits() >> 12) << 12)
@@ -356,7 +361,7 @@ pub enum Osd2 {
 
 impl Osd2 {
     /// Get the [`Osd2`] fields from the bytes obtained in the [`Inode`] structure.
-    #[inline]
+
     #[must_use]
     pub const fn from_bytes(bytes: [u8; 12], os: OperatingSystem) -> Self {
         match os {
@@ -390,7 +395,7 @@ impl Inode {
     /// Returns the block group of the `n`th inode.
     ///
     /// See the [OSdev wiki](https://wiki.osdev.org/Ext2#Determining_which_Block_Group_contains_an_Inode) for more information.
-    #[inline]
+
     #[must_use]
     pub const fn block_group(superblock: &Superblock, n: u32) -> u32 {
         (n - 1) / superblock.base().inodes_per_group
@@ -399,7 +404,7 @@ impl Inode {
     /// Returns the index of the `n`th inode in its block group.
     ///
     /// See the [OSdev wiki](https://wiki.osdev.org/Ext2#Finding_an_inode_inside_of_a_Block_Group) for more information.
-    #[inline]
+
     #[must_use]
     pub const fn group_index(superblock: &Superblock, n: u32) -> u32 {
         (n - 1) % superblock.base().inodes_per_group
@@ -408,14 +413,14 @@ impl Inode {
     /// Returns the index of the block containing the `n`th inode.
     ///
     /// See the [OSdev wiki](https://wiki.osdev.org/Ext2#Finding_an_inode_inside_of_a_Block_Group) for more information.
-    #[inline]
+
     #[must_use]
     pub const fn containing_block(superblock: &Superblock, n: u32) -> u32 {
         n * superblock.inode_size() as u32 / superblock.block_size()
     }
 
     /// Returns the type and the permissions of this inode.
-    #[inline]
+
     #[must_use]
     pub const fn type_permissions(&self) -> TypePermissions {
         TypePermissions::from_bits_truncate(self.mode)
@@ -426,7 +431,7 @@ impl Inode {
     /// # Errors
     ///
     /// Returns an [`BadFileType`](Ext2Error::BadFileType) if the inode does not contain a valid file type.
-    #[inline]
+
     pub const fn file_type(&self) -> Result<Type, Ext2Error> {
         let types_permissions = self.type_permissions();
         if types_permissions.contains(TypePermissions::SYMBOLIC_LINK) {
@@ -449,7 +454,7 @@ impl Inode {
     }
 
     /// Returns the complete size of the data pointed by this inode.
-    #[inline]
+
     #[must_use]
     pub const fn data_size(&self) -> u64 {
         // self.size as u64 + ((self.dir_acl as u64) << 32_u64)
@@ -461,7 +466,7 @@ impl Inode {
     }
 
     /// Returns the [`Osd2`] structure given by the [`Inode`] and the [`Superblock`] structures.
-    #[inline]
+
     #[must_use]
     pub const fn osd2(&self, superblock: &Superblock) -> Osd2 {
         let os = superblock.creator_operating_system();
@@ -469,7 +474,7 @@ impl Inode {
     }
 
     /// Creates a new inode from all the necessary fields.
-    #[inline]
+
     #[must_use]
     #[allow(clippy::similar_names)]
     pub const fn create(
@@ -490,7 +495,7 @@ impl Inode {
             mtime: superblock.base().wtime,
             dtime: superblock.base().wtime,
             gid,
-            links_count: 0,
+            links_count: 1,
             blocks: 0,
             flags: flags.bits(),
             osd1,
@@ -514,7 +519,6 @@ impl Inode {
     /// device.
     ///
     /// Otherwise, returns an [`Error`] if the device cannot be read.
-    #[inline]
     pub fn starting_addr<Dev: Device<u8, Ext2Error>>(
         celled_device: &Celled<Dev>,
         superblock: &Superblock,
@@ -549,7 +553,6 @@ impl Inode {
     /// type.
     ///
     /// Returns an [`Error`] if the device could not be read.
-    #[inline]
     pub fn parse<Dev: Device<u8, Ext2Error>>(
         celled_device: &Celled<Dev>,
         superblock: &Superblock,
@@ -572,7 +575,10 @@ impl Inode {
     /// # Errors
     ///
     /// Returns a [`Error`] if the device cannot be read.
-    #[inline]
+    ///
+    /// # Panics
+    ///
+    /// Panics if the given `superblock` is ill-formed.
     pub fn indirected_blocks<Dev: Device<u8, Ext2Error>>(
         &self,
         celled_device: &Celled<Dev>,
@@ -596,108 +602,93 @@ impl Inode {
             Ok(address_array.iter().filter(|&block_number| (*block_number != 0)).copied().collect_vec())
         }
 
+        let data_blocks = u32::try_from(1 + (self.data_size().saturating_sub(1)) / u64::from(superblock.block_size()))
+            .expect("Ill-formed superblock: there should be at most u32::MAX blocks");
+        let mut parsed_data_blocks = 0_u32;
+        let blocks_per_indirection = superblock.block_size() / 4;
+
         let direct_block_pointers = self
             .direct_block_pointers
             .into_iter()
             .filter(|block_number| *block_number != 0)
             .collect_vec();
-        let singly_indirect_block_pointer = self.singly_indirect_block_pointer;
-        let doubly_indirect_block_pointer = self.doubly_indirect_block_pointer;
-        let triply_indirect_block_pointer = self.triply_indirect_block_pointer;
 
-        let mut singly_indirect_blocks = Vec::new();
-        let mut doubly_indirect_blocks = Vec::new();
-        let mut triply_indirect_blocks = Vec::new();
+        parsed_data_blocks += DIRECT_BLOCK_POINTER_COUNT.min(data_blocks);
 
-        if singly_indirect_block_pointer == 0 {
-            return Ok(IndirectedBlocks::new(
-                superblock.block_size() / 4,
-                direct_block_pointers,
-                (singly_indirect_block_pointer, singly_indirect_blocks),
-                (doubly_indirect_block_pointer, doubly_indirect_blocks),
-                (triply_indirect_block_pointer, triply_indirect_blocks),
-            ));
+        let mut indirected_blocks = IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::new(
+            blocks_per_indirection,
+            direct_block_pointers,
+            (self.singly_indirect_block_pointer, Vec::new()),
+            (self.doubly_indirect_block_pointer, Vec::new()),
+            (self.triply_indirect_block_pointer, Vec::new()),
+        );
+
+        if indirected_blocks.singly_indirected_blocks.0 == 0 || parsed_data_blocks >= data_blocks {
+            indirected_blocks.truncate_back_data_blocks(data_blocks);
+            return Ok(indirected_blocks);
         }
 
-        singly_indirect_blocks.append(&mut read_indirect_block(celled_device, superblock, singly_indirect_block_pointer)?);
+        indirected_blocks.singly_indirected_blocks.1.append(&mut read_indirect_block(
+            celled_device,
+            superblock,
+            indirected_blocks.singly_indirected_blocks.0,
+        )?);
+        parsed_data_blocks += blocks_per_indirection;
 
-        if doubly_indirect_block_pointer == 0 {
-            return Ok(IndirectedBlocks::new(
-                superblock.block_size() / 4,
-                direct_block_pointers,
-                (singly_indirect_block_pointer, singly_indirect_blocks),
-                (doubly_indirect_block_pointer, doubly_indirect_blocks),
-                (triply_indirect_block_pointer, triply_indirect_blocks),
-            ));
+        if indirected_blocks.doubly_indirected_blocks.0 == 0 || parsed_data_blocks >= data_blocks {
+            indirected_blocks.truncate_back_data_blocks(data_blocks);
+            return Ok(indirected_blocks);
         }
 
-        let singly_indirect_block_pointers = read_indirect_block(celled_device, superblock, doubly_indirect_block_pointer)?;
+        let singly_indirect_block_pointers =
+            read_indirect_block(celled_device, superblock, indirected_blocks.doubly_indirected_blocks.0)?;
 
         for block_pointer in singly_indirect_block_pointers {
-            if block_pointer == 0 {
-                return Ok(IndirectedBlocks::new(
-                    superblock.block_size() / 4,
-                    direct_block_pointers,
-                    (singly_indirect_block_pointer, singly_indirect_blocks),
-                    (doubly_indirect_block_pointer, doubly_indirect_blocks),
-                    (triply_indirect_block_pointer, triply_indirect_blocks),
-                ));
+            if block_pointer == 0 || parsed_data_blocks >= data_blocks {
+                indirected_blocks.truncate_back_data_blocks(data_blocks);
+                return Ok(indirected_blocks);
             }
 
-            doubly_indirect_blocks.push((block_pointer, read_indirect_block(celled_device, superblock, block_pointer)?));
+            indirected_blocks
+                .doubly_indirected_blocks
+                .1
+                .push((block_pointer, read_indirect_block(celled_device, superblock, block_pointer)?));
+            parsed_data_blocks += blocks_per_indirection;
         }
 
-        if triply_indirect_block_pointer == 0 {
-            return Ok(IndirectedBlocks::new(
-                superblock.block_size() / 4,
-                direct_block_pointers,
-                (singly_indirect_block_pointer, singly_indirect_blocks),
-                (doubly_indirect_block_pointer, doubly_indirect_blocks),
-                (triply_indirect_block_pointer, triply_indirect_blocks),
-            ));
+        if indirected_blocks.triply_indirected_blocks.0 == 0 || parsed_data_blocks >= data_blocks {
+            indirected_blocks.truncate_back_data_blocks(data_blocks);
+            return Ok(indirected_blocks);
         }
 
-        let doubly_indirect_block_pointers = read_indirect_block(celled_device, superblock, triply_indirect_block_pointer)?;
+        let triply_indirected_blocks =
+            read_indirect_block(celled_device, superblock, indirected_blocks.triply_indirected_blocks.0)?;
 
-        for block_pointer_pointer in doubly_indirect_block_pointers {
-            if block_pointer_pointer == 0 {
-                return Ok(IndirectedBlocks::new(
-                    superblock.block_size() / 4,
-                    direct_block_pointers,
-                    (singly_indirect_block_pointer, singly_indirect_blocks),
-                    (doubly_indirect_block_pointer, doubly_indirect_blocks),
-                    (triply_indirect_block_pointer, triply_indirect_blocks),
-                ));
+        for block_pointer_pointer in triply_indirected_blocks {
+            if block_pointer_pointer == 0 || parsed_data_blocks >= data_blocks {
+                indirected_blocks.truncate_back_data_blocks(data_blocks);
+                return Ok(indirected_blocks);
             }
 
             let mut dib = Vec::new();
 
             let singly_indirect_block_pointers = read_indirect_block(celled_device, superblock, block_pointer_pointer)?;
+            parsed_data_blocks += blocks_per_indirection;
 
             for block_pointer in singly_indirect_block_pointers {
-                if block_pointer == 0 {
-                    return Ok(IndirectedBlocks::new(
-                        superblock.block_size() / 4,
-                        direct_block_pointers,
-                        (singly_indirect_block_pointer, singly_indirect_blocks),
-                        (doubly_indirect_block_pointer, doubly_indirect_blocks),
-                        (triply_indirect_block_pointer, triply_indirect_blocks),
-                    ));
+                if block_pointer == 0 || parsed_data_blocks >= data_blocks {
+                    indirected_blocks.truncate_back_data_blocks(data_blocks);
+                    return Ok(indirected_blocks);
                 }
 
                 dib.push((block_pointer, read_indirect_block(celled_device, superblock, block_pointer)?));
             }
 
-            triply_indirect_blocks.push((block_pointer_pointer, dib));
+            indirected_blocks.triply_indirected_blocks.1.push((block_pointer_pointer, dib));
         }
 
-        Ok(IndirectedBlocks::new(
-            superblock.block_size() / 4,
-            direct_block_pointers,
-            (singly_indirect_block_pointer, singly_indirect_blocks),
-            (doubly_indirect_block_pointer, doubly_indirect_blocks),
-            (triply_indirect_block_pointer, triply_indirect_blocks),
-        ))
+        indirected_blocks.truncate_back_data_blocks(data_blocks);
+        Ok(indirected_blocks)
     }
 
     /// Reads the content of this inode starting at the given `offset`, returning it in the given `buffer`. Returns the number of
@@ -713,7 +704,6 @@ impl Inode {
     /// # Panics
     ///
     /// Panics if the data block starting addresses do not fit on a [`usize`].
-    #[inline]
     pub fn read_data<Dev: Device<u8, Ext2Error>>(
         &self,
         celled_device: &Celled<Dev>,
@@ -778,19 +768,19 @@ impl Inode {
     /// Returns whether this inode is currently free or not from the inode bitmap in which the block resides.
     ///
     /// The `bitmap` argument is usually the result of the method [`get_inode_bitmap`](../struct.Ext2.html#method.get_inode_bitmap).
-    #[inline]
+
     #[must_use]
     #[allow(clippy::indexing_slicing)]
     pub const fn is_free(inode_number: u32, superblock: &Superblock, bitmap: &[u8]) -> bool {
         let index = Self::group_index(superblock, inode_number);
-        let offset = inode_number % 8;
-        bitmap[index as usize] >> offset & 1 == 0
+        let offset = (inode_number - 1) % 8;
+        bitmap[(index / 8) as usize] >> offset & 1 == 0
     }
 
     /// Returns whether this inode is currently in use or not from the inode bitmap in which the block resides.
     ///
     /// The `bitmap` argument is usually the result of the method [`get_inode_bitmap`](../struct.Ext2.html#method.get_inode_bitmap).
-    #[inline]
+
     #[must_use]
     pub const fn is_used(inode_number: u32, superblock: &Superblock, bitmap: &[u8]) -> bool {
         !Self::is_free(inode_number, superblock, bitmap)

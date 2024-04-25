@@ -26,7 +26,6 @@ pub enum Error<E: core::error::Error> {
 }
 
 impl<E: core::error::Error> Display for Error<E> {
-    #[inline]
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Device(device_error) => write!(formatter, "Device Error: {device_error}"),
@@ -41,7 +40,6 @@ impl<E: core::error::Error> Display for Error<E> {
 impl<E: core::error::Error> error::Error for Error<E> {}
 
 impl<E: core::error::Error> From<E> for Error<E> {
-    #[inline]
     fn from(value: E) -> Self {
         Self::Fs(FsError::Implementation(value))
     }

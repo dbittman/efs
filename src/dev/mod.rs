@@ -37,14 +37,12 @@ pub struct Slice<'mem, T: Clone> {
 }
 
 impl<'mem, T: Clone> AsRef<[T]> for Slice<'mem, T> {
-    #[inline]
     fn as_ref(&self) -> &[T] {
         &self.inner
     }
 }
 
 impl<'mem, T: Clone> AsMut<[T]> for Slice<'mem, T> {
-    #[inline]
     fn as_mut(&mut self) -> &mut [T] {
         self.inner.to_mut().as_mut()
     }
@@ -53,14 +51,12 @@ impl<'mem, T: Clone> AsMut<[T]> for Slice<'mem, T> {
 impl<'mem, T: Clone> Deref for Slice<'mem, T> {
     type Target = [T];
 
-    #[inline]
     fn deref(&self) -> &Self::Target {
         self.as_ref()
     }
 }
 
 impl<'mem, T: Clone> DerefMut for Slice<'mem, T> {
-    #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.as_mut()
     }
@@ -68,7 +64,7 @@ impl<'mem, T: Clone> DerefMut for Slice<'mem, T> {
 
 impl<'mem, T: Clone> Slice<'mem, T> {
     /// Creates a new [`Slice`].
-    #[inline]
+
     #[must_use]
     pub const fn new(inner: &'mem [T], starting_addr: Address) -> Self {
         Self {
@@ -78,7 +74,7 @@ impl<'mem, T: Clone> Slice<'mem, T> {
     }
 
     /// Creates a new [`Slice`] from [`ToOwned::Owned`] objects.
-    #[inline]
+
     #[must_use]
     pub const fn new_owned(inner: <[T] as ToOwned>::Owned, starting_addr: Address) -> Self {
         Self {
@@ -88,14 +84,14 @@ impl<'mem, T: Clone> Slice<'mem, T> {
     }
 
     /// Returns the starting address of the slice.
-    #[inline]
+
     #[must_use]
     pub const fn addr(&self) -> Address {
         self.starting_addr
     }
 
     /// Checks whether the slice has been mutated or not.
-    #[inline]
+
     #[must_use]
     pub const fn is_mutated(&self) -> bool {
         match self.inner {
@@ -105,7 +101,7 @@ impl<'mem, T: Clone> Slice<'mem, T> {
     }
 
     /// Commits the write operations onto the slice and returns a [`Commit`]ed object.
-    #[inline]
+
     #[must_use]
     pub fn commit(self) -> Commit<T> {
         Commit::new(self.inner.into_owned(), self.starting_addr)
@@ -123,7 +119,7 @@ impl<'mem> Slice<'mem, u8> {
     /// # Panics
     ///
     /// Panics if the starting address cannot be read.
-    #[inline]
+
     #[must_use]
     pub unsafe fn cast<T: Copy>(&self) -> T {
         assert!(self.inner.len() >= size_of::<T>(), "The length of the device slice is not great enough to contain an object T");
@@ -131,7 +127,6 @@ impl<'mem> Slice<'mem, u8> {
     }
 
     /// Creates a [`Slice`] from any [`Copy`] object
-    #[inline]
     pub fn from<T: Copy>(object: T, starting_addr: Address) -> Self {
         let len = size_of::<T>();
         let ptr = addr_of!(object).cast::<u8>();
@@ -155,7 +150,7 @@ pub struct Commit<T: Clone> {
 
 impl<T: Clone> Commit<T> {
     /// Creates a new [`Commit`] instance.
-    #[inline]
+
     #[must_use]
     pub fn new(inner: Vec<T>, starting_addr: Address) -> Self {
         Self {
@@ -165,7 +160,7 @@ impl<T: Clone> Commit<T> {
     }
 
     /// Returns the starting address of the commit.
-    #[inline]
+
     #[must_use]
     pub const fn addr(&self) -> Address {
         self.starting_addr
@@ -173,14 +168,12 @@ impl<T: Clone> Commit<T> {
 }
 
 impl<T: Clone> AsRef<[T]> for Commit<T> {
-    #[inline]
     fn as_ref(&self) -> &[T] {
         &self.inner
     }
 }
 
 impl<T: Clone> AsMut<[T]> for Commit<T> {
-    #[inline]
     fn as_mut(&mut self) -> &mut [T] {
         self.inner.as_mut()
     }
@@ -218,7 +211,7 @@ pub trait Device<T: Copy, E: core::error::Error> {
     /// # Safety
     ///
     /// Must verifies the safety conditions of [`core::ptr::read`].
-    #[inline]
+
     unsafe fn read_at<O: Copy>(&self, starting_addr: Address) -> Result<O, Error<E>> {
         let length = size_of::<O>();
         let range = starting_addr
@@ -245,7 +238,7 @@ pub trait Device<T: Copy, E: core::error::Error> {
     /// # Safety
     ///
     /// Must ensure that `size_of::<O>() % size_of::<T>() == 0`.
-    #[inline]
+
     unsafe fn write_at<O: Copy>(&mut self, starting_addr: Address, object: O) -> Result<(), Error<E>> {
         let length = size_of::<O>();
         assert_eq!(
@@ -277,12 +270,10 @@ pub trait Device<T: Copy, E: core::error::Error> {
 macro_rules! impl_device {
     ($volume:ty) => {
         impl<T: Copy, E: core::error::Error> Device<T, E> for $volume {
-            #[inline]
             fn size(&self) -> Size {
                 Size(self.len() as u64)
             }
 
-            #[inline]
             fn slice(&self, addr_range: Range<Address>) -> Result<Slice<'_, T>, Error<E>> {
                 if Device::<T, E>::size(self) >= usize::from(addr_range.end) as u64 {
                     let addr_start = addr_range.start;
@@ -302,7 +293,6 @@ macro_rules! impl_device {
                 }
             }
 
-            #[inline]
             fn commit(&mut self, commit: Commit<T>) -> Result<(), Error<E>> {
                 // SAFETY: it is safe to assume that the given `slice` as a length smaller than `usize::MAX`
                 let addr_start = unsafe { usize::try_from(commit.addr().index()).unwrap_unchecked() };
@@ -332,7 +322,6 @@ impl_device!(Vec<T>);
 impl_device!(Box<[T]>);
 
 impl<E: core::error::Error, T: Base<IOError = E> + Read + Write + Seek> Device<u8, E> for RefCell<T> {
-    #[inline]
     fn size(&self) -> Size {
         let mut device = self.borrow_mut();
         let offset = device.seek(SeekFrom::End(0)).expect("Could not seek the device at its end");
@@ -342,7 +331,6 @@ impl<E: core::error::Error, T: Base<IOError = E> + Read + Write + Seek> Device<u
         Size(size)
     }
 
-    #[inline]
     fn slice(&self, addr_range: Range<Address>) -> Result<Slice<'_, u8>, Error<E>> {
         let starting_addr = addr_range.start;
         let len = TryInto::<usize>::try_into((addr_range.end - addr_range.start).index()).map_err(|_err| {
@@ -363,7 +351,6 @@ impl<E: core::error::Error, T: Base<IOError = E> + Read + Write + Seek> Device<u
         Ok(Slice::new_owned(slice, starting_addr))
     }
 
-    #[inline]
     fn commit(&mut self, commit: Commit<u8>) -> Result<(), Error<E>> {
         let mut device = self.borrow_mut();
 
@@ -377,13 +364,11 @@ impl<E: core::error::Error, T: Base<IOError = E> + Read + Write + Seek> Device<u
 
 #[cfg(any(feature = "std", test))]
 impl<E: core::error::Error> Device<u8, E> for RefCell<File> {
-    #[inline]
     fn size(&self) -> Size {
         let metadata = self.borrow().metadata().expect("Could not read the file");
         Size(metadata.len())
     }
 
-    #[inline]
     fn slice(&self, addr_range: Range<Address>) -> Result<Slice<'_, u8>, Error<E>> {
         use std::io::{Read, Seek};
 
@@ -419,7 +404,6 @@ impl<E: core::error::Error> Device<u8, E> for RefCell<File> {
         }
     }
 
-    #[inline]
     fn commit(&mut self, commit: Commit<u8>) -> Result<(), Error<E>> {
         use std::io::{Seek, Write};
 
