@@ -9,7 +9,7 @@ use core::cell::RefCell;
 use derive_more::{Deref, DerefMut};
 
 /// Type alias for celled objects.
-#[derive(Deref, DerefMut)]
+#[derive(Debug, Deref, DerefMut)]
 pub struct Celled<T>(Rc<RefCell<T>>);
 
 impl<T> Clone for Celled<T> {

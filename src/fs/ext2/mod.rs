@@ -2,6 +2,7 @@
 //!
 //! See [its Wikipedia page](https://fr.wikipedia.org/wiki/Ext2), [its kernel.org page](https://www.kernel.org/doc/html/latest/filesystems/ext2.html), [its OSDev page](https://wiki.osdev.org/Ext2), and the [*The Second Extended Filesystem* book](https://www.nongnu.org/ext2-doc/ext2.html) for more information.
 
+use alloc::borrow::ToOwned;
 use alloc::string::ToString;
 use alloc::vec;
 use alloc::vec::Vec;
@@ -11,7 +12,7 @@ use self::block_group::BlockGroupDescriptor;
 use self::error::Ext2Error;
 use self::file::{Directory, Regular, SymbolicLink, SYMBOLIC_LINK_INODE_STORE_LIMIT};
 use self::inode::{Flags, Inode, TypePermissions, ROOT_DIRECTORY_INODE};
-use self::superblock::{Superblock, SUPERBLOCK_START_BYTE};
+use self::superblock::{ReadOnlyFeatures, RequiredFeatures, Superblock, SUPERBLOCK_START_BYTE};
 use super::FileSystem;
 use crate::dev::bitmap::Bitmap;
 use crate::dev::celled::Celled;
@@ -37,8 +38,18 @@ pub mod superblock;
 #[allow(clippy::module_name_repetitions)]
 pub type Ext2TypeWithFile<Dev> = TypeWithFile<Directory<Dev>>;
 
+/// Contains all the supported options of the filesystem.
+#[derive(Debug, Clone)]
+struct Options {
+    /// Whether the file system can handle a 64-bit file size.
+    large_files: bool,
+
+    /// Whether directory entries contain a type field.
+    file_type: bool,
+}
+
 /// Main interface for devices containing an ext2 filesystem.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Ext2<Dev: Device<u8, Ext2Error>> {
     /// Device number of the device containing the ext2 filesystem.
     device_id: u32,
@@ -48,6 +59,9 @@ pub struct Ext2<Dev: Device<u8, Ext2Error>> {
 
     /// Superblock of the filesystem.
     superblock: Superblock,
+
+    /// Options of the filesystem.
+    options: Options,
 }
 
 impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
@@ -58,12 +72,7 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
     /// Returns an [`Error`] if the device could not be read of if no ext2 filesystem is found on this device.
     pub fn new(device: Dev, device_id: u32) -> Result<Self, Error<Ext2Error>> {
         let celled_device = Celled::new(device);
-        let superblock = Superblock::parse(&celled_device)?;
-        Ok(Self {
-            device: celled_device,
-            device_id,
-            superblock,
-        })
+        Self::new_celled(celled_device, device_id)
     }
 
     /// Creates a new [`Ext2`] object from the given celled device that should contain an ext2 filesystem and a given device ID.
@@ -73,10 +82,33 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
     /// Returns an [`Error`] if the device could not be read of if no ext2 filesystem is found on this device.
     pub fn new_celled(celled_device: Celled<Dev>, device_id: u32) -> Result<Self, Error<Ext2Error>> {
         let superblock = Superblock::parse(&celled_device)?;
+
+        if let Ok(required_features) = superblock.required_features() {
+            if required_features.contains(RequiredFeatures::COMPRESSION) {
+                return Err(Error::Fs(FsError::Implementation(Ext2Error::UnsupportedFeature("compression".to_owned()))));
+            } else if required_features.contains(RequiredFeatures::JOURNAL_DEV) {
+                return Err(Error::Fs(FsError::Implementation(Ext2Error::UnsupportedFeature("journal_dev".to_owned()))));
+            } else if required_features.contains(RequiredFeatures::META_BG) {
+                return Err(Error::Fs(FsError::Implementation(Ext2Error::UnsupportedFeature("meta_bg".to_owned()))));
+            } else if required_features.contains(RequiredFeatures::RECOVER) {
+                return Err(Error::Fs(FsError::Implementation(Ext2Error::UnsupportedFeature("recover".to_owned()))));
+            }
+        }
+
+        let options = Options {
+            large_files: superblock
+                .read_only_features()
+                .is_ok_and(|read_only_features| read_only_features.contains(ReadOnlyFeatures::LARGE_FILE)),
+            file_type: superblock
+                .read_only_features()
+                .is_ok_and(|read_only_features| read_only_features.contains(ReadOnlyFeatures::LARGE_FILE)),
+        };
+
         Ok(Self {
             device_id,
             device: celled_device,
             superblock,
+            options,
         })
     }
 

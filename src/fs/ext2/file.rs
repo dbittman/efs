@@ -11,7 +11,7 @@ use core::ptr::{addr_of, addr_of_mut, slice_from_raw_parts};
 use bitflags::Flags;
 use itertools::Itertools;
 
-use super::directory::{self, Entry};
+use super::directory::{self, Entry, FileType};
 use super::error::Ext2Error;
 use super::inode::{Inode, TypePermissions};
 use super::{Celled, Ext2};
@@ -324,6 +324,10 @@ impl<Dev: Device<u8, Ext2Error>> Write for File<Dev> {
             // SAFETY: there are at most u32::MAX blocks on the filesystem
             1 + unsafe { u32::try_from((bytes_to_write + self.io_offset - 1) / block_size).unwrap_unchecked() };
 
+        if !fs.options.large_files && u64::from(data_blocks_needed) * block_size >= u64::from(u32::MAX) {
+            return Err(Error::Fs(FsError::Implementation(Ext2Error::FileTooLarge)));
+        }
+
         let mut indirected_blocks: IndirectedBlocks<12> = self.inode.indirected_blocks(&fs.device, fs.superblock())?;
         // SAFETY: there are at most u32::MAX blocks on the filesystem
         indirected_blocks.truncate_back_data_blocks(unsafe {
@@ -418,7 +422,8 @@ impl<Dev: Device<u8, Ext2Error>> Write for File<Dev> {
         updated_inode.size = unsafe { u32::try_from(new_size & u64::from(u32::MAX)).unwrap_unchecked() };
         updated_inode.blocks = data_blocks_needed * self.filesystem.borrow().superblock().block_size() / 512;
 
-        assert!(u32::try_from(new_size).is_ok(), "TODO: Search how to deal with bigger files");
+        // SAFETY: the result cannot be greater than `u32::MAX`
+        updated_inode.dir_acl = unsafe { u32::try_from((new_size >> 32) & u64::from(u32::MAX)).unwrap_unchecked() };
 
         // SAFETY: the updated inode contains the right inode created in this function
         unsafe { self.set_inode(&updated_inode) }?;
@@ -745,6 +750,8 @@ impl<Dev: Device<u8, Ext2Error>> file::Directory for Directory<Dev> {
             [0; 12],
         )?;
 
+        let file_type_feature = fs.options.file_type;
+
         drop(fs);
 
         if file_type == Type::Directory {
@@ -754,7 +761,7 @@ impl<Dev: Device<u8, Ext2Error>> file::Directory for Directory<Dev> {
                     inode: inode_number,
                     rec_len: 9,
                     name_len: 1,
-                    file_type: 0, // TODO: handle `FILETYPE` feature
+                    file_type: if file_type_feature { u8::from(FileType::Dir) } else { 0 },
                     // SAFETY: "." is a valid CString
                     name: unsafe { CString::from_vec_unchecked(vec![b'.']) },
                 },
@@ -762,7 +769,7 @@ impl<Dev: Device<u8, Ext2Error>> file::Directory for Directory<Dev> {
                     inode: self.file.inode_number,
                     rec_len: u16::try_from(block_size - 9).expect("Ill-formed superblock: block size should be castable in a u16"),
                     name_len: 2,
-                    file_type: 0, // TODO: handle `FILETYPE` feature
+                    file_type: if file_type_feature { u8::from(FileType::Dir) } else { 0 },
                     // SAFETY: ".." is a valid CString
                     name: unsafe { CString::from_vec_unchecked(vec![b'.', b'.']) },
                 },
@@ -837,6 +844,8 @@ impl<Dev: Device<u8, Ext2Error>> file::Directory for Directory<Dev> {
                         }
                     }
 
+                    let file_type_feature = self.file.filesystem.borrow().options.file_type;
+
                     if let TypeWithFile::Directory(mut dir) = self.file.filesystem.file(entry.inode)? {
                         let mut new_inode = self.file.inode;
                         let sub_entries = dir.entries.clone().into_iter().flatten().collect_vec();
@@ -846,12 +855,18 @@ impl<Dev: Device<u8, Ext2Error>> file::Directory for Directory<Dev> {
                             if sub_entry_name != *CUR_DIR && sub_entry_name != *PARENT_DIR {
                                 dir.remove_entry(sub_entry_name.clone())?;
 
-                                let fs = self.file.filesystem.borrow();
-                                let sub_entry_inode = fs.inode(sub_entry.inode)?;
-                                if sub_entry_inode.file_type()? == Type::Directory {
-                                    new_inode.links_count -= 1;
+                                if file_type_feature {
+                                    if FileType::from(sub_entry.file_type) == FileType::Dir {
+                                        new_inode.links_count -= 1;
+                                    }
+                                } else {
+                                    let fs = self.file.filesystem.borrow();
+                                    let sub_entry_inode = fs.inode(sub_entry.inode)?;
+                                    if sub_entry_inode.file_type()? == Type::Directory {
+                                        new_inode.links_count -= 1;
+                                    }
+                                    drop(fs);
                                 }
-                                drop(fs);
                                 if self.file.inode.links_count != new_inode.links_count {
                                     unsafe {
                                         self.file.set_inode(&new_inode)?;

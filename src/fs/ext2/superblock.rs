@@ -574,8 +574,8 @@ impl ExtendedFields {
     /// Returns [`None`] if an unknown feature is set.
 
     #[must_use]
-    pub const fn optional_features(&self) -> Option<OptionalFeatures> {
-        OptionalFeatures::from_bits(self.feature_compat)
+    pub const fn optional_features(&self) -> OptionalFeatures {
+        OptionalFeatures::from_bits_truncate(self.feature_compat)
     }
 
     /// Returns the [`RequiredFeatures`] described in thoses extended fields.
@@ -583,8 +583,8 @@ impl ExtendedFields {
     /// Returns [`None`] if an unknown feature is set.
 
     #[must_use]
-    pub const fn required_features(&self) -> Option<RequiredFeatures> {
-        RequiredFeatures::from_bits(self.feature_incompat)
+    pub const fn required_features(&self) -> RequiredFeatures {
+        RequiredFeatures::from_bits_truncate(self.feature_incompat)
     }
 
     /// Returns the [`ReadOnlyFeatures`] described in thoses extended fields.
@@ -592,8 +592,8 @@ impl ExtendedFields {
     /// Returns [`None`] if an unknown feature is set.
 
     #[must_use]
-    pub const fn read_only_features(&self) -> Option<ReadOnlyFeatures> {
-        ReadOnlyFeatures::from_bits(self.feature_ro_compat)
+    pub const fn read_only_features(&self) -> ReadOnlyFeatures {
+        ReadOnlyFeatures::from_bits_truncate(self.feature_ro_compat)
     }
 }
 
@@ -742,7 +742,7 @@ impl Superblock {
     /// # Errors
     ///
     /// Returns a [`Ext2Error::NoExtendedFields`] if the given superblock does not contain the extended fields.
-    pub const fn optional_features(&self) -> Result<Option<OptionalFeatures>, Ext2Error> {
+    pub const fn optional_features(&self) -> Result<OptionalFeatures, Ext2Error> {
         match self {
             Self::Basic(_) => Err(Ext2Error::NoExtendedFields),
             Self::Extended(_, extended_fields) => Ok(extended_fields.optional_features()),
@@ -756,7 +756,7 @@ impl Superblock {
     /// # Errors
     ///
     /// Returns a [`Ext2Error::NoExtendedFields`] if the given superblock does not contain the extended fields.
-    pub const fn required_features(&self) -> Result<Option<RequiredFeatures>, Ext2Error> {
+    pub const fn required_features(&self) -> Result<RequiredFeatures, Ext2Error> {
         match self {
             Self::Basic(_) => Err(Ext2Error::NoExtendedFields),
             Self::Extended(_, extended_fields) => Ok(extended_fields.required_features()),
@@ -770,7 +770,7 @@ impl Superblock {
     /// # Errors
     ///
     /// Returns a [`Ext2Error::NoExtendedFields`] if the given superblock does not contain the extended fields.
-    pub const fn read_only_features(&self) -> Result<Option<ReadOnlyFeatures>, Ext2Error> {
+    pub const fn read_only_features(&self) -> Result<ReadOnlyFeatures, Ext2Error> {
         match self {
             Self::Basic(_) => Err(Ext2Error::NoExtendedFields),
             Self::Extended(_, extended_fields) => Ok(extended_fields.read_only_features()),
