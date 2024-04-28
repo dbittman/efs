@@ -9,9 +9,9 @@ use core::iter::Step;
 use core::mem::{size_of, transmute_copy};
 use core::ops::{Deref, DerefMut, Range};
 use core::ptr::{addr_of, slice_from_raw_parts};
-#[cfg(any(feature = "std", test))]
+#[cfg(feature = "std")]
 use std::fs::File;
-#[cfg(any(feature = "std", test))]
+#[cfg(feature = "std")]
 use std::io::ErrorKind;
 
 use self::sector::Address;
@@ -362,7 +362,7 @@ impl<E: core::error::Error, T: Base<IOError = E> + Read + Write + Seek> Device<u
     }
 }
 
-#[cfg(any(feature = "std", test))]
+#[cfg(feature = "std")]
 impl<E: core::error::Error> Device<u8, E> for RefCell<File> {
     fn size(&self) -> Size {
         let metadata = self.borrow().metadata().expect("Could not read the file");

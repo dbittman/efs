@@ -21,9 +21,7 @@ An OS and architecture independent implementation of some Unix filesystems in Ru
 
 * [`ext2`](https://en.wikipedia.org/wiki/Ext2): ✅
 
-* [`ext4`](https://en.wikipedia.org/wiki/Ext4): ❌
-
-* [`SquashFS`](https://en.wikipedia.org/wiki/SquashFS): ❌
+If you want more supported filesystems, do not hesitate to open an issue on <https://codeberg.org/RatCornu/efs/issues>.
 
 ## Usage
 
@@ -31,10 +29,10 @@ Add this to your `Cargo.toml`:
 
 ```
 [dependencies]
-efs = "0.2"
+efs = "0.3"
 ```
 
-<!-- Add examples on 0.3 release --> 
+See examples on <https://docs.rs/efs> in [`src/lib.rs`](src/lib.rs).
 
 ## Features
 
@@ -43,3 +41,7 @@ efs = "0.2"
 * `std`: enable the features depending on the standard library
 
 By default, only the `ext2` feature is set.
+
+## License
+
+Licensed under the GNU General Public License v3.0 which can be found [here](LICENSE).

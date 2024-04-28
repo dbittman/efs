@@ -1,6 +1,295 @@
-//! Extended fs.
+//! # Extended fs
 //!
 //! An OS and architecture independent implementation of some Unix filesystems in Rust.
+//!
+//! ## Details
+//!
+//! This crate provides a general interface to deal with some UNIX filesytems, and adds supports for some of them.
+//!
+//! Currently, only the [Second Extended Filesystem](https://fr.wikipedia.org/wiki/Ext2) (ext2) is supported, but one can implements its own filesystem with this interface.
+//!
+//! This crate does **NOT** provide a virtual filesystem: you can either make one or use another crate on top on this one.
+//!
+//! **Every** structure, trait and function in this crate is documented and contains source if needed. If you find something unclear, do not hesitate to create an issue at <https://codeberg.org/RatCornu/efs/issues>.
+//!
+//! ### File interfaces
+//!
+//! * As defined in POSIX, a file can either be a [`Regular`](crate::file::Regular), a [`Directory`](crate::file::Directory), a
+//!   [`SymbolicLink`](crate::file::SymbolicLink), a [`Fifo`](crate::file::Fifo), a
+//!   [`CharacterDevice`](crate::file::CharacterDevice), a [`BlockDevice`](crate::file::BlockDevice) or a
+//!   [`Socket`](crate::file::Socket). Traits are available for each one of them, with basic read and write operations. Moreover, a
+//!   read-only version of each trait is available.
+//!
+//! * [`File`](crate::file::File) is the base trait of all other file traits. It provides an interface to retrieve and modify
+//!   general attributes of a POSIX file (basically everything returned by the `stat` command on a UNIX OS).
+//!
+//! * A [`Regular`](crate::file::Regular) (file) is a basic file containing a sequence of bytes, which can be read into a string (or
+//!   not, depending on its content). As this file is `no_std` oriented, the use of [`std::io`] is not possible, this is why has to
+//!   be manipulated through [`efs::io`](self::io) (you can find [`Read`](crate::io::Read), [`Write`](crate::io::Write) and
+//!   [`Seek`](crate::io::Seek) as in [`std::io`]).
+//!
+//! * A [`Directory`](crate::file::Directory) is a node in the tree-like hierarchy of a filesystem. You can retrieve, add and remove
+//!   entries (which are other files).
+//!
+//! * A [`SymbolicLink`](crate::file::SymbolicLink) is a file pointing an other file. It can be interpreted as the symbolic link or
+//!   the pointed file in the [`FileSystem`](crate::fs::FileSystem) trait.
+//!
+//! * Other file types are defined but cannot be much manipulated as their implementation depends on the virtual file system and on
+//!   the OS.
+//!
+//! ### Filesystem interface
+//!
+//! All the manipulations needed in a filesystem can be made through the file traits. The [`FileSystem`](crate::fs::FileSystem) is
+//! here to provide two things : an entry point to the filesystem with the [`root`](crate::fs::FileSystem::root) method, and
+//! high-level functions to make the file manipulations easier.
+//!
+//! ### Paths
+//!
+//! As the Rust's native [`Path`](std::path::Path) implementation is in [`std::path`], this crates provides an other
+//! [`Path`](crate::path::Path) interface. It is based on [`UnixStr`](crate::path::UnixStr), which are the equivalent of
+//! [`OsStr`](std::ffi::OsStr) with a guarantee that: it is never empty nor contains the `<NUL>` character ('\0').
+//!
+//! ### Devices
+//!
+//! In this crate, a [`Device`](crate::dev::Device) is a sized structure that can be read, written directly at any point.
+//!
+//! To ensure that a read-only filesystem is never actually written, the [`Device`](crate::dev::Device) trait has a stronger
+//! constraint that being `Read + Write + Seek`: it should be readable with a read-only borrow of the device (which is not the case
+//! for [`std::io::Read`]).
+//!
+//! ## Usage
+//!
+//! ### High-level usage
+//!
+//! You always need to provide two things to use this crate: a filesystem and a device.
+//!
+//! For the filesystem, you can use the filesystems provided by this crate or make one by yourself (see the [how to implement a
+//! filesystem section](#how-to-implement-a-filesystem)). The usage of a filesystem does not depend on whether you are in a `no_std`
+//! environment or not.
+//!
+//! For the devices :
+//!
+//! * if you are in a `no_std` environment: you can make test with `Vec<u8>`, `&[u8]`, ... if needed, but you will probably have to
+//!   provide your own device implementation. See the part on [how to implement a device](#how-to-implement-a-device) if needed.
+//!
+//! * if you are in a `std` environment: you can use every structure that implements [`std::io::Read`], [`std::io::Write`] and
+//!   [`std::io::Seek`] through the use of [`StdIOWrapper`](crate::io::StdIOWrapper). Moreover, you can directly use std's
+//!   [`File`](std::fs::File) like this:
+//!
+//!     ```
+//!     use core::cell::RefCell;
+//!     use std::fs::File;
+//!
+//!     use efs::dev::Device;
+//!
+//!     let file = RefCell::new(
+//!         File::options()
+//!             .read(true)
+//!             .write(true)
+//!             .open("./tests/fs/ext2/io_operations.ext2")
+//!             .unwrap(),
+//!     );
+//!
+//!     // `file` is a `Device`
+//!     ```
+//!
+//! ### Example
+//!
+//! Here is a complete example of what can be do with the interfaces provided.
+//!
+//! You can find this test file on [efs's codeberg repo](https://codeberg.org/RatCornu/efs).
+//!
+//! ```
+//! use core::cell::RefCell;
+//! use core::str::FromStr;
+//!
+//! use efs::dev::celled::Celled;
+//! use efs::file::{Directory, SymbolicLink, Type, TypeWithFile};
+//! use efs::fs::ext2::Ext2;
+//! use efs::fs::FileSystem;
+//! use efs::io::{Read, Write};
+//! use efs::path::{Path, UnixStr};
+//! use efs::permissions::Permissions;
+//! use efs::types::{Gid, Uid};
+//!
+//! # std::fs::copy(
+//! #     "./tests/fs/ext2/io_operations.ext2",
+//! #     "./tests/fs/ext2/io_operations_copy_lib_example.ext2",
+//! # )
+//! # .unwrap();
+//!
+//! // `device` now contains a `Device`
+//! let device = RefCell::new(
+//!     std::fs::File::options()
+//!         .read(true)
+//!         .write(true)
+//!         .open("./tests/fs/ext2/io_operations_copy_lib_example.ext2")
+//!         .unwrap(),
+//! );
+//!
+//! let ext2 = Ext2::new(device, 0).unwrap();
+//! let fs = Celled::new(ext2);
+//!
+//! // `fs` now contains a `FileSystem` with the following structure:
+//! // /
+//! // ├── bar.txt -> foo.txt
+//! // ├── baz.txt
+//! // ├── folder
+//! // │   ├── ex1.txt
+//! // │   └── ex2.txt -> ../foo.txt
+//! // ├── foo.txt
+//! // └── lost+found
+//!
+//! /// The root of the filesystem
+//! let root = fs.root().unwrap();
+//!
+//! // We retrieve here `foo.txt` which is a regular file
+//! let Some(TypeWithFile::Regular(mut foo_txt)) =
+//!     root.entry(UnixStr::new("foo.txt").unwrap()).unwrap()
+//! else {
+//!     panic!("foo.txt is a regular file in the root folder");
+//! };
+//!
+//! // We read the content of `foo.txt`.
+//! assert_eq!(foo_txt.read_all().unwrap(), b"Hello world!\n");
+//!
+//! // We retrieve here `folder` which is a directory
+//! let Some(TypeWithFile::Directory(mut folder)) =
+//!     root.entry(UnixStr::new("folder").unwrap()).unwrap()
+//! else {
+//!     panic!("folder is a directory in the root folder");
+//! };
+//!
+//! // In `folder`, we retrieve `ex1.txt` as `/folder/ex1` points to the same
+//! // file as `../folder/ex1.txt` when `/folder` is the current directory.
+//! //
+//! // Here, it is done by the complete path using the `FileSystem` trait.
+//! let Ok(TypeWithFile::Regular(mut ex1_txt)) =
+//!     fs.get_file(&Path::from_str("../folder/ex1.txt").unwrap(), folder.clone(), false)
+//! else {
+//!     panic!("ex1.txt is a regular file at /folder/ex1.txt");
+//! };
+//!
+//! // We read the content of `foo.txt`.
+//! ex1_txt.write_all(b"Hello earth!\n").unwrap();
+//!
+//! // We can also retrieve/create/delete a subentry with the `Directory`
+//! // trait.
+//! let TypeWithFile::SymbolicLink(mut boo) = folder
+//!     .add_entry(
+//!         UnixStr::new("boo.txt").unwrap(),
+//!         Type::SymbolicLink,
+//!         Permissions::from_bits_retain(0o777),
+//!         Uid(0),
+//!         Gid(0),
+//!     )
+//!     .unwrap()
+//! else {
+//!     panic!("Could not create a symbolic link");
+//! };
+//!
+//! // We set the pointed file of the newly created `/folder/boo.txt` to
+//! // `../baz.txt`.
+//! boo.set_pointed_file("../baz.txt").unwrap();
+//!
+//! // We ensure now that if we read `/folder/boo.txt` while following the
+//! // symbolic links we get the content of `/baz.txt`.
+//! let TypeWithFile::Regular(mut baz_txt) =
+//!     fs.get_file(&Path::from_str("/folder/boo.txt").unwrap(), root, true).unwrap()
+//! else {
+//!     panic!("Could not retrieve baz.txt from boo.txt");
+//! };
+//! assert_eq!(ex1_txt.read_all().unwrap(), baz_txt.read_all().unwrap());
+//!
+//! // Here is the state of the filesystem at the end of this example:
+//! // /
+//! // ├── bar.txt -> foo.txt
+//! // ├── baz.txt
+//! // ├── folder
+//! // │   ├── boo.txt -> ../baz.txt
+//! // │   ├── ex1.txt
+//! // │   └── ex2.txt -> ../foo.txt
+//! // ├── foo.txt
+//! // └── lost+found
+//!
+//! # std::fs::remove_file("./tests/fs/ext2/io_operations_copy_lib_example.ext2").unwrap();
+//! ```
+//!
+//! ### How to implement a device?
+//!
+//! To implement a device, you need to provide three methods:
+//!
+//! * [`size`](crate::dev::Device::size) which returns the size of the device in bytes
+//!
+//! * [`slice`](crate::dev::Device::slice) which creates a [`Slice`](crate::dev::Slice) of the device
+//!
+//! * [`commit`](crate::dev::Device::commit) which commits a [`Commit`](crate::dev::Commit) created from a
+//!   [`Slice`](crate::dev::Slice) of the device
+//!
+//! To help you, here is an example of how those methods can be used:
+//!
+//! ```
+//! use std::vec;
+//!
+//! use efs::dev::sector::Address;
+//! use efs::dev::Device;
+//!
+//! // Here, our device is a `Vec<usize>`
+//! let mut device = vec![0_usize; 1024];
+//!
+//! // We take a slice of the device: `slice` now contains a reference to the
+//! // objects between the indices 256 (included) and 512 (not included) of the
+//! // device.
+//! let mut slice = Device::<usize, std::io::Error>::slice(
+//!     &device,
+//!     Address::try_from(256_u64).unwrap()..Address::try_from(512_u64).unwrap(),
+//! )
+//! .unwrap();
+//!
+//! // We modify change each elements `0` to a `1` in the slice.
+//! slice.iter_mut().for_each(|element| *element = 1);
+//!
+//! // We commit the changes of slice: now this slice cannot be changed anymore.
+//! let commit = slice.commit();
+//!
+//! assert!(Device::<usize, std::io::Error>::commit(&mut device, commit).is_ok());
+//!
+//! for (idx, &x) in device.iter().enumerate() {
+//!     assert_eq!(x, usize::from((256..512).contains(&idx)));
+//! }
+//! ```
+//!
+//! Moreover, your implementation of a device should only returns [`DevError`](crate::dev::error::DevError)s in case of a read/write
+//! fail.
+//!
+//! ### How to implement a filesystem?
+//!
+//! To implement a filesystem, you will need a lot of structures and methods. You can read the implementation of the `ext2`
+//! filesystem as an example, but here is a general layout of what you need to do:
+//!
+//! * create a structure which will implement [`FileSystem`](crate::fs::FileSystem): it will be the core structure of your
+//!   filesystem
+//!
+//! * create an error structure, which implements [`core::error::Error`]. This will contain **every** error that your filesystem
+//!   will be able to return.
+//!
+//! * create objects for every structure in your filesystem
+//!
+//! * create structures for [`File`](crate::file::File), [`Regular`](crate::file::Regular), [`Directory`](crate::file::Directory)
+//!   and [`SymbolicLink`](crate::file::SymbolicLink). For each of this structure, create functions allowing to be parsed easily.
+//!   For [`Fifo`](crate::file::Fifo), [`CharacterDevice`](crate::file::CharacterDevice), [`BlockDevice`](crate::file::BlockDevice)
+//!   and [`Socket`](crate::file::Socket), you can use a simple struct like `struct Socket(File)` as you will likely never use them
+//!   with this crate
+//!
+//! * implement the functions allowing to retrieve the [`Regular`](crate::file::Regular), [`Directory`](crate::file::Directory) and
+//!   [`SymbolicLink`](crate::file::SymbolicLink), and the [`root`](crate::fs::FileSystem::root) particularily. For the
+//!   [`double_slash_root`](crate::fs::FileSystem::double_slash_root), if you don't know what it means, you can just implement it as
+//!   `self.root()` (and it will very probably be the right thing to do)
+//!
+//! * implements all the other functions for the [`Regular`](crate::file::Regular), [`Directory`](crate::file::Directory) and
+//!   [`SymbolicLink`](crate::file::SymbolicLink) structures
+//!
+//! Advice: start with the read-only functions and methods. It will be **MUCH** easier that the write methods.
 
 #![no_std]
 #![allow(
@@ -51,7 +340,7 @@
 
 extern crate alloc;
 extern crate core;
-#[cfg(any(feature = "std", test))]
+#[cfg(feature = "std")]
 extern crate std;
 
 pub mod dev;

@@ -1,6 +1,6 @@
 //! General traits for I/O interfaces.
 
-#[cfg(any(feature = "std", test))]
+#[cfg(feature = "std")]
 use derive_more::{Deref, DerefMut};
 
 use crate::dev::error::DevError;
@@ -125,7 +125,7 @@ pub enum SeekFrom {
     Current(i64),
 }
 
-#[cfg(any(feature = "std", test))]
+#[cfg(feature = "std")]
 impl From<std::io::SeekFrom> for SeekFrom {
     fn from(value: std::io::SeekFrom) -> Self {
         match value {
@@ -136,7 +136,7 @@ impl From<std::io::SeekFrom> for SeekFrom {
     }
 }
 
-#[cfg(any(feature = "std", test))]
+#[cfg(feature = "std")]
 impl From<SeekFrom> for std::io::SeekFrom {
     fn from(value: SeekFrom) -> Self {
         match value {
@@ -164,14 +164,14 @@ pub trait Seek: Base {
 /// A wrapper struct for types that have implementations for [`std::io`] traits.
 ///
 /// [`Read`], [`Write`] and [`Seek`] are implemented for this type if the corresponding [`std::io`] trait is implemented for `T`.
-#[cfg(any(feature = "std", test))]
+#[cfg(feature = "std")]
 #[derive(Deref, DerefMut)]
 pub struct StdIOWrapper<S> {
     /// Inner object, supposedly implementing at least one [`std::io`] trait.
     inner: S,
 }
 
-#[cfg(any(feature = "std", test))]
+#[cfg(feature = "std")]
 impl<S> StdIOWrapper<S> {
     /// Creates an [`StdIOWrapper`] from the object it wraps.
 
@@ -181,19 +181,19 @@ impl<S> StdIOWrapper<S> {
     }
 }
 
-#[cfg(any(feature = "std", test))]
+#[cfg(feature = "std")]
 impl<S> Base for StdIOWrapper<S> {
     type IOError = std::io::Error;
 }
 
-#[cfg(any(feature = "std", test))]
+#[cfg(feature = "std")]
 impl<S: std::io::Read> Read for StdIOWrapper<S> {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, Error<Self::IOError>> {
         self.inner.read(buf).map_err(Error::IO)
     }
 }
 
-#[cfg(any(feature = "std", test))]
+#[cfg(feature = "std")]
 impl<S: std::io::Write> Write for StdIOWrapper<S> {
     fn write(&mut self, buf: &[u8]) -> Result<usize, Error<Self::IOError>> {
         self.inner.write(buf).map_err(Error::IO)
@@ -204,14 +204,14 @@ impl<S: std::io::Write> Write for StdIOWrapper<S> {
     }
 }
 
-#[cfg(any(feature = "std", test))]
+#[cfg(feature = "std")]
 impl<S: std::io::Seek> Seek for StdIOWrapper<S> {
     fn seek(&mut self, pos: SeekFrom) -> Result<u64, Error<Self::IOError>> {
         self.inner.seek(pos.into()).map_err(Error::IO)
     }
 }
 
-#[cfg(any(feature = "std", test))]
+#[cfg(feature = "std")]
 impl<S> From<S> for StdIOWrapper<S> {
     fn from(value: S) -> Self {
         Self::new(value)
