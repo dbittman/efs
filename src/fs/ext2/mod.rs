@@ -3,7 +3,6 @@
 //! See [its Wikipedia page](https://fr.wikipedia.org/wiki/Ext2), [its kernel.org page](https://www.kernel.org/doc/html/latest/filesystems/ext2.html), [its OSDev page](https://wiki.osdev.org/Ext2), and the [*The Second Extended Filesystem* book](https://www.nongnu.org/ext2-doc/ext2.html) for more information.
 
 use alloc::borrow::ToOwned;
-use alloc::string::ToString;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::mem::size_of;
@@ -21,9 +20,6 @@ use crate::dev::Device;
 use crate::error::Error;
 use crate::file::{Type, TypeWithFile};
 use crate::fs::error::FsError;
-use crate::path::{Path, PathError};
-use crate::permissions::Permissions;
-use crate::types::{Gid, Uid};
 
 pub mod block;
 pub mod block_group;
@@ -621,80 +617,6 @@ impl<Dev: Device<u8, Ext2Error>> FileSystem<Directory<Dev>> for Celled<Ext2<Dev>
 
     fn double_slash_root(&self) -> Result<Directory<Dev>, Error<<Directory<Dev> as crate::file::File>::Error>> {
         self.root()
-    }
-
-    fn create_file(
-        &mut self,
-        path: &Path<'_>,
-        file_type: Type,
-        permissions: Permissions,
-        user_id: Uid,
-        group_id: Gid,
-    ) -> Result<TypeWithFile<Directory<Dev>>, Error<<Directory<Dev> as crate::file::File>::Error>> {
-        if path.is_relative() {
-            return Err(Error::Path(PathError::AbsolutePathRequired(path.to_string())));
-        }
-
-        let Some(parent_dir_path) = path.parent() else { return Err(Error::Fs(FsError::EntryAlreadyExist(path.to_string()))) };
-        let parent_dir_file = self.get_file(&parent_dir_path, self.root()?, true)?;
-        let mut parent_dir = match parent_dir_file {
-            TypeWithFile::Directory(dir) => dir,
-            TypeWithFile::Regular(_)
-            | TypeWithFile::SymbolicLink(_)
-            | TypeWithFile::Fifo(_)
-            | TypeWithFile::CharacterDevice(_)
-            | TypeWithFile::BlockDevice(_)
-            | TypeWithFile::Socket(_) => {
-                return Err(Error::Fs(FsError::WrongFileType(Type::Directory, parent_dir_file.into())));
-            },
-        };
-
-        let file_type_bit = TypePermissions::from(file_type);
-        let mut fs = self.borrow_mut();
-        let inode_number = fs.free_inode()?;
-        fs.allocate_inode(
-            inode_number,
-            TypePermissions::from_bits_retain(permissions.bits()) | file_type_bit,
-            *user_id,
-            *group_id,
-            Flags::empty(),
-            0_u32,
-            [0_u8; 12],
-        )?;
-        drop(fs);
-
-        crate::file::Directory::add_entry(
-            &mut parent_dir,
-            // SAFETY: the path is absolute and is not reduced to "/" or to "//"
-            unsafe { path.file_name().unwrap_unchecked() },
-            file_type,
-            permissions,
-            user_id,
-            group_id,
-        )
-    }
-
-    fn remove_file(&mut self, path: Path<'_>) -> Result<(), Error<<Directory<Dev> as crate::file::File>::Error>> {
-        if path.is_relative() {
-            return Err(Error::Path(PathError::AbsolutePathRequired(path.to_string())));
-        }
-
-        let Some(parent_dir_path) = path.parent() else { return Err(Error::Fs(FsError::EntryAlreadyExist(path.to_string()))) };
-        let parent_dir_file = self.get_file(&parent_dir_path, self.root()?, true)?;
-        let mut parent_dir = match parent_dir_file {
-            TypeWithFile::Directory(dir) => dir,
-            TypeWithFile::Regular(_)
-            | TypeWithFile::SymbolicLink(_)
-            | TypeWithFile::Fifo(_)
-            | TypeWithFile::CharacterDevice(_)
-            | TypeWithFile::BlockDevice(_)
-            | TypeWithFile::Socket(_) => {
-                return Err(Error::Fs(FsError::WrongFileType(Type::Directory, parent_dir_file.into())));
-            },
-        };
-
-        // SAFETY: the path is absolute and is not reduced to "/" or to "//"
-        crate::file::Directory::remove_entry(&mut parent_dir, unsafe { path.file_name().unwrap_unchecked() })
     }
 }
 

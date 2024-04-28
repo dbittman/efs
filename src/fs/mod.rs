@@ -11,7 +11,7 @@ use itertools::{Itertools, Position};
 use crate::error::Error;
 use crate::file::{Directory, ReadOnlyDirectory, ReadOnlySymbolicLink, ReadOnlyTypeWithFile, SymbolicLink, Type, TypeWithFile};
 use crate::fs::error::FsError;
-use crate::path::{Component, Path};
+use crate::path::{Component, Path, PathError};
 use crate::permissions::Permissions;
 use crate::types::{Gid, Uid};
 
@@ -46,27 +46,6 @@ pub trait FileSystem<Dir: Directory> {
     ///
     /// Returns a [`DevError`](crate::dev::error::DevError) if the device could not be read.
     fn double_slash_root(&self) -> Result<Dir, Error<Dir::Error>>;
-
-    /// Creates a new file with the given `file_type` at the given `path`.
-    ///
-    /// # Errors
-    ///
-    /// Returns a [`DevError`](crate::dev::error::DevError) if the device could not be read/written.
-    fn create_file(
-        &mut self,
-        path: &Path<'_>,
-        file_type: Type,
-        permissions: Permissions,
-        user_id: Uid,
-        group_id: Gid,
-    ) -> Result<TypeWithFile<Dir>, Error<Dir::Error>>;
-
-    /// Removes the file at the given `path`.
-    ///
-    /// # Errors
-    ///
-    /// Returns a [`DevError`](crate::dev::error::DevError) if the device could not be read/written.
-    fn remove_file(&mut self, path: Path<'_>) -> Result<(), Error<Dir::Error>>;
 
     /// Performs a pathname resolution as described in [this POSIX definition](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap04.html#tag_04_13).
     ///
@@ -205,6 +184,81 @@ pub trait FileSystem<Dir: Directory> {
         }
 
         path_resolution(self, path, current_dir, symlink_resolution, vec![])
+    }
+
+    /// Creates a new file with the given `file_type` at the given `path`.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`DevError`](crate::dev::error::DevError) if the device could not be read/written.
+    fn create_file(
+        &mut self,
+        path: &Path<'_>,
+        file_type: Type,
+        permissions: Permissions,
+        user_id: Uid,
+        group_id: Gid,
+    ) -> Result<TypeWithFile<Dir>, Error<Dir::Error>>
+    where
+        Self: Sized,
+    {
+        if path.is_relative() {
+            return Err(Error::Path(PathError::AbsolutePathRequired(path.to_string())));
+        }
+
+        let Some(parent_dir_path) = path.parent() else { return Err(Error::Fs(FsError::EntryAlreadyExist(path.to_string()))) };
+        let parent_dir_file = self.get_file(&parent_dir_path, self.root()?, true)?;
+        let mut parent_dir = match parent_dir_file {
+            TypeWithFile::Directory(dir) => dir,
+            TypeWithFile::Regular(_)
+            | TypeWithFile::SymbolicLink(_)
+            | TypeWithFile::Fifo(_)
+            | TypeWithFile::CharacterDevice(_)
+            | TypeWithFile::BlockDevice(_)
+            | TypeWithFile::Socket(_) => {
+                return Err(Error::Fs(FsError::WrongFileType(Type::Directory, parent_dir_file.into())));
+            },
+        };
+
+        parent_dir.add_entry(
+            // SAFETY: the path is absolute and is not reduced to "/" or to "//"
+            unsafe { path.file_name().unwrap_unchecked() },
+            file_type,
+            permissions,
+            user_id,
+            group_id,
+        )
+    }
+
+    /// Removes the file at the given `path`.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`DevError`](crate::dev::error::DevError) if the device could not be read/written.
+    fn remove_file(&mut self, path: Path<'_>) -> Result<(), Error<Dir::Error>>
+    where
+        Self: Sized,
+    {
+        if path.is_relative() {
+            return Err(Error::Path(PathError::AbsolutePathRequired(path.to_string())));
+        }
+
+        let Some(parent_dir_path) = path.parent() else { return Err(Error::Fs(FsError::EntryAlreadyExist(path.to_string()))) };
+        let parent_dir_file = self.get_file(&parent_dir_path, self.root()?, true)?;
+        let mut parent_dir = match parent_dir_file {
+            TypeWithFile::Directory(dir) => dir,
+            TypeWithFile::Regular(_)
+            | TypeWithFile::SymbolicLink(_)
+            | TypeWithFile::Fifo(_)
+            | TypeWithFile::CharacterDevice(_)
+            | TypeWithFile::BlockDevice(_)
+            | TypeWithFile::Socket(_) => {
+                return Err(Error::Fs(FsError::WrongFileType(Type::Directory, parent_dir_file.into())));
+            },
+        };
+
+        // SAFETY: the path is absolute and is not reduced to "/" or to "//"
+        parent_dir.remove_entry(unsafe { path.file_name().unwrap_unchecked() })
     }
 }
 
