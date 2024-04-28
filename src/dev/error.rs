@@ -24,7 +24,6 @@ pub enum DevError {
 }
 
 impl Display for DevError {
-    #[inline]
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::OutOfBounds(structure, value, (lower_bound, upper_bound)) => {

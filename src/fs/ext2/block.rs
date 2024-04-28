@@ -33,7 +33,6 @@ pub struct Block<Dev: Device<u8, Ext2Error>> {
 
 impl<Dev: Device<u8, Ext2Error>> Block<Dev> {
     /// Returns a [`Block`] from its number and an [`Ext2`] instance.
-    #[inline]
     #[must_use]
     pub const fn new(filesystem: Celled<Ext2<Dev>>, number: u32) -> Self {
         Self {
@@ -44,17 +43,15 @@ impl<Dev: Device<u8, Ext2Error>> Block<Dev> {
     }
 
     /// Returns the containing block group of this block.
-    #[inline]
     #[must_use]
     pub const fn block_group(&self, superblock: &Superblock) -> u32 {
-        self.number / superblock.base().blocks_per_group
+        superblock.block_group(self.number)
     }
 
     /// Returns the offset of this block in its containing block group.
-    #[inline]
     #[must_use]
     pub const fn group_index(&self, superblock: &Superblock) -> u32 {
-        self.number % superblock.base().blocks_per_group
+        superblock.group_index(self.number)
     }
 
     /// Reads all the content from this block and returns it in a vector.
@@ -64,7 +61,6 @@ impl<Dev: Device<u8, Ext2Error>> Block<Dev> {
     /// # Errors
     ///
     /// Returns an [`Error`] if the device cannot be read.
-    #[inline]
     pub fn read_all(&mut self) -> Result<Vec<u8>, Error<Ext2Error>> {
         let block_size = self.filesystem.borrow().superblock().block_size();
         let mut buffer = vec![0_u8; block_size as usize];
@@ -78,11 +74,10 @@ impl<Dev: Device<u8, Ext2Error>> Block<Dev> {
     ///
     /// The `bitmap` argument is usually the result of the method [`get_block_bitmap`](../struct.Ext2.html#method.get_block_bitmap).
     #[allow(clippy::indexing_slicing)]
-    #[inline]
     #[must_use]
     pub const fn is_free(&self, superblock: &Superblock, bitmap: &[u8]) -> bool {
         let index = self.group_index(superblock) / 8;
-        let offset = self.number % 8;
+        let offset = (self.number - superblock.base().first_data_block) % 8;
         bitmap[index as usize] >> offset & 1 == 0
     }
 
@@ -90,7 +85,6 @@ impl<Dev: Device<u8, Ext2Error>> Block<Dev> {
     ///
     /// The `bitmap` argument is usually the result of the method [`get_block_bitmap`](../struct.Ext2.html#method.get_block_bitmap).
     #[allow(clippy::indexing_slicing)]
-    #[inline]
     #[must_use]
     pub const fn is_used(&self, superblock: &Superblock, bitmap: &[u8]) -> bool {
         !self.is_free(superblock, bitmap)
@@ -106,7 +100,7 @@ impl<Dev: Device<u8, Ext2Error>> Block<Dev> {
     ///
     /// Otherwise, returns an [`Error`] if the device cannot be written.
     fn set_usage(&mut self, usage: bool) -> Result<(), Error<Ext2Error>> {
-        self.filesystem.borrow_mut().locate_blocs(&[self.number], usage)
+        self.filesystem.borrow_mut().locate_blocks(&[self.number], usage)
     }
 
     /// Sets the current block as free in the block bitmap, and updates the superblock accordingly.
@@ -116,7 +110,6 @@ impl<Dev: Device<u8, Ext2Error>> Block<Dev> {
     /// Returns an [`BlockAlreadyFree`](Ext2Error::BlockAlreadyFree) error if the given block was already free.
     ///
     /// Otherwise, returns an [`Error`] if the device cannot be written.
-    #[inline]
     pub fn set_free(&mut self) -> Result<(), Error<Ext2Error>> {
         self.set_usage(false)?;
         let mut fs = self.filesystem.borrow_mut();
@@ -135,7 +128,6 @@ impl<Dev: Device<u8, Ext2Error>> Block<Dev> {
     /// Returns an [`BlockAlreadyInUse`](Ext2Error::BlockAlreadyInUse) error if the given block was already in use.
     ///
     /// Otherwise, returns an [`Error`] if the device cannot be written.
-    #[inline]
     pub fn set_used(&mut self) -> Result<(), Error<Ext2Error>> {
         self.set_usage(true)?;
 
@@ -150,18 +142,16 @@ impl<Dev: Device<u8, Ext2Error>> Block<Dev> {
 }
 
 impl<Dev: Device<u8, Ext2Error>> From<Block<Dev>> for u32 {
-    #[inline]
     fn from(block: Block<Dev>) -> Self {
         block.number
     }
 }
 
 impl<Dev: Device<u8, Ext2Error>> Base for Block<Dev> {
-    type Error = Ext2Error;
+    type IOError = Ext2Error;
 }
 
 impl<Dev: Device<u8, Ext2Error>> Read for Block<Dev> {
-    #[inline]
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, Error<Ext2Error>> {
         let fs = self.filesystem.borrow();
         let device = fs.device.borrow();
@@ -179,7 +169,6 @@ impl<Dev: Device<u8, Ext2Error>> Read for Block<Dev> {
 }
 
 impl<Dev: Device<u8, Ext2Error>> Write for Block<Dev> {
-    #[inline]
     fn write(&mut self, buf: &[u8]) -> Result<usize, Error<Ext2Error>> {
         let fs = self.filesystem.borrow();
         let mut device = fs.device.borrow_mut();
@@ -187,7 +176,8 @@ impl<Dev: Device<u8, Ext2Error>> Write for Block<Dev> {
         let length = ((fs.superblock().block_size() - self.io_offset) as usize).min(buf.len());
         let starting_addr = Address::new((self.number * fs.superblock().block_size() + self.io_offset) as usize);
         let mut slice = device.slice(starting_addr..starting_addr + length)?;
-        slice.clone_from_slice(buf);
+        // SAFETY: buf size is at least length
+        slice.clone_from_slice(unsafe { buf.get_unchecked(..length) });
         let commit = slice.commit();
         device.commit(commit)?;
 
@@ -197,14 +187,12 @@ impl<Dev: Device<u8, Ext2Error>> Write for Block<Dev> {
         Ok(length)
     }
 
-    #[inline]
     fn flush(&mut self) -> Result<(), Error<Ext2Error>> {
         Ok(())
     }
 }
 
 impl<Dev: Device<u8, Ext2Error>> Seek for Block<Dev> {
-    #[inline]
     fn seek(&mut self, pos: SeekFrom) -> Result<u64, Error<Ext2Error>> {
         let fs = self.filesystem.borrow();
 

@@ -1,14 +1,14 @@
 [package]
 name = "efs"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["RatCornu <ratcornu@skaven.org>"]
 edition = "2021"
 description = "An OS and architecture independent implementation of some Unix filesystems in Rust."
-documentation = "https://ratcornu.github.io/efs/"
+documentation = "https://docs.rs/efs/"
 readme = "README.md"
-homepage = "https://github.com/RatCornu/efs"
-repository = "https://github.com/RatCornu/efs"
-license = "MIT OR Apache-2.0"
+homepage = "https://codeberg.org/RatCornu/efs"
+repository = "https://codeberg.org/RatCornu/efs"
+license = "GPL-3.0"
 keywords = ["filesystem", "no-std"]
 categories = ["filesystem", "no-std"]
 
@@ -20,9 +20,21 @@ once_cell = "1"
 regex = "1"
 
 [dev-dependencies]
+efs = { path = ".", default-features = false, features = ["ext2", "std"]}
 itertools = { version = "0.11", default-features = true }
 
 [features]
 default = ["ext2"]
 ext2 = []
 std = []
+
+[lints.clippy]
+complexity = "deny"
+correctness = "deny"
+nursery = "deny"
+pedantic = "deny"
+perf = "deny"
+style = "deny"
+
+[lints.rust]
+missing_docs = "deny"

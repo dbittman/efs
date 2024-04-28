@@ -1,5 +1,6 @@
 //! Errors related to Ext2 manipulation.
 
+use alloc::string::String;
 use core::error;
 use core::fmt::{self, Display};
 
@@ -26,6 +27,16 @@ pub enum Ext2Error {
     /// Tried to set as used a block already in use.
     BlockAlreadyInUse(u32),
 
+    /// Tried to write a large file while the filesystem does not have the
+    /// [`RequiredFeature`](super::superblock::ReadOnlyFeatures::LARGE_FILE) feature set.
+    FileTooLarge,
+
+    /// Tried to set as free an inode already free.
+    InodeAlreadyFree(u32),
+
+    /// Tried to set as free an inode already free.
+    InodeAlreadyInUse(u32),
+
     /// Given code does not correspond to a valid file system state.
     ///
     /// See [this table](https://wiki.osdev.org/Ext2#File_System_States) for reference.
@@ -41,6 +52,9 @@ pub enum Ext2Error {
     /// See [this table](https://www.nongnu.org/ext2-doc/ext2.html#s-algo-bitmap) for reference.
     InvalidCompressionAlgorithm(u32),
 
+    /// The given name is too long to fit in a directory entry.
+    NameTooLong(String),
+
     /// Tried to access an extended field in a basic superblock.
     NoExtendedFields,
 
@@ -53,15 +67,23 @@ pub enum Ext2Error {
     /// Tried to access a non-existing inode.
     NonExistingInode(u32),
 
-    /// Requested more free blocks than currently available.
+    /// `NotEnoughFreeBlocks(requested, available)`: Requested more free blocks than currently available.
     NotEnoughFreeBlocks(u32, u32),
+
+    /// Requested an inode while none is available.
+    NotEnoughInodes,
 
     /// Tried to access a byte which is out of bounds.
     OutOfBounds(i128),
+
+    /// An unknown file type has been obtained while parsing a directory entry.
+    UnknownEntryFileType,
+
+    /// Filesystem requires a feature that is not supported by this implementation.
+    UnsupportedFeature(String),
 }
 
 impl Display for Ext2Error {
-    #[inline]
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::BadFileType(mode) => {
@@ -75,6 +97,18 @@ impl Display for Ext2Error {
             Self::BlockAlreadyInUse(nth) => {
                 write!(formatter, "Block Already in Use: tried to set the {nth} block in use while already being used")
             },
+            Self::FileTooLarge => {
+                write!(
+                    formatter,
+                    "File Too Large: Tried to write a large file while the filesystem does not have the LARGE_FILE feature set"
+                )
+            },
+            Self::InodeAlreadyFree(inode_number) => {
+                write!(formatter, "Inode Already Free: tried to set the inode {inode_number} as free but is already")
+            },
+            Self::InodeAlreadyInUse(inode_number) => {
+                write!(formatter, "Inode Already in Use: tried to set the inode {inode_number} in use while already being used")
+            },
             Self::InvalidState(state) => write!(formatter, "Invalid State: {state} has been found while 1 or 2 was expected"),
             Self::InvalidErrorHandlingMethod(method) => {
                 write!(formatter, "Invalid Error Handling Method: {method} was found while 1, 2 or 3 was expected")
@@ -82,6 +116,7 @@ impl Display for Ext2Error {
             Self::InvalidCompressionAlgorithm(id) => {
                 write!(formatter, "Invalid Compression Algorithm: {id} was found while 0, 1, 2, 3 or 4 was expected")
             },
+            Self::NameTooLong(name) => write!(formatter, "Name Too Long: {name} is too long to be written in a directory entry"),
             Self::NoExtendedFields => write!(
                 formatter,
                 "No Extend Field: tried to access an extended field in a superblock that only contains basic fields"
@@ -98,8 +133,17 @@ impl Display for Ext2Error {
             Self::NotEnoughFreeBlocks(requested, available) => {
                 write!(formatter, "Not Enough Free Blocks: requested {requested} free blocks while only {available} are available")
             },
+            Self::NotEnoughInodes => {
+                write!(formatter, "Not Enough Inodes: requested an inode but all inodes are in use")
+            },
             Self::OutOfBounds(byte) => {
                 write!(formatter, "Out of Bounds: tried to access the {byte}th byte which is out of bounds")
+            },
+            Self::UnknownEntryFileType => {
+                write!(formatter, "Unknown Entry File Type: An unknown file type has been obtained while parsing a directory entry")
+            },
+            Self::UnsupportedFeature(feature) => {
+                write!(formatter, "Unsupported Feature: filesystem requires the {feature} feature which is not supported")
             },
         }
     }
