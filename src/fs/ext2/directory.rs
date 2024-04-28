@@ -38,7 +38,7 @@ struct Header {
 ///
 /// See the [*The Second Extended Filesystem* book](https://www.nongnu.org/ext2-doc/ext2.html#ifdir-file-type) for more information.
 #[repr(u8)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FileType {
     /// Unknown file type.
     Unknown = 0,
@@ -96,6 +96,23 @@ impl From<Type> for FileType {
             Type::CharacterDevice => Self::ChrDev,
             Type::BlockDevice => Self::BlkDev,
             Type::Socket => Self::Sock,
+        }
+    }
+}
+
+impl TryFrom<FileType> for Type {
+    type Error = Ext2Error;
+
+    fn try_from(value: FileType) -> Result<Self, Self::Error> {
+        match value {
+            FileType::Unknown => Err(Ext2Error::UnknownEntryFileType),
+            FileType::RegFile => Ok(Self::Regular),
+            FileType::Dir => Ok(Self::Directory),
+            FileType::ChrDev => Ok(Self::CharacterDevice),
+            FileType::BlkDev => Ok(Self::BlockDevice),
+            FileType::Fifo => Ok(Self::Fifo),
+            FileType::Sock => Ok(Self::Socket),
+            FileType::Symlink => Ok(Self::SymbolicLink),
         }
     }
 }

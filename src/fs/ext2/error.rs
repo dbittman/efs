@@ -76,6 +76,9 @@ pub enum Ext2Error {
     /// Tried to access a byte which is out of bounds.
     OutOfBounds(i128),
 
+    /// An unknown file type has been obtained while parsing a directory entry.
+    UnknownEntryFileType,
+
     /// Filesystem requires a feature that is not supported by this implementation.
     UnsupportedFeature(String),
 }
@@ -135,6 +138,9 @@ impl Display for Ext2Error {
             },
             Self::OutOfBounds(byte) => {
                 write!(formatter, "Out of Bounds: tried to access the {byte}th byte which is out of bounds")
+            },
+            Self::UnknownEntryFileType => {
+                write!(formatter, "Unknown Entry File Type: An unknown file type has been obtained while parsing a directory entry")
             },
             Self::UnsupportedFeature(feature) => {
                 write!(formatter, "Unsupported Feature: filesystem requires the {feature} feature which is not supported")
