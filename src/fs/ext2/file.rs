@@ -324,6 +324,10 @@ impl<Dev: Device<u8, Ext2Error>> Write for File<Dev> {
             // SAFETY: there are at most u32::MAX blocks on the filesystem
             1 + unsafe { u32::try_from((bytes_to_write + self.io_offset - 1) / block_size).unwrap_unchecked() };
 
+        if !fs.options.large_files && u64::from(data_blocks_needed) * block_size >= u64::from(u32::MAX) {
+            return Err(Error::Fs(FsError::Implementation(Ext2Error::FileTooLarge)));
+        }
+
         let mut indirected_blocks: IndirectedBlocks<12> = self.inode.indirected_blocks(&fs.device, fs.superblock())?;
         // SAFETY: there are at most u32::MAX blocks on the filesystem
         indirected_blocks.truncate_back_data_blocks(unsafe {
@@ -418,7 +422,8 @@ impl<Dev: Device<u8, Ext2Error>> Write for File<Dev> {
         updated_inode.size = unsafe { u32::try_from(new_size & u64::from(u32::MAX)).unwrap_unchecked() };
         updated_inode.blocks = data_blocks_needed * self.filesystem.borrow().superblock().block_size() / 512;
 
-        assert!(u32::try_from(new_size).is_ok(), "TODO: Search how to deal with bigger files");
+        // SAFETY: the result cannot be greater than `u32::MAX`
+        updated_inode.dir_acl = unsafe { u32::try_from((new_size >> 32) & u64::from(u32::MAX)).unwrap_unchecked() };
 
         // SAFETY: the updated inode contains the right inode created in this function
         unsafe { self.set_inode(&updated_inode) }?;

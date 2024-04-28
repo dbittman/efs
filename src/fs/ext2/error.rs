@@ -27,6 +27,10 @@ pub enum Ext2Error {
     /// Tried to set as used a block already in use.
     BlockAlreadyInUse(u32),
 
+    /// Tried to write a large file while the filesystem does not have the
+    /// [`RequiredFeature`](super::superblock::ReadOnlyFeatures::LARGE_FILE) feature set.
+    FileTooLarge,
+
     /// Tried to set as free an inode already free.
     InodeAlreadyFree(u32),
 
@@ -71,6 +75,9 @@ pub enum Ext2Error {
 
     /// Tried to access a byte which is out of bounds.
     OutOfBounds(i128),
+
+    /// Filesystem requires a feature that is not supported by this implementation.
+    UnsupportedFeature(String),
 }
 
 impl Display for Ext2Error {
@@ -86,6 +93,12 @@ impl Display for Ext2Error {
             },
             Self::BlockAlreadyInUse(nth) => {
                 write!(formatter, "Block Already in Use: tried to set the {nth} block in use while already being used")
+            },
+            Self::FileTooLarge => {
+                write!(
+                    formatter,
+                    "File Too Large: Tried to write a large file while the filesystem does not have the LARGE_FILE feature set"
+                )
             },
             Self::InodeAlreadyFree(inode_number) => {
                 write!(formatter, "Inode Already Free: tried to set the inode {inode_number} as free but is already")
@@ -122,6 +135,9 @@ impl Display for Ext2Error {
             },
             Self::OutOfBounds(byte) => {
                 write!(formatter, "Out of Bounds: tried to access the {byte}th byte which is out of bounds")
+            },
+            Self::UnsupportedFeature(feature) => {
+                write!(formatter, "Unsupported Feature: filesystem requires the {feature} feature which is not supported")
             },
         }
     }
