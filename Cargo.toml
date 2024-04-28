@@ -26,3 +26,14 @@ itertools = { version = "0.11", default-features = true }
 default = ["ext2"]
 ext2 = []
 std = []
+
+[lints.clippy]
+complexity = "deny"
+correctness = "deny"
+nursery = "deny"
+pedantic = "deny"
+perf = "deny"
+style = "deny"
+
+[lints.rust]
+missing_docs = "deny"

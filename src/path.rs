@@ -1,4 +1,4 @@
-//! Path manipulation for UNIX-like filesystems
+//! Path manipulation for UNIX-like filesystems.
 
 use alloc::borrow::{Cow, ToOwned};
 use alloc::ffi::CString;
@@ -16,18 +16,17 @@ use regex::Regex;
 #[allow(clippy::module_name_repetitions)]
 #[derive(Debug, PartialEq, Eq)]
 pub enum PathError {
-    /// Indicates that a given filename is either empty or contains a `\0` character.
-    InvalidFilename(String),
-
     /// Indicates that the given path is relative while an absolute one is needed.
     AbsolutePathRequired(String),
 
     /// Indicates that a given [`CString`] is ill-formed and cannot be converted to a [`UnixStr`].
     InvalidCString(CString),
+
+    /// Indicates that a given filename is either empty or contains a `\0` character.
+    InvalidFilename(String),
 }
 
 impl Display for PathError {
-    #[inline]
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InvalidFilename(filename) => {
@@ -72,7 +71,6 @@ impl<'path> UnixStr<'path> {
     ///
     /// let not_valid = UnixStr::new("").unwrap();
     /// ```
-    #[inline]
     pub fn new(str: &'path str) -> Result<Self, PathError> {
         (!str.is_empty() && !str.contains('\0'))
             .then_some(Self(Cow::from(str)))
@@ -85,7 +83,7 @@ impl<'path> UnixStr<'path> {
     }
 
     /// Does the [`UnixStr`] ends with a trailing backs
-    #[inline]
+
     #[must_use]
     pub fn has_trailing_backslash(&self) -> bool {
         self.0.ends_with('/')
@@ -95,7 +93,6 @@ impl<'path> UnixStr<'path> {
 impl FromStr for UnixStr<'_> {
     type Err = PathError;
 
-    #[inline]
     fn from_str(str: &str) -> Result<Self, Self::Err> {
         (!str.is_empty() && !str.contains('\0'))
             .then_some(Self(Cow::Owned(str.to_owned())))
@@ -104,7 +101,6 @@ impl FromStr for UnixStr<'_> {
 }
 
 impl ToString for UnixStr<'_> {
-    #[inline]
     fn to_string(&self) -> String {
         self.0.to_string()
     }
@@ -113,14 +109,12 @@ impl ToString for UnixStr<'_> {
 impl TryFrom<CString> for UnixStr<'_> {
     type Error = <Self as FromStr>::Err;
 
-    #[inline]
     fn try_from(value: CString) -> Result<Self, Self::Error> {
         UnixStr::from_str(value.clone().into_string().map_err(|_err| PathError::InvalidCString(value))?.as_str())
     }
 }
 
 impl<'path> From<UnixStr<'path>> for CString {
-    #[inline]
     fn from(value: UnixStr) -> Self {
         // SAFETY: `value` cannot contain any <NUL> char
         unsafe { Self::from_vec_unchecked(value.0.as_bytes().to_vec()) }
@@ -128,7 +122,6 @@ impl<'path> From<UnixStr<'path>> for CString {
 }
 
 impl<'path> From<Component<'path>> for UnixStr<'path> {
-    #[inline]
     fn from(value: Component<'path>) -> Self {
         match value {
             Component::RootDir => Self(Cow::from("/")),
@@ -156,10 +149,19 @@ pub struct Path<'path> {
 
 impl<'path> Path<'path> {
     /// Directly wraps a [`UnixStr`] slice as a [`Path`] slice.
-    #[inline]
+
     #[must_use]
     pub fn new<US: Into<UnixStr<'path>>>(str: US) -> Self {
         Self { name: str.into() }
+    }
+
+    /// Creates a path from an unchecked UTF-8 sequence of bytes.
+    ///
+    /// # Safety
+    ///
+    /// Must ensure that the given slice is a valie UTF-8 sequence.
+    unsafe fn from_ut8_slice(slice: &[u8]) -> Result<Self, PathError> {
+        Ok(Self::new(UnixStr::from_str(&String::from_utf8_unchecked(slice.to_vec()))?))
     }
 
     /// Checks if the path is absolute.
@@ -177,7 +179,7 @@ impl<'path> Path<'path> {
     /// assert!(!Path::from_str("./foo/bar").unwrap().is_absolute());
     /// assert!(Path::from_str("//home").unwrap().is_absolute());
     /// ```
-    #[inline]
+
     #[must_use]
     pub fn is_absolute(&self) -> bool {
         self.name.0.starts_with('/')
@@ -198,7 +200,7 @@ impl<'path> Path<'path> {
     /// assert!(!Path::from_str("/home").unwrap().is_relative());
     /// assert!(!Path::from_str("//home").unwrap().is_relative());
     /// ```
-    #[inline]
+
     #[must_use]
     pub fn is_relative(&self) -> bool {
         !self.name.0.starts_with('/')
@@ -229,7 +231,7 @@ impl<'path> Path<'path> {
     ///     Path::from_str("foo///bar//").unwrap().canonical()
     /// );
     /// ```
-    #[inline]
+
     #[must_use]
     pub fn canonical(&self) -> Self {
         /// Regex matching one slash or more.
@@ -250,14 +252,14 @@ impl<'path> Path<'path> {
     }
 
     /// Yields the underlying [`UnixStr`] slice.
-    #[inline]
+
     #[must_use]
     pub const fn as_unix_str(&self) -> &UnixStr<'path> {
         &self.name
     }
 
     /// Yields a mutable referebce to the underlying [`UnixStr`] slice.
-    #[inline]
+
     #[must_use]
     pub const fn as_mut_unix_str(&mut self) -> &mut UnixStr<'path> {
         &mut self.name
@@ -286,7 +288,7 @@ impl<'path> Path<'path> {
     /// let second_path = Path::from_str("/bar/baz").unwrap();
     /// assert_eq!(first_path.join(&second_path).canonical(), Path::from_str("/bar/baz").unwrap());
     /// ```
-    #[inline]
+
     #[must_use]
     pub fn join(&self, path: &Path<'path>) -> Self {
         if path.is_absolute() {
@@ -305,16 +307,91 @@ impl<'path> Path<'path> {
         }
     }
 
-    /// Returns the size of the string representation of `self`.
+    /// Returns the size of the string representation.
     #[allow(clippy::len_without_is_empty)]
-    #[inline]
     #[must_use]
     pub fn len(&self) -> usize {
         self.as_unix_str().0.len()
     }
 
+    /// Returns the `Path` without its final component, if there is one.
+    ///
+    /// Returns [`None`] if the path terminates in a root or double root.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use core::str::FromStr;
+    ///
+    /// use efs::path::Path;
+    ///
+    /// let path = Path::from_str("/foo/bar").unwrap();
+    /// let parent = path.parent().unwrap();
+    /// assert_eq!(parent, Path::from_str("/foo").unwrap());
+    ///
+    /// let grand_parent = parent.parent().unwrap();
+    /// assert_eq!(grand_parent, Path::from_str("/").unwrap());
+    /// assert_eq!(grand_parent.parent(), None);
+    ///
+    /// let relative_path = Path::from_str("foo/bar").unwrap();
+    /// let parent = relative_path.parent().unwrap();
+    /// assert_eq!(parent, Path::from_str("foo").unwrap());
+    /// let grand_parent = parent.parent();
+    /// assert_eq!(grand_parent, None);
+    /// ```
+
+    #[must_use]
+    pub fn parent(&self) -> Option<Path<'_>> {
+        let mut components = self.components();
+        components.into_iter().next_back().and_then(|comp| match comp {
+            Component::RootDir | Component::DoubleSlashRootDir => None,
+            Component::CurDir | Component::ParentDir | Component::Normal(_) => {
+                if components.is_finished() {
+                    None
+                } else {
+                    Some(components.into())
+                }
+            },
+        })
+    }
+
+    /// Returns the file name of the final component of this path, **if it's a regular file**.
+    ///
+    /// Otherwise, it returns [`None`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use core::str::FromStr;
+    ///
+    /// use efs::path::{Path, UnixStr};
+    ///
+    /// let path = Path::from_str("/foo/bar").unwrap();
+    /// assert_eq!(path.file_name(), Some(UnixStr::from_str("bar").unwrap()));
+    ///
+    /// let path = Path::from_str("foo/bar").unwrap();
+    /// assert_eq!(path.file_name(), Some(UnixStr::from_str("bar").unwrap()));
+    ///
+    /// let path = Path::from_str(".").unwrap();
+    /// assert_eq!(path.file_name(), None);
+    ///
+    /// let path = Path::from_str("..").unwrap();
+    /// assert_eq!(path.file_name(), None);
+    ///
+    /// let path = Path::from_str("/").unwrap();
+    /// assert_eq!(path.file_name(), None);
+    /// ```
+
+    #[must_use]
+    pub fn file_name(&self) -> Option<UnixStr<'_>> {
+        self.components().into_iter().next_back().and_then(|p| match p {
+            Component::Normal(p) => Some(p),
+            _ => None,
+        })
+    }
+
     /// Produces an iterator over the Components of the path.
-    #[inline]
+
     #[must_use]
     pub fn components(&'path self) -> Components<'path> {
         Components::new(self)
@@ -324,21 +401,18 @@ impl<'path> Path<'path> {
 impl FromStr for Path<'_> {
     type Err = PathError;
 
-    #[inline]
     fn from_str(str: &str) -> Result<Self, Self::Err> {
         Ok(Self::new(UnixStr::from_str(str)?))
     }
 }
 
 impl ToString for Path<'_> {
-    #[inline]
     fn to_string(&self) -> String {
         self.as_unix_str().to_string()
     }
 }
 
 impl<'path> From<UnixStr<'path>> for Path<'path> {
-    #[inline]
     fn from(value: UnixStr<'path>) -> Self {
         Self { name: value }
     }
@@ -365,7 +439,7 @@ impl PartialEq for Path<'_> {
     /// assert_ne!(Path::from_str("/").unwrap(), Path::from_str("//").unwrap());
     /// assert_ne!(Path::from_str("//home").unwrap(), Path::from_str("/home").unwrap());
     /// ```
-    #[inline]
+
     fn eq(&self, other: &Self) -> bool {
         if (self.name.starts_with_two_slashes() && !other.name.starts_with_two_slashes())
             || (!self.name.starts_with_two_slashes() && other.name.starts_with_two_slashes())
@@ -395,7 +469,6 @@ impl Eq for Path<'_> {}
 impl<'path> TryFrom<&Components<'_>> for Path<'path> {
     type Error = <Path<'path> as FromStr>::Err;
 
-    #[inline]
     fn try_from(value: &Components<'_>) -> Result<Self, Self::Error> {
         Path::from_str(&value.to_string())
     }
@@ -459,7 +532,6 @@ pub enum Component<'path> {
 impl FromStr for Component<'_> {
     type Err = PathError;
 
-    #[inline]
     fn from_str(str: &str) -> Result<Self, Self::Err> {
         match str {
             "" => Err(PathError::InvalidFilename(str.to_owned())),
@@ -473,7 +545,6 @@ impl FromStr for Component<'_> {
 }
 
 impl ToString for Component<'_> {
-    #[inline]
     fn to_string(&self) -> String {
         match self {
             Component::RootDir => "/".to_owned(),
@@ -482,6 +553,13 @@ impl ToString for Component<'_> {
             Component::ParentDir => "..".to_owned(),
             Component::Normal(filename) => filename.to_string(),
         }
+    }
+}
+
+impl<'path> From<Component<'path>> for Path<'path> {
+    fn from(value: Component<'path>) -> Self {
+        // SAFETY: a valid component can always be converted into a path
+        unsafe { Self::new(UnixStr::from_str(&value.to_string()).unwrap_unchecked()) }
     }
 }
 
@@ -508,7 +586,7 @@ pub struct Components<'path> {
 
 impl<'path> Components<'path> {
     /// Returns the [`Components`] associated to a [`Path`]
-    #[inline]
+
     #[must_use]
     pub fn new(path: &'path Path<'path>) -> Self {
         let bytes = path.name.0.as_bytes();
@@ -532,6 +610,27 @@ impl<'path> Components<'path> {
         }
     }
 
+    /// Trims away repetead separators on the left.
+    fn trim_left(&mut self) {
+        while !self.path.is_empty() {
+            let (size, comp) = self.parse_next_component();
+            if comp.is_some() {
+                return;
+            }
+            self.path = &self.path[size..];
+        }
+    }
+
+    fn trim_right(&mut self) {
+        while self.path.len() > self.len_before_body() {
+            let (size, comp) = self.parse_next_component_back();
+            if comp.is_some() {
+                return;
+            }
+            self.path = &self.path[..self.path.len() - size];
+        }
+    }
+
     /// Does the original path starts with [`RootDir`](enum.Component.html#variant.RootDir) ?
     fn has_root(&self) -> bool {
         self.start_dir == Some(Component::RootDir)
@@ -548,10 +647,10 @@ impl<'path> Components<'path> {
     }
 
     /// Is the iteration complete ?
-    #[inline]
+
     #[must_use]
     pub fn is_finished(&self) -> bool {
-        self.front == State::Done || self.back == State::Done
+        self.front == State::Done || self.back == State::Done || self.path.is_empty()
     }
 
     /// Number of bytes before the [`Path`]'s body
@@ -609,7 +708,6 @@ impl<'path> Components<'path> {
 impl<'path> Iterator for &mut Components<'path> {
     type Item = Component<'path>;
 
-    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         while !self.is_finished() {
             match self.front {
@@ -647,7 +745,6 @@ impl<'path> Iterator for &mut Components<'path> {
         None
     }
 
-    #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         // SAFETY: the remaining `path` always contains a complete string
         let Ok(path) = Path::from_str(unsafe { &String::from_utf8_unchecked(self.path.to_vec()) }) else {
@@ -685,7 +782,6 @@ impl<'path> Iterator for &mut Components<'path> {
 }
 
 impl<'path> DoubleEndedIterator for &mut Components<'path> {
-    #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         while !self.is_finished() {
             match self.back {
@@ -729,10 +825,25 @@ impl FusedIterator for &mut Components<'_> {}
 impl ExactSizeIterator for &mut Components<'_> {}
 
 impl ToString for Components<'_> {
-    #[inline]
     fn to_string(&self) -> String {
         // SAFETY: at each step of the iteration over self, self.path remains a valid string
         unsafe { String::from_utf8_unchecked(self.path.to_vec()) }
+    }
+}
+
+impl<'path> From<Components<'path>> for Path<'path> {
+    fn from(value: Components<'path>) -> Self {
+        let mut comps = value.clone();
+        if comps.front == State::Body {
+            comps.trim_left();
+        }
+        if comps.back == State::Body {
+            comps.trim_right();
+        }
+        // SAFETY: the rest of the path is a valid UTF-8 sequence
+        let path = unsafe { Path::from_ut8_slice(comps.path) };
+        // SAFETY: `path` in not empty nor containing the `<NUL>`` character
+        unsafe { path.unwrap_unchecked() }
     }
 }
 
@@ -1005,5 +1116,48 @@ mod test {
         let mut components = path.components();
         let iterator = components.into_iter();
         assert_eq!(iterator.len(), 5);
+    }
+
+    #[test]
+    fn path_parent() {
+        let path = Path::from_str("/foo/bar").unwrap();
+        let parent = path.parent().unwrap();
+        assert_eq!(parent, Path::from_str("/foo").unwrap());
+
+        let grand_parent = parent.parent().unwrap();
+        assert_eq!(grand_parent, Path::from_str("/").unwrap());
+        assert_eq!(grand_parent.parent(), None);
+
+        let relative_path = Path::from_str("foo/bar").unwrap();
+        let parent = relative_path.parent().unwrap();
+        assert_eq!(parent, Path::from_str("foo").unwrap());
+        let grand_parent = parent.parent();
+        assert_eq!(grand_parent, None);
+
+        let relative_path = Path::from_str("./foo/bar").unwrap();
+        let parent = relative_path.parent().unwrap();
+        assert_eq!(parent, Path::from_str("./foo").unwrap());
+        let grand_parent = parent.parent().unwrap();
+        assert_eq!(grand_parent, Path::from(Component::CurDir));
+        let great_grand_parent = grand_parent.parent();
+        assert_eq!(great_grand_parent, None);
+    }
+
+    #[test]
+    fn path_file_name() {
+        let path = Path::from_str("/foo/bar").unwrap();
+        assert_eq!(path.file_name(), Some(UnixStr::from_str("bar").unwrap()));
+
+        let path = Path::from_str("foo/bar").unwrap();
+        assert_eq!(path.file_name(), Some(UnixStr::from_str("bar").unwrap()));
+
+        let path = Path::from_str(".").unwrap();
+        assert_eq!(path.file_name(), None);
+
+        let path = Path::from_str("..").unwrap();
+        assert_eq!(path.file_name(), None);
+
+        let path = Path::from_str("/").unwrap();
+        assert_eq!(path.file_name(), None);
     }
 }

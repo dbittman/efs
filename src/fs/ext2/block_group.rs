@@ -17,7 +17,7 @@ pub const BLOCK_GROUP_DESCRIPTOR_SIZE: usize = 32;
 /// Block group descriptor.
 ///
 /// Contains information regarding where important data structures for that block group are located.
-#[repr(packed)]
+#[repr(C, packed)]
 #[derive(Debug, Clone, Copy)]
 #[allow(clippy::module_name_repetitions)]
 pub struct BlockGroupDescriptor {
@@ -55,7 +55,6 @@ impl BlockGroupDescriptor {
     ///
     /// Returns an [`NonExistingBlockGroup`](Ext2Error::NonExistingBlockGroup) if `n` is greater than the block group count of this
     /// device.
-    #[inline]
     pub const fn starting_addr(superblock: &Superblock, n: u32) -> Result<Address, Error<Ext2Error>> {
         let block_group_count = superblock.block_group_count();
         if block_group_count <= n {
@@ -74,9 +73,8 @@ impl BlockGroupDescriptor {
     /// device.
     ///
     /// Returns an [`Error`] if the device could not be read.
-    #[inline]
-    pub fn parse<D: Device<u8, Ext2Error>>(
-        celled_device: &RefCell<D>,
+    pub fn parse<Dev: Device<u8, Ext2Error>>(
+        celled_device: &RefCell<Dev>,
         superblock: &Superblock,
         n: u32,
     ) -> Result<Self, Error<Ext2Error>> {
