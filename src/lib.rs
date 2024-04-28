@@ -2,6 +2,11 @@
 //!
 //! An OS and architecture independent implementation of some Unix filesystems in Rust.
 //!
+//! /!\ Warning /!\ : this crate is not at all sure enough to be used in a real context. Do **NOT** manage any important data with
+//! this library, and make backups before using it!
+//!
+//! The purpose of this library is not to be production-ready, but to help people who make toy OS (with [Rust OSDev for example](https://os.phil-opp.com/)).
+//!
 //! ## Details
 //!
 //! This crate provides a general interface to deal with some UNIX filesytems, and adds supports for some of them.

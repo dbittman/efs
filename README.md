@@ -3,11 +3,13 @@
 [crates.io-badge]: https://img.shields.io/crates/v/efs.svg
 [crates.io-link]: https://crates.io/crates/efs
 
-## This repository moved to codeberg: check it here: https://codeberg.org/RatCornu/efs.
-
 # Extended fs
 
 An OS and architecture independent implementation of some Unix filesystems in Rust.
+
+/!\ Warning /!\ : this crate is not at all sure enough to be used in a real context. Do **NOT** manage any important data with this library, and make backups before using it!
+
+The purpose of this library is not to be production-ready, but to help people who make toy OS (with [Rust OSDev for example](https://os.phil-opp.com/)).
 
 ## Features
 
