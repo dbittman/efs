@@ -33,7 +33,6 @@ pub struct Block<Dev: Device<u8, Ext2Error>> {
 
 impl<Dev: Device<u8, Ext2Error>> Block<Dev> {
     /// Returns a [`Block`] from its number and an [`Ext2`] instance.
-
     #[must_use]
     pub const fn new(filesystem: Celled<Ext2<Dev>>, number: u32) -> Self {
         Self {
@@ -44,17 +43,15 @@ impl<Dev: Device<u8, Ext2Error>> Block<Dev> {
     }
 
     /// Returns the containing block group of this block.
-
     #[must_use]
     pub const fn block_group(&self, superblock: &Superblock) -> u32 {
-        self.number / superblock.base().blocks_per_group
+        superblock.block_group(self.number)
     }
 
     /// Returns the offset of this block in its containing block group.
-
     #[must_use]
     pub const fn group_index(&self, superblock: &Superblock) -> u32 {
-        self.number % superblock.base().blocks_per_group
+        superblock.group_index(self.number)
     }
 
     /// Reads all the content from this block and returns it in a vector.
@@ -80,7 +77,7 @@ impl<Dev: Device<u8, Ext2Error>> Block<Dev> {
     #[must_use]
     pub const fn is_free(&self, superblock: &Superblock, bitmap: &[u8]) -> bool {
         let index = self.group_index(superblock) / 8;
-        let offset = self.number % 8;
+        let offset = (self.number - superblock.base().first_data_block) % 8;
         bitmap[index as usize] >> offset & 1 == 0
     }
 

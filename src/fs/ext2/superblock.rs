@@ -634,7 +634,6 @@ impl Superblock {
     }
 
     /// Does the superblock contain the extended fields ?
-
     #[must_use]
     pub const fn is_extended(&self) -> bool {
         match self {
@@ -644,7 +643,6 @@ impl Superblock {
     }
 
     /// Returns the base fields of the superblock.
-
     #[must_use]
     pub const fn base(&self) -> &Base {
         match self {
@@ -653,7 +651,6 @@ impl Superblock {
     }
 
     /// Returns the mutable base fields of the superblock.
-
     #[must_use]
     pub(super) const fn base_mut(&mut self) -> &mut Base {
         match self {
@@ -662,7 +659,6 @@ impl Superblock {
     }
 
     /// Returns the extended fields of the superblock (if they exist).
-
     #[must_use]
     pub const fn extended_fields(&self) -> Option<&ExtendedFields> {
         match self {
@@ -676,7 +672,6 @@ impl Superblock {
     /// # Errors
     ///
     /// Returns an [`Ext2Error::InvalidState`] if an invalid state has been found.
-
     pub const fn state(&self) -> Result<State, Ext2Error> {
         self.base().state()
     }
@@ -686,13 +681,11 @@ impl Superblock {
     /// # Errors
     ///
     /// Returns an [`Ext2Error::InvalidState`] if an invalid state has been found.
-
     pub const fn error_handling_method(&self) -> Result<ErrorHandlingMethod, Ext2Error> {
         self.base().error_handling_method()
     }
 
     /// Returns the Operating system from which the filesystem on this volume was created.
-
     #[must_use]
     pub const fn creator_operating_system(&self) -> OperatingSystem {
         self.base().creator_operating_system()
@@ -701,28 +694,24 @@ impl Superblock {
     /// Returns the number of block groups.
     ///
     /// It is equal to the round up of the total number of blocks divided by the number of blocks per block group.
-
     #[must_use]
     pub const fn block_group_count(&self) -> u32 {
         self.base().block_group_count()
     }
 
     /// Returns the size of a block in the filesystem described by this superblock.
-
     #[must_use]
     pub const fn block_size(&self) -> u32 {
         self.base().block_size()
     }
 
     /// Returns the size of a fragment in the filesystem described by this superblock.
-
     #[must_use]
     pub const fn frag_size(&self) -> u32 {
         self.base().frag_size()
     }
 
     /// Returns the first non-reserved inode in file system.
-
     #[must_use]
     pub const fn first_non_reserved_inode(&self) -> u32 {
         match self {
@@ -732,7 +721,6 @@ impl Superblock {
     }
 
     /// Returns the size of each inode in bytes.
-
     #[must_use]
     pub const fn inode_size(&self) -> u16 {
         match self {
@@ -742,7 +730,6 @@ impl Superblock {
     }
 
     /// Returns the maximal size in bytes for a single file.
-
     #[must_use]
     pub const fn max_file_size(&self) -> u64 {
         self.base().max_file_size()
@@ -755,7 +742,6 @@ impl Superblock {
     /// # Errors
     ///
     /// Returns a [`Ext2Error::NoExtendedFields`] if the given superblock does not contain the extended fields.
-
     pub const fn optional_features(&self) -> Result<Option<OptionalFeatures>, Ext2Error> {
         match self {
             Self::Basic(_) => Err(Ext2Error::NoExtendedFields),
@@ -770,7 +756,6 @@ impl Superblock {
     /// # Errors
     ///
     /// Returns a [`Ext2Error::NoExtendedFields`] if the given superblock does not contain the extended fields.
-
     pub const fn required_features(&self) -> Result<Option<RequiredFeatures>, Ext2Error> {
         match self {
             Self::Basic(_) => Err(Ext2Error::NoExtendedFields),
@@ -785,12 +770,23 @@ impl Superblock {
     /// # Errors
     ///
     /// Returns a [`Ext2Error::NoExtendedFields`] if the given superblock does not contain the extended fields.
-
     pub const fn read_only_features(&self) -> Result<Option<ReadOnlyFeatures>, Ext2Error> {
         match self {
             Self::Basic(_) => Err(Ext2Error::NoExtendedFields),
             Self::Extended(_, extended_fields) => Ok(extended_fields.read_only_features()),
         }
+    }
+
+    /// Returns the containing block group of the given block.
+    #[must_use]
+    pub const fn block_group(&self, block_number: u32) -> u32 {
+        (block_number - self.base().first_data_block) / self.base().blocks_per_group
+    }
+
+    /// Returns the offset of this block in its containing block group.
+    #[must_use]
+    pub const fn group_index(&self, block_number: u32) -> u32 {
+        (block_number - self.base().first_data_block) % self.base().blocks_per_group
     }
 }
 

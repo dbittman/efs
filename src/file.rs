@@ -440,7 +440,7 @@ pub enum Type {
 
 /// Enumeration of possible file types in a standard UNIX-like filesystem with an attached file object.
 #[allow(clippy::module_name_repetitions)]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum TypeWithFile<Dir: Directory> {
     /// Storage unit of a filesystem.
     Regular(Dir::Regular),
@@ -561,6 +561,7 @@ impl<Dir: Directory> TypeWithFile<Dir> {
 ///
 /// This is the read-only version of [`TypeWithFile`].
 #[allow(clippy::module_name_repetitions)]
+#[derive(Debug, Clone)]
 pub enum ReadOnlyTypeWithFile<RoDir: ReadOnlyDirectory> {
     /// Storage unit of a filesystem.
     Regular(RoDir::Regular),
@@ -582,6 +583,99 @@ pub enum ReadOnlyTypeWithFile<RoDir: ReadOnlyDirectory> {
 
     /// Special node containing a [`Socket`].
     Socket(RoDir::Socket),
+}
+
+impl<RoDir: ReadOnlyDirectory> ReadOnlyTypeWithFile<RoDir> {
+    /// Whether this file is a regular file or not.
+    pub const fn is_regular(&self) -> bool {
+        match self {
+            Self::Regular(_) => true,
+            Self::Directory(_)
+            | Self::SymbolicLink(_)
+            | Self::Fifo(_)
+            | Self::CharacterDevice(_)
+            | Self::BlockDevice(_)
+            | Self::Socket(_) => false,
+        }
+    }
+
+    /// Whether this file is a directory or not.
+    pub const fn is_directory(&self) -> bool {
+        match self {
+            Self::Directory(_) => true,
+            Self::Regular(_)
+            | Self::SymbolicLink(_)
+            | Self::Fifo(_)
+            | Self::CharacterDevice(_)
+            | Self::BlockDevice(_)
+            | Self::Socket(_) => false,
+        }
+    }
+
+    /// Whether this file is a symbolic link or not.
+    pub const fn is_symlink(&self) -> bool {
+        match self {
+            Self::SymbolicLink(_) => true,
+            Self::Regular(_)
+            | Self::Directory(_)
+            | Self::Fifo(_)
+            | Self::CharacterDevice(_)
+            | Self::BlockDevice(_)
+            | Self::Socket(_) => false,
+        }
+    }
+
+    /// Whether this file is a fifo or not.
+    pub const fn is_fifo(&self) -> bool {
+        match self {
+            Self::Fifo(_) => true,
+            Self::Regular(_)
+            | Self::Directory(_)
+            | Self::SymbolicLink(_)
+            | Self::CharacterDevice(_)
+            | Self::BlockDevice(_)
+            | Self::Socket(_) => false,
+        }
+    }
+
+    /// Whether this file is a character device or not.
+    pub const fn is_character_device(&self) -> bool {
+        match self {
+            Self::CharacterDevice(_) => true,
+            Self::Regular(_)
+            | Self::Directory(_)
+            | Self::SymbolicLink(_)
+            | Self::Fifo(_)
+            | Self::BlockDevice(_)
+            | Self::Socket(_) => false,
+        }
+    }
+
+    /// Whether this file is a block device or not.
+    pub const fn is_block_device(&self) -> bool {
+        match self {
+            Self::BlockDevice(_) => true,
+            Self::Regular(_)
+            | Self::Directory(_)
+            | Self::SymbolicLink(_)
+            | Self::Fifo(_)
+            | Self::CharacterDevice(_)
+            | Self::Socket(_) => false,
+        }
+    }
+
+    /// Whether this file is a UNIX socket or not.
+    pub const fn is_socket(&self) -> bool {
+        match self {
+            Self::Socket(_) => true,
+            Self::Regular(_)
+            | Self::Directory(_)
+            | Self::SymbolicLink(_)
+            | Self::Fifo(_)
+            | Self::CharacterDevice(_)
+            | Self::BlockDevice(_) => false,
+        }
+    }
 }
 
 impl<Dir: Directory> From<TypeWithFile<Dir>> for ReadOnlyTypeWithFile<Dir> {

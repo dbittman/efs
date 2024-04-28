@@ -81,7 +81,6 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
     }
 
     /// Returns the [`Superblock`] of this filesystem.
-
     #[must_use]
     pub const fn superblock(&self) -> &Superblock {
         &self.superblock
@@ -198,7 +197,12 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
 
                     for bit in 0_u32..8 {
                         if (byte >> bit) & 1 == 0 {
-                            free_blocks.push(block_group_count * self.superblock().base().blocks_per_group + index * 8 + bit);
+                            free_blocks.push(
+                                block_group_count * self.superblock().base().blocks_per_group
+                                    + index * 8
+                                    + bit
+                                    + self.superblock().base().first_data_block,
+                            );
 
                             if free_blocks.len() as u64 == u64::from(n) {
                                 return Ok(free_blocks);
@@ -281,11 +285,11 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
         let total_number_blocks_changed = unsafe { u32::try_from(blocks.len()).unwrap_unchecked() };
 
         if let Some(block) = block_opt {
-            let mut block_group_number = block / self.superblock().base().blocks_per_group;
-            let mut bitmap = self.get_block_bitmap(block / self.superblock().base().blocks_per_group)?;
+            let mut block_group_number = self.superblock().block_group(*block);
+            let mut bitmap = self.get_block_bitmap(block_group_number)?;
 
             for block in blocks {
-                if block / self.superblock().base().blocks_per_group != block_group_number {
+                if self.superblock().block_group(*block) != block_group_number {
                     // SAFETY: the state of the filesystem stays coherent within this function
                     unsafe {
                         update_block_group(self, block_group_number, number_blocks_changed_in_group, &mut bitmap, usage)?;
@@ -293,13 +297,13 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
 
                     number_blocks_changed_in_group = 0;
 
-                    block_group_number = block / self.superblock().base().blocks_per_group;
+                    block_group_number = self.superblock().block_group(*block);
                     bitmap = self.get_block_bitmap(block_group_number)?;
                 }
 
                 number_blocks_changed_in_group += 1;
 
-                let group_index = block % self.superblock().base().blocks_per_group;
+                let group_index = self.superblock().group_index(*block);
                 let bitmap_index = group_index / 8;
                 let bitmap_offset = group_index % 8;
 
@@ -528,7 +532,7 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
     pub fn deallocate_inode(&mut self, inode_number: u32) -> Result<(), Error<Ext2Error>> {
         let mut inode = self.inode(inode_number)?;
 
-        inode.links_count -= 1;
+        inode.links_count -= if inode.file_type()? == Type::Directory { 2 } else { 1 };
         if inode.links_count == 0 {
             let file_type = inode.file_type()?;
             if file_type == Type::Regular
@@ -539,10 +543,12 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
                 let indirected_blocks = inode.indirected_blocks(&self.device, superblock)?;
                 self.deallocate_blocks(&indirected_blocks.flatten_data_blocks())?;
             }
-            self.locate_inode(inode_number, false)
-        } else {
-            Ok(())
+            self.locate_inode(inode_number, false)?;
         }
+
+        let inode_address = Inode::starting_addr(&self.device, self.superblock(), inode_number)?;
+        // SAFETY: `inode_address` is the starting address of the inode
+        unsafe { self.device.borrow_mut().write_at(inode_address, inode) }
     }
 }
 
@@ -748,21 +754,22 @@ mod test {
         );
         let mut ext2 = Ext2::new(device, 0).unwrap();
 
-        let free_blocks = ext2.free_blocks(1_024).unwrap();
+        let mut free_blocks = ext2.free_blocks(1_024).unwrap();
         ext2.allocate_blocks(&free_blocks).unwrap();
+        free_blocks.push(14849);
 
         let fs = Celled::new(ext2);
 
         let superblock = fs.borrow().superblock().clone();
         for block in &free_blocks {
-            let bitmap = fs.borrow().get_block_bitmap(block / superblock.base().blocks_per_group).unwrap();
+            let bitmap = fs.borrow().get_block_bitmap(superblock.block_group(*block)).unwrap();
             assert!(Block::new(fs.clone(), *block).is_used(&superblock, &bitmap), "Allocation: {block}");
         }
 
         fs.borrow_mut().deallocate_blocks(&free_blocks).unwrap();
 
         for block in &free_blocks {
-            let bitmap = fs.borrow().get_block_bitmap(block / superblock.base().blocks_per_group).unwrap();
+            let bitmap = fs.borrow().get_block_bitmap(superblock.block_group(*block)).unwrap();
             assert!(Block::new(fs.clone(), *block).is_free(&superblock, &bitmap), "Deallocation: {block}");
         }
 
@@ -793,18 +800,18 @@ mod test {
 
         let superblock = fs.borrow().superblock().clone();
         for block in &free_blocks {
-            let bitmap = fs.borrow().get_block_bitmap(block / superblock.base().blocks_per_group).unwrap();
+            let bitmap = fs.borrow().get_block_bitmap(superblock.block_group(*block)).unwrap();
             assert!(
                 Block::new(fs.clone(), *block).is_used(&superblock, &bitmap),
                 "Allocation: {block} ({})",
-                block / superblock.base().blocks_per_group
+                superblock.block_group(*block)
             );
         }
 
         fs.borrow_mut().deallocate_blocks(&free_blocks).unwrap();
 
         for block in &free_blocks {
-            let bitmap = fs.borrow().get_block_bitmap(block / superblock.base().blocks_per_group).unwrap();
+            let bitmap = fs.borrow().get_block_bitmap(superblock.block_group(*block)).unwrap();
             assert!(Block::new(fs.clone(), *block).is_free(&superblock, &bitmap), "Deallocation: {block}");
         }
 

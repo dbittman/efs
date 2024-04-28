@@ -340,10 +340,11 @@ impl<Dev: Device<u8, Ext2Error>> Write for File<Dev> {
             fs.superblock().base().block_size() / 4,
         ) - current_indirection_block_count;
 
-        let start_block_group = indirected_blocks.last_data_block_allocated().map(|(block, _)| block).unwrap_or_default()
-            / superblock.base().blocks_per_group;
+        let start_block_group = indirected_blocks
+            .last_data_block_allocated()
+            .map(|(block, _)| superblock.block_group(block))
+            .unwrap_or_default();
 
-        #[allow(clippy::wildcard_enum_match_arm)]
         let free_blocks = fs.free_blocks_offset(data_blocks_to_request + indirection_blocks_to_request, start_block_group)?;
 
         fs.allocate_blocks(&free_blocks)?;
@@ -837,12 +838,25 @@ impl<Dev: Device<u8, Ext2Error>> file::Directory for Directory<Dev> {
                     }
 
                     if let TypeWithFile::Directory(mut dir) = self.file.filesystem.file(entry.inode)? {
-                        let sub_entry_names = dir.entries.clone().into_iter().flatten();
-                        for sub_entry in sub_entry_names {
+                        let mut new_inode = self.file.inode;
+                        let sub_entries = dir.entries.clone().into_iter().flatten().collect_vec();
+                        for sub_entry in sub_entries {
                             // SAFETY: sub entry name has been checked at `dir` creation
-                            let sub_entry_name = unsafe { sub_entry.name.try_into().unwrap_unchecked() };
+                            let sub_entry_name: UnixStr<'_> = unsafe { sub_entry.name.try_into().unwrap_unchecked() };
                             if sub_entry_name != *CUR_DIR && sub_entry_name != *PARENT_DIR {
-                                dir.remove_entry(sub_entry_name)?;
+                                dir.remove_entry(sub_entry_name.clone())?;
+
+                                let fs = self.file.filesystem.borrow();
+                                let sub_entry_inode = fs.inode(sub_entry.inode)?;
+                                if sub_entry_inode.file_type()? == Type::Directory {
+                                    new_inode.links_count -= 1;
+                                }
+                                drop(fs);
+                                if self.file.inode.links_count != new_inode.links_count {
+                                    unsafe {
+                                        self.file.set_inode(&new_inode)?;
+                                    };
+                                }
                             }
                         }
                     }
@@ -1706,6 +1720,14 @@ mod test {
         let ex2_bitmap = fs.get_inode_bitmap(Inode::block_group(superblock, ex2_inode)).unwrap();
         assert!(Inode::is_used(ex2_inode, superblock, &ex2_bitmap));
         drop(fs);
+
+        let TypeWithFile::Directory(folder) =
+            ext2.get_file(&Path::new(UnixStr::new("folder").unwrap()), root.clone(), false).unwrap()
+        else {
+            panic!("");
+        };
+
+        std::println!("{:?}", folder.file.inode);
 
         crate::file::Directory::remove_entry(&mut root, UnixStr::new("folder").unwrap()).unwrap();
 
