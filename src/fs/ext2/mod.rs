@@ -669,6 +669,7 @@ impl<Dev: Device<u8, Ext2Error>> FileSystem<Directory<Dev>> for Celled<Ext2<Dev>
 #[cfg(test)]
 mod test {
     use core::cell::RefCell;
+    use core::str::FromStr;
     use std::fs::{self, File};
 
     use itertools::Itertools;
@@ -676,11 +677,14 @@ mod test {
     use super::inode::ROOT_DIRECTORY_INODE;
     use super::Ext2;
     use crate::dev::celled::Celled;
-    use crate::file::{Directory, Type, TypeWithFile};
+    use crate::file::{Directory, SymbolicLink, Type, TypeWithFile};
     use crate::fs::ext2::block::Block;
     use crate::fs::ext2::inode::{Flags, Inode, TypePermissions};
-    use crate::io::Read;
-    use crate::path::UnixStr;
+    use crate::fs::FileSystem;
+    use crate::io::{Read, Write};
+    use crate::path::{Path, UnixStr};
+    use crate::permissions::Permissions;
+    use crate::types::{Gid, Uid};
 
     #[test]
     fn base_fs() {
@@ -866,5 +870,53 @@ mod test {
         assert!(Inode::is_free(free_inode, superblock, &bitmap));
 
         fs::remove_file("./tests/fs/ext2/io_operations_copy_free_inode_allocation_deallocation.ext2").unwrap();
+    }
+
+    #[test]
+    fn fs_interface() {
+        fs::copy("./tests/fs/ext2/io_operations.ext2", "./tests/fs/ext2/io_operations_copy_fs_interface.ext2").unwrap();
+
+        let device = RefCell::new(
+            File::options()
+                .read(true)
+                .write(true)
+                .open("./tests/fs/ext2/io_operations_copy_fs_interface.ext2")
+                .unwrap(),
+        );
+        let ext2 = Ext2::new(device, 0).unwrap();
+        let fs = Celled::new(ext2);
+
+        let root = fs.root().unwrap();
+
+        let Some(TypeWithFile::Regular(mut foo_txt)) = root.entry(UnixStr::new("foo.txt").unwrap()).unwrap() else {
+            panic!("foo.txt is a regular file in the root folder");
+        };
+        assert_eq!(foo_txt.read_all().unwrap(), b"Hello world!\n");
+
+        let Some(TypeWithFile::Directory(mut folder)) = root.entry(UnixStr::new("folder").unwrap()).unwrap() else {
+            panic!("folder is a directory in the root folder");
+        };
+        let Ok(TypeWithFile::Regular(mut ex1_txt)) =
+            fs.get_file(&Path::from_str("../folder/ex1.txt").unwrap(), folder.clone(), false)
+        else {
+            panic!("ex1.txt is a regular file at /folder/ex1.txt");
+        };
+        ex1_txt.write_all(b"Hello earth!\n").unwrap();
+
+        let TypeWithFile::SymbolicLink(mut boo) = folder
+            .add_entry(UnixStr::new("boo.txt").unwrap(), Type::SymbolicLink, Permissions::from_bits_retain(0o777), Uid(0), Gid(0))
+            .unwrap()
+        else {
+            panic!("Could not create a symbolic link");
+        };
+        boo.set_pointed_file("../baz.txt").unwrap();
+
+        let TypeWithFile::Regular(mut baz_txt) = fs.get_file(&Path::from_str("/folder/boo.txt").unwrap(), root, true).unwrap()
+        else {
+            panic!("Could not retrieve baz.txt from boo.txt");
+        };
+        assert_eq!(ex1_txt.read_all().unwrap(), baz_txt.read_all().unwrap());
+
+        fs::remove_file("./tests/fs/ext2/io_operations_copy_fs_interface.ext2").unwrap();
     }
 }
