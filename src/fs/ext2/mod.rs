@@ -624,7 +624,7 @@ impl<Dev: Device<u8, Ext2Error>> FileSystem<Directory<Dev>> for Celled<Ext2<Dev>
 mod test {
     use core::cell::RefCell;
     use core::str::FromStr;
-    use std::fs::{self, File};
+    use std::fs::File;
 
     use itertools::Itertools;
 
@@ -638,6 +638,7 @@ mod test {
     use crate::io::{Read, Write};
     use crate::path::{Path, UnixStr};
     use crate::permissions::Permissions;
+    use crate::tests::copy_file;
     use crate::types::{Gid, Uid};
 
     #[test]
@@ -697,20 +698,8 @@ mod test {
 
     #[test]
     fn free_block_small_allocation_deallocation() {
-        fs::copy(
-            "./tests/fs/ext2/io_operations.ext2",
-            "./tests/fs/ext2/io_operations_copy_free_block_small_allocation_deallocation.ext2",
-        )
-        .unwrap();
-
-        let device = RefCell::new(
-            File::options()
-                .read(true)
-                .write(true)
-                .open("./tests/fs/ext2/io_operations_copy_free_block_small_allocation_deallocation.ext2")
-                .unwrap(),
-        );
-        let mut ext2 = Ext2::new(device, 0).unwrap();
+        let file = RefCell::new(copy_file("./tests/fs/ext2/io_operations.ext2").unwrap());
+        let mut ext2 = Ext2::new(file, 0).unwrap();
 
         let mut free_blocks = ext2.free_blocks(1_024).unwrap();
         ext2.allocate_blocks(&free_blocks).unwrap();
@@ -730,26 +719,12 @@ mod test {
             let bitmap = fs.borrow().get_block_bitmap(superblock.block_group(*block)).unwrap();
             assert!(Block::new(fs.clone(), *block).is_free(&superblock, &bitmap), "Deallocation: {block}");
         }
-
-        fs::remove_file("./tests/fs/ext2/io_operations_copy_free_block_small_allocation_deallocation.ext2").unwrap();
     }
 
     #[test]
     fn free_block_big_allocation_deallocation() {
-        fs::copy(
-            "./tests/fs/ext2/io_operations.ext2",
-            "./tests/fs/ext2/io_operations_copy_free_block_big_allocation_deallocation.ext2",
-        )
-        .unwrap();
-
-        let device = RefCell::new(
-            File::options()
-                .read(true)
-                .write(true)
-                .open("./tests/fs/ext2/io_operations_copy_free_block_big_allocation_deallocation.ext2")
-                .unwrap(),
-        );
-        let mut ext2 = Ext2::new(device, 0).unwrap();
+        let file = RefCell::new(copy_file("./tests/fs/ext2/io_operations.ext2").unwrap());
+        let mut ext2 = Ext2::new(file, 0).unwrap();
 
         let free_blocks = ext2.free_blocks(20_000).unwrap();
         ext2.allocate_blocks(&free_blocks).unwrap();
@@ -772,26 +747,12 @@ mod test {
             let bitmap = fs.borrow().get_block_bitmap(superblock.block_group(*block)).unwrap();
             assert!(Block::new(fs.clone(), *block).is_free(&superblock, &bitmap), "Deallocation: {block}");
         }
-
-        fs::remove_file("./tests/fs/ext2/io_operations_copy_free_block_big_allocation_deallocation.ext2").unwrap();
     }
 
     #[test]
     fn free_inode_allocation_deallocation() {
-        fs::copy(
-            "./tests/fs/ext2/io_operations.ext2",
-            "./tests/fs/ext2/io_operations_copy_free_inode_allocation_deallocation.ext2",
-        )
-        .unwrap();
-
-        let device = RefCell::new(
-            File::options()
-                .read(true)
-                .write(true)
-                .open("./tests/fs/ext2/io_operations_copy_free_inode_allocation_deallocation.ext2")
-                .unwrap(),
-        );
-        let ext2 = Ext2::new(device, 0).unwrap();
+        let file = RefCell::new(copy_file("./tests/fs/ext2/io_operations.ext2").unwrap());
+        let ext2 = Ext2::new(file, 0).unwrap();
 
         let celled_fs = Celled::new(ext2);
         let mut fs = celled_fs.borrow_mut();
@@ -803,14 +764,12 @@ mod test {
                 .is_used(superblock, &fs.get_block_bitmap(Inode::block_group(superblock, free_inode)).unwrap())
         );
         let bitmap = fs.get_inode_bitmap(Inode::block_group(superblock, free_inode)).unwrap();
-        std::println!("{bitmap:?}");
         assert!(Inode::is_free(free_inode, superblock, &bitmap));
 
         fs.allocate_inode(free_inode, TypePermissions::REGULAR_FILE, 0, 0, Flags::empty(), 0, [0; 12])
             .unwrap();
         let superblock = fs.superblock();
         let bitmap = fs.get_inode_bitmap(Inode::block_group(superblock, free_inode)).unwrap();
-        std::println!("{bitmap:?}");
         assert!(Inode::is_used(free_inode, superblock, &bitmap));
 
         assert_eq!(
@@ -822,22 +781,12 @@ mod test {
         let superblock = fs.superblock();
         let bitmap = fs.get_inode_bitmap(Inode::block_group(superblock, free_inode)).unwrap();
         assert!(Inode::is_free(free_inode, superblock, &bitmap));
-
-        fs::remove_file("./tests/fs/ext2/io_operations_copy_free_inode_allocation_deallocation.ext2").unwrap();
     }
 
     #[test]
     fn fs_interface() {
-        fs::copy("./tests/fs/ext2/io_operations.ext2", "./tests/fs/ext2/io_operations_copy_fs_interface.ext2").unwrap();
-
-        let device = RefCell::new(
-            File::options()
-                .read(true)
-                .write(true)
-                .open("./tests/fs/ext2/io_operations_copy_fs_interface.ext2")
-                .unwrap(),
-        );
-        let ext2 = Ext2::new(device, 0).unwrap();
+        let file = RefCell::new(copy_file("./tests/fs/ext2/io_operations.ext2").unwrap());
+        let ext2 = Ext2::new(file, 0).unwrap();
         let fs = Celled::new(ext2);
 
         let root = fs.root().unwrap();
@@ -870,7 +819,5 @@ mod test {
             panic!("Could not retrieve baz.txt from boo.txt");
         };
         assert_eq!(ex1_txt.read_all().unwrap(), baz_txt.read_all().unwrap());
-
-        fs::remove_file("./tests/fs/ext2/io_operations_copy_fs_interface.ext2").unwrap();
     }
 }

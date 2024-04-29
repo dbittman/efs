@@ -464,8 +464,6 @@ impl<Dev: Device<u8, Ext2Error>> Seek for File<Dev> {
         };
 
         if self.io_offset > self.inode.data_size() {
-            #[cfg(test)]
-            std::println!("{}", self.inode.data_size());
             Err(Error::Fs(FsError::Implementation(Ext2Error::OutOfBounds(self.io_offset.into()))))
         } else {
             Ok(previous_offset)
@@ -1049,7 +1047,7 @@ mod test {
     use alloc::vec;
     use alloc::vec::Vec;
     use core::cell::RefCell;
-    use std::fs::{self, File};
+    use std::fs::File;
 
     use itertools::Itertools;
 
@@ -1064,6 +1062,7 @@ mod test {
     use crate::io::{Seek, SeekFrom, Write};
     use crate::path::{Path, UnixStr};
     use crate::permissions::Permissions;
+    use crate::tests::copy_file;
     use crate::types::{Gid, Mode, Uid};
 
     #[test]
@@ -1208,15 +1207,7 @@ mod test {
 
     #[test]
     fn set_inode() {
-        fs::copy("./tests/fs/ext2/io_operations.ext2", "./tests/fs/ext2/io_operations_copy_set_inode.ext2").unwrap();
-
-        let file = RefCell::new(
-            File::options()
-                .read(true)
-                .write(true)
-                .open("./tests/fs/ext2/io_operations_copy_set_inode.ext2")
-                .unwrap(),
-        );
+        let file = RefCell::new(copy_file("./tests/fs/ext2/io_operations.ext2").unwrap());
         let ext2 = Celled::new(Ext2::new(file, 0).unwrap());
         let TypeWithFile::Directory(root) = ext2.file(ROOT_DIRECTORY_INODE).unwrap() else {
             panic!("The root is always a directory.")
@@ -1235,25 +1226,11 @@ mod test {
 
         assert_eq!(foo.file.inode, Inode::parse(&ext2.borrow().device, ext2.borrow().superblock(), foo.file.inode_number).unwrap());
         assert_eq!(foo.file.inode, new_inode);
-
-        fs::remove_file("./tests/fs/ext2/io_operations_copy_set_inode.ext2").unwrap();
     }
 
     #[test]
     fn write_file_dbp_replace_without_allocation() {
-        fs::copy(
-            "./tests/fs/ext2/io_operations.ext2",
-            "./tests/fs/ext2/io_operations_copy_write_file_dbp_replace_without_allocation.ext2",
-        )
-        .unwrap();
-
-        let file = RefCell::new(
-            File::options()
-                .read(true)
-                .write(true)
-                .open("./tests/fs/ext2/io_operations_copy_write_file_dbp_replace_without_allocation.ext2")
-                .unwrap(),
-        );
+        let file = RefCell::new(copy_file("./tests/fs/ext2/io_operations.ext2").unwrap());
         let ext2 = Celled::new(Ext2::new(file, 0).unwrap());
         let TypeWithFile::Directory(root) = ext2.file(ROOT_DIRECTORY_INODE).unwrap() else {
             panic!("The root is always a directory.")
@@ -1272,25 +1249,11 @@ mod test {
         assert_eq!(foo.file.inode, Inode::parse(&ext2.borrow().device, ext2.borrow().superblock(), foo.file.inode_number).unwrap());
 
         assert_eq!(String::from_utf8(foo.read_all().unwrap()).unwrap(), "Hello earth!\n");
-
-        fs::remove_file("./tests/fs/ext2/io_operations_copy_write_file_dbp_replace_without_allocation.ext2").unwrap();
     }
 
     #[test]
     fn write_file_dbp_extend_without_allocation() {
-        fs::copy(
-            "./tests/fs/ext2/io_operations.ext2",
-            "./tests/fs/ext2/io_operations_copy_write_file_dbp_extend_without_allocation.ext2",
-        )
-        .unwrap();
-
-        let file = RefCell::new(
-            File::options()
-                .read(true)
-                .write(true)
-                .open("./tests/fs/ext2/io_operations_copy_write_file_dbp_extend_without_allocation.ext2")
-                .unwrap(),
-        );
+        let file = RefCell::new(copy_file("./tests/fs/ext2/io_operations.ext2").unwrap());
         let ext2 = Celled::new(Ext2::new(file, 0).unwrap());
         let TypeWithFile::Directory(root) = ext2.file(ROOT_DIRECTORY_INODE).unwrap() else {
             panic!("The root is always a directory.")
@@ -1309,27 +1272,13 @@ mod test {
         assert_eq!(foo.file.inode, Inode::parse(&ext2.borrow().device, ext2.borrow().superblock(), foo.file.inode_number).unwrap());
 
         assert_eq!(foo.read_all().unwrap(), b"Hello earth!\nI love dogs!\n");
-
-        fs::remove_file("./tests/fs/ext2/io_operations_copy_write_file_dbp_extend_without_allocation.ext2").unwrap();
     }
 
     #[test]
     fn write_file_dbp_extend_with_allocation() {
         const BYTES_TO_WRITE: usize = 12_000;
 
-        fs::copy(
-            "./tests/fs/ext2/io_operations.ext2",
-            "./tests/fs/ext2/io_operations_copy_write_file_dbp_extend_with_allocation.ext2",
-        )
-        .unwrap();
-
-        let file = RefCell::new(
-            File::options()
-                .read(true)
-                .write(true)
-                .open("./tests/fs/ext2/io_operations_copy_write_file_dbp_extend_with_allocation.ext2")
-                .unwrap(),
-        );
+        let file = RefCell::new(copy_file("./tests/fs/ext2/io_operations.ext2").unwrap());
         let ext2 = Celled::new(Ext2::new(file, 0).unwrap());
         let TypeWithFile::Directory(root) = ext2.file(ROOT_DIRECTORY_INODE).unwrap() else {
             panic!("The root is always a directory.")
@@ -1348,27 +1297,13 @@ mod test {
 
         assert_eq!(foo.read_all().unwrap().len(), BYTES_TO_WRITE);
         assert_eq!(foo.read_all().unwrap().into_iter().all_equal_value(), Ok(b'a'));
-
-        fs::remove_file("./tests/fs/ext2/io_operations_copy_write_file_dbp_extend_with_allocation.ext2").unwrap();
     }
 
     #[test]
     fn write_file_singly_indirect_block_pointer() {
         const BYTES_TO_WRITE: usize = 23_000;
 
-        fs::copy(
-            "./tests/fs/ext2/io_operations.ext2",
-            "./tests/fs/ext2/io_operations_copy_write_file_singly_indirect_block_pointer.ext2",
-        )
-        .unwrap();
-
-        let file = RefCell::new(
-            File::options()
-                .read(true)
-                .write(true)
-                .open("./tests/fs/ext2/io_operations_copy_write_file_singly_indirect_block_pointer.ext2")
-                .unwrap(),
-        );
+        let file = RefCell::new(copy_file("./tests/fs/ext2/io_operations.ext2").unwrap());
         let ext2 = Celled::new(Ext2::new(file, 0).unwrap());
         let TypeWithFile::Directory(root) = ext2.file(ROOT_DIRECTORY_INODE).unwrap() else {
             panic!("The root is always a directory.")
@@ -1391,27 +1326,13 @@ mod test {
         assert_eq!(foo.file.inode, Inode::parse(&ext2.borrow().device, ext2.borrow().superblock(), foo.file.inode_number).unwrap());
         assert_eq!(foo.read_all().unwrap().len(), BYTES_TO_WRITE);
         assert_eq!(foo.read_all().unwrap(), replace_text);
-
-        fs::remove_file("./tests/fs/ext2/io_operations_copy_write_file_singly_indirect_block_pointer.ext2").unwrap();
     }
 
     #[test]
     fn write_file_doubly_indirect_block_pointer() {
         const BYTES_TO_WRITE: usize = 400_000;
 
-        fs::copy(
-            "./tests/fs/ext2/io_operations.ext2",
-            "./tests/fs/ext2/io_operations_copy_write_file_doubly_indirect_block_pointer.ext2",
-        )
-        .unwrap();
-
-        let file = RefCell::new(
-            File::options()
-                .read(true)
-                .write(true)
-                .open("./tests/fs/ext2/io_operations_copy_write_file_doubly_indirect_block_pointer.ext2")
-                .unwrap(),
-        );
+        let file = RefCell::new(copy_file("./tests/fs/ext2/io_operations.ext2").unwrap());
         let ext2 = Celled::new(Ext2::new(file, 0).unwrap());
         let TypeWithFile::Directory(root) = ext2.file(ROOT_DIRECTORY_INODE).unwrap() else {
             panic!("The root is always a directory.")
@@ -1434,27 +1355,13 @@ mod test {
         assert_eq!(foo.file.inode, Inode::parse(&ext2.borrow().device, ext2.borrow().superblock(), foo.file.inode_number).unwrap());
         assert_eq!(foo.read_all().unwrap().len(), BYTES_TO_WRITE);
         assert_eq!(foo.read_all().unwrap(), replace_text);
-
-        fs::remove_file("./tests/fs/ext2/io_operations_copy_write_file_doubly_indirect_block_pointer.ext2").unwrap();
     }
 
     #[test]
     fn write_file_triply_indirect_block_pointer() {
         const BYTES_TO_WRITE: usize = 70_000_000;
 
-        fs::copy(
-            "./tests/fs/ext2/io_operations.ext2",
-            "./tests/fs/ext2/io_operations_copy_write_file_triply_indirect_block_pointer.ext2",
-        )
-        .unwrap();
-
-        let file = RefCell::new(
-            File::options()
-                .read(true)
-                .write(true)
-                .open("./tests/fs/ext2/io_operations_copy_write_file_triply_indirect_block_pointer.ext2")
-                .unwrap(),
-        );
+        let file = RefCell::new(copy_file("./tests/fs/ext2/io_operations.ext2").unwrap());
         let ext2 = Celled::new(Ext2::new(file, 0).unwrap());
         let TypeWithFile::Directory(root) = ext2.file(ROOT_DIRECTORY_INODE).unwrap() else {
             panic!("The root is always a directory.")
@@ -1473,23 +1380,13 @@ mod test {
         assert_eq!(foo.file.inode, Inode::parse(&ext2.borrow().device, ext2.borrow().superblock(), foo.file.inode_number).unwrap());
         assert_eq!(foo.read_all().unwrap().len(), BYTES_TO_WRITE);
         assert_eq!(foo.read_all().unwrap(), replace_text);
-
-        fs::remove_file("./tests/fs/ext2/io_operations_copy_write_file_triply_indirect_block_pointer.ext2").unwrap();
     }
 
     #[test]
     fn write_file_twice() {
         const BYTES_TO_WRITE: usize = 23_000;
 
-        fs::copy("./tests/fs/ext2/io_operations.ext2", "./tests/fs/ext2/io_operations_copy_write_file_twice.ext2").unwrap();
-
-        let file = RefCell::new(
-            File::options()
-                .read(true)
-                .write(true)
-                .open("./tests/fs/ext2/io_operations_copy_write_file_twice.ext2")
-                .unwrap(),
-        );
+        let file = RefCell::new(copy_file("./tests/fs/ext2/io_operations.ext2").unwrap());
         let ext2 = Celled::new(Ext2::new(file, 0).unwrap());
         let TypeWithFile::Directory(root) = ext2.file(ROOT_DIRECTORY_INODE).unwrap() else {
             panic!("The root is always a directory.")
@@ -1513,22 +1410,12 @@ mod test {
         assert_eq!(foo.file.inode, Inode::parse(&ext2.borrow().device, ext2.borrow().superblock(), foo.file.inode_number).unwrap());
         assert_eq!(foo.read_all().unwrap().len(), BYTES_TO_WRITE);
         assert_eq!(foo.read_all().unwrap(), replace_text);
-
-        fs::remove_file("./tests/fs/ext2/io_operations_copy_write_file_twice.ext2").unwrap();
     }
 
     #[test]
     #[allow(clippy::similar_names)]
     fn file_mode() {
-        fs::copy("./tests/fs/ext2/io_operations.ext2", "./tests/fs/ext2/io_operations_copy_file_mode.ext2").unwrap();
-
-        let file = RefCell::new(
-            File::options()
-                .read(true)
-                .write(true)
-                .open("./tests/fs/ext2/io_operations_copy_file_mode.ext2")
-                .unwrap(),
-        );
+        let file = RefCell::new(copy_file("./tests/fs/ext2/io_operations.ext2").unwrap());
         let ext2 = Celled::new(Ext2::new(file, 0).unwrap());
         let TypeWithFile::Directory(root) = ext2.file(ROOT_DIRECTORY_INODE).unwrap() else {
             panic!("The root is always a directory.")
@@ -1558,23 +1445,13 @@ mod test {
         assert_eq!(uid, 1);
         let gid = inode.gid;
         assert_eq!(gid, 2);
-
-        fs::remove_file("./tests/fs/ext2/io_operations_copy_file_mode.ext2").unwrap();
     }
 
     #[test]
     fn file_truncation() {
         const BYTES_TO_WRITE: usize = 400_000;
 
-        fs::copy("./tests/fs/ext2/io_operations.ext2", "./tests/fs/ext2/io_operations_copy_file_truncation.ext2").unwrap();
-
-        let file = RefCell::new(
-            File::options()
-                .read(true)
-                .write(true)
-                .open("./tests/fs/ext2/io_operations_copy_file_truncation.ext2")
-                .unwrap(),
-        );
+        let file = RefCell::new(copy_file("./tests/fs/ext2/io_operations.ext2").unwrap());
         let ext2 = Celled::new(Ext2::new(file, 0).unwrap());
         let TypeWithFile::Directory(root) = ext2.file(ROOT_DIRECTORY_INODE).unwrap() else {
             panic!("The root is always a directory.")
@@ -1604,21 +1481,11 @@ mod test {
 
         assert_eq!(foo.file.inode.data_size(), initial_foo_size);
         assert!(new_free_block_number >= initial_free_block_number); // Non used blocks could be deallocated
-
-        fs::remove_file("./tests/fs/ext2/io_operations_copy_file_truncation.ext2").unwrap();
     }
 
     #[test]
     fn file_simlinks() {
-        fs::copy("./tests/fs/ext2/io_operations.ext2", "./tests/fs/ext2/io_operations_copy_file_simlinks.ext2").unwrap();
-
-        let file = RefCell::new(
-            File::options()
-                .read(true)
-                .write(true)
-                .open("./tests/fs/ext2/io_operations_copy_file_simlinks.ext2")
-                .unwrap(),
-        );
+        let file = RefCell::new(copy_file("./tests/fs/ext2/io_operations.ext2").unwrap());
         let ext2 = Celled::new(Ext2::new(file, 0).unwrap());
         let TypeWithFile::Directory(root) = ext2.file(ROOT_DIRECTORY_INODE).unwrap() else {
             panic!("The root is always a directory.");
@@ -1644,21 +1511,11 @@ mod test {
         assert_eq!(bar.get_pointed_file().unwrap(), "foo.txt");
         assert!(bar.file.read_all().is_err());
         assert_eq!(bar.file.inode.data_size(), 7);
-
-        fs::remove_file("./tests/fs/ext2/io_operations_copy_file_simlinks.ext2").unwrap();
     }
 
     #[test]
     fn new_files() {
-        fs::copy("./tests/fs/ext2/io_operations.ext2", "./tests/fs/ext2/io_operations_new_files.ext2").unwrap();
-
-        let file = RefCell::new(
-            File::options()
-                .read(true)
-                .write(true)
-                .open("./tests/fs/ext2/io_operations_new_files.ext2")
-                .unwrap(),
-        );
+        let file = RefCell::new(copy_file("./tests/fs/ext2/io_operations.ext2").unwrap());
         let ext2 = Celled::new(Ext2::new(file, 0).unwrap());
         let TypeWithFile::Directory(mut root) = ext2.file(ROOT_DIRECTORY_INODE).unwrap() else {
             panic!("The root is always a directory.");
@@ -1684,22 +1541,12 @@ mod test {
 
         boo.write(b"Hello earth!\n").unwrap();
         assert_eq!(boo.read_all().unwrap(), b"Hello earth!\n");
-
-        fs::remove_file("./tests/fs/ext2/io_operations_new_files.ext2").unwrap();
     }
 
     #[test]
     #[allow(clippy::similar_names)]
     fn remove_files() {
-        fs::copy("./tests/fs/ext2/io_operations.ext2", "./tests/fs/ext2/io_operations_remove_files.ext2").unwrap();
-
-        let file = RefCell::new(
-            File::options()
-                .read(true)
-                .write(true)
-                .open("./tests/fs/ext2/io_operations_remove_files.ext2")
-                .unwrap(),
-        );
+        let file = RefCell::new(copy_file("./tests/fs/ext2/io_operations.ext2").unwrap());
         let ext2 = Celled::new(Ext2::new(file, 0).unwrap());
         let TypeWithFile::Directory(mut root) = ext2.file(ROOT_DIRECTORY_INODE).unwrap() else {
             panic!("The root is always a directory.");
@@ -1736,14 +1583,6 @@ mod test {
         assert!(Inode::is_used(ex2_inode, superblock, &ex2_bitmap));
         drop(fs);
 
-        let TypeWithFile::Directory(folder) =
-            ext2.get_file(&Path::new(UnixStr::new("folder").unwrap()), root.clone(), false).unwrap()
-        else {
-            panic!("");
-        };
-
-        std::println!("{:?}", folder.file.inode);
-
         crate::file::Directory::remove_entry(&mut root, UnixStr::new("folder").unwrap()).unwrap();
 
         let fs = ext2.borrow();
@@ -1752,7 +1591,5 @@ mod test {
         assert!(Inode::is_free(ex1_inode, superblock, &ex1_bitmap));
         let ex2_bitmap = fs.get_inode_bitmap(Inode::block_group(superblock, ex2_inode)).unwrap();
         assert!(Inode::is_free(ex2_inode, superblock, &ex2_bitmap));
-
-        fs::remove_file("./tests/fs/ext2/io_operations_remove_files.ext2").unwrap();
     }
 }

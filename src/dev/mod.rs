@@ -429,10 +429,12 @@ mod test {
     use core::mem::size_of;
     use core::ptr::addr_of;
     use core::slice;
-    use std::fs::{self, OpenOptions};
+    use std::fs;
+    use std::io::{Read, Seek};
 
     use crate::dev::sector::Address;
     use crate::dev::Device;
+    use crate::tests::copy_file;
 
     #[derive(Debug)]
     struct Error;
@@ -467,15 +469,7 @@ mod test {
     #[allow(clippy::missing_asserts_for_indexing)]
     #[test]
     fn device_file_write() {
-        fs::copy("./tests/dev/device_file_1.txt", "./tests/dev/device_file_1_copy.txt").unwrap();
-
-        let mut file_1 = RefCell::new(
-            OpenOptions::new()
-                .read(true)
-                .write(true)
-                .open("./tests/dev/device_file_1_copy.txt")
-                .unwrap(),
-        );
+        let mut file_1 = RefCell::new(copy_file("./tests/dev/device_file_1.txt").unwrap());
 
         let mut slice = Device::<u8, Error>::slice(&file_1, Address::new(0)..Address::new(13)).unwrap();
 
@@ -489,14 +483,14 @@ mod test {
         let commit = slice.commit();
         Device::<u8, Error>::commit(&mut file_1, commit).unwrap();
 
-        drop(file_1);
+        file_1.borrow_mut().rewind().unwrap();
 
-        let file_1 = String::from_utf8(fs::read("./tests/dev/device_file_1_copy.txt").unwrap()).unwrap();
-        let file_2 = String::from_utf8(fs::read("./tests/dev/device_file_2.txt").unwrap()).unwrap();
+        let mut file_1_content = String::new();
+        file_1.borrow_mut().read_to_string(&mut file_1_content).unwrap();
 
-        assert_eq!(file_1, file_2);
+        let file_2_content = String::from_utf8(fs::read("./tests/dev/device_file_2.txt").unwrap()).unwrap();
 
-        fs::remove_file("./tests/dev/device_file_1_copy.txt").unwrap();
+        assert_eq!(file_1_content, file_2_content);
     }
 
     #[test]

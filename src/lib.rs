@@ -119,7 +119,7 @@
 //!
 //! # std::fs::copy(
 //! #     "./tests/fs/ext2/io_operations.ext2",
-//! #     "./tests/fs/ext2/io_operations_copy_lib_example.ext2",
+//! #     "./tests/fs/ext2/example.ext2",
 //! # )
 //! # .unwrap();
 //!
@@ -128,7 +128,7 @@
 //!     std::fs::File::options()
 //!         .read(true)
 //!         .write(true)
-//!         .open("./tests/fs/ext2/io_operations_copy_lib_example.ext2")
+//!         .open("./tests/fs/ext2/example.ext2")
 //!         .unwrap(),
 //! );
 //!
@@ -217,7 +217,7 @@
 //! // ├── foo.txt
 //! // └── lost+found
 //!
-//! # std::fs::remove_file("./tests/fs/ext2/io_operations_copy_lib_example.ext2").unwrap();
+//! # std::fs::remove_file("./tests/fs/ext2/example.ext2").unwrap();
 //! ```
 //!
 //! ### How to implement a device?
@@ -341,6 +341,7 @@
 #![feature(error_in_core)]
 #![feature(exact_size_is_empty)]
 #![feature(let_chains)]
+#![feature(never_type)]
 #![feature(step_trait)]
 
 extern crate alloc;
@@ -355,4 +356,6 @@ pub mod fs;
 pub mod io;
 pub mod path;
 pub mod permissions;
+#[cfg(test)]
+pub(crate) mod tests;
 pub mod types;
