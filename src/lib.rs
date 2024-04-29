@@ -341,6 +341,7 @@
 #![feature(error_in_core)]
 #![feature(exact_size_is_empty)]
 #![feature(let_chains)]
+#![feature(never_type)]
 #![feature(step_trait)]
 
 extern crate alloc;
@@ -355,4 +356,6 @@ pub mod fs;
 pub mod io;
 pub mod path;
 pub mod permissions;
+#[cfg(test)]
+pub(crate) mod tests;
 pub mod types;
