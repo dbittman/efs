@@ -225,7 +225,7 @@ impl<Dev: Device<u8, Ext2Error>> Seek for Block<Dev> {
 mod test {
     use alloc::vec;
     use core::cell::RefCell;
-    use std::fs::{self, File};
+    use std::fs::File;
 
     use crate::dev::celled::Celled;
     use crate::dev::sector::Address;
@@ -236,6 +236,7 @@ mod test {
     use crate::fs::ext2::superblock::Superblock;
     use crate::fs::ext2::Ext2;
     use crate::io::{Read, Seek, SeekFrom, Write};
+    use crate::tests::copy_file;
 
     #[test]
     fn block_read() {
@@ -266,15 +267,7 @@ mod test {
     fn block_write() {
         const BLOCK_NUMBER: u32 = 10_234;
 
-        fs::copy("./tests/fs/ext2/io_operations.ext2", "./tests/fs/ext2/io_operations_copy_block_write.ext2").unwrap();
-
-        let file = RefCell::new(
-            File::options()
-                .read(true)
-                .write(true)
-                .open("./tests/fs/ext2/io_operations_copy_block_write.ext2")
-                .unwrap(),
-        );
+        let file = RefCell::new(copy_file("./tests/fs/ext2/io_operations.ext2").unwrap());
         let ext2 = Celled::new(Ext2::new(file, 0).unwrap());
         let fs = ext2.borrow();
 
@@ -287,8 +280,6 @@ mod test {
         let mut start = vec![0_u8; 123];
         start.append(&mut buffer);
         assert_eq!(block.read_all().unwrap(), start);
-
-        fs::remove_file("./tests/fs/ext2/io_operations_copy_block_write.ext2").unwrap();
     }
 
     #[test]
@@ -296,15 +287,7 @@ mod test {
         // This block should not be free
         const BLOCK_NUMBER: u32 = 9;
 
-        fs::copy("./tests/fs/ext2/io_operations.ext2", "./tests/fs/ext2/io_operations_copy_block_set_free.ext2").unwrap();
-
-        let file = RefCell::new(
-            File::options()
-                .read(true)
-                .write(true)
-                .open("./tests/fs/ext2/io_operations_copy_block_set_free.ext2")
-                .unwrap(),
-        );
+        let file = RefCell::new(copy_file("./tests/fs/ext2/io_operations.ext2").unwrap());
         let ext2 = Celled::new(Ext2::new(file, 0).unwrap());
         let superblock = ext2.borrow().superblock().clone();
 
@@ -330,8 +313,6 @@ mod test {
 
         assert!(block.is_free(&superblock, &fs.get_block_bitmap(block_group).unwrap()));
         assert_eq!(free_block_count + 1, new_free_block_count);
-
-        fs::remove_file("./tests/fs/ext2/io_operations_copy_block_set_free.ext2").unwrap();
     }
 
     #[test]
@@ -339,15 +320,7 @@ mod test {
         // This block should not be used
         const BLOCK_NUMBER: u32 = 1920;
 
-        fs::copy("./tests/fs/ext2/io_operations.ext2", "./tests/fs/ext2/io_operations_copy_block_set_used.ext2").unwrap();
-
-        let file = RefCell::new(
-            File::options()
-                .read(true)
-                .write(true)
-                .open("./tests/fs/ext2/io_operations_copy_block_set_used.ext2")
-                .unwrap(),
-        );
+        let file = RefCell::new(copy_file("./tests/fs/ext2/io_operations.ext2").unwrap());
         let ext2 = Celled::new(Ext2::new(file, 0).unwrap());
         let superblock = ext2.borrow().superblock().clone();
 
@@ -373,7 +346,5 @@ mod test {
 
         assert!(block.is_used(&superblock, &fs.get_block_bitmap(block_group).unwrap()));
         assert_eq!(free_block_count - 1, new_free_block_count);
-
-        fs::remove_file("./tests/fs/ext2/io_operations_copy_block_set_used.ext2").unwrap();
     }
 }
