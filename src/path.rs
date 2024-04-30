@@ -100,9 +100,9 @@ impl FromStr for UnixStr<'_> {
     }
 }
 
-impl ToString for UnixStr<'_> {
-    fn to_string(&self) -> String {
-        self.0.to_string()
+impl Display for UnixStr<'_> {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(fmt, "{}", self.0)
     }
 }
 
@@ -290,7 +290,7 @@ impl<'path> Path<'path> {
     /// ```
 
     #[must_use]
-    pub fn join(&self, path: &Path<'path>) -> Self {
+    pub fn join(&self, path: &Self) -> Self {
         if path.is_absolute() {
             path.clone()
         } else {
@@ -406,9 +406,9 @@ impl FromStr for Path<'_> {
     }
 }
 
-impl ToString for Path<'_> {
-    fn to_string(&self) -> String {
-        self.as_unix_str().to_string()
+impl Display for Path<'_> {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(fmt, "{}", self.as_unix_str())
     }
 }
 
@@ -467,7 +467,7 @@ impl PartialEq for Path<'_> {
 impl Eq for Path<'_> {}
 
 impl<'path> TryFrom<&Components<'_>> for Path<'path> {
-    type Error = <Path<'path> as FromStr>::Err;
+    type Error = <Self as FromStr>::Err;
 
     fn try_from(value: &Components<'_>) -> Result<Self, Self::Error> {
         Path::from_str(&value.to_string())
@@ -544,14 +544,14 @@ impl FromStr for Component<'_> {
     }
 }
 
-impl ToString for Component<'_> {
-    fn to_string(&self) -> String {
+impl Display for Component<'_> {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Component::RootDir => "/".to_owned(),
-            Component::DoubleSlashRootDir => "//".to_owned(),
-            Component::CurDir => ".".to_owned(),
-            Component::ParentDir => "..".to_owned(),
-            Component::Normal(filename) => filename.to_string(),
+            Component::RootDir => write!(fmt, "/"),
+            Component::DoubleSlashRootDir => write!(fmt, "//"),
+            Component::CurDir => write!(fmt, "."),
+            Component::ParentDir => write!(fmt, ".."),
+            Component::Normal(filename) => write!(fmt, "{filename}"),
         }
     }
 }
@@ -672,8 +672,7 @@ impl<'path> Components<'path> {
         let (extra, comp) = self.path.iter().position(|byte| byte == &b'/').map_or((0_usize, self.path), |idx| {
             (
                 1_usize,
-                &self
-                    .path
+                self.path
                     .get(..idx)
                     .unwrap_or_else(|| unreachable!("The index exists since it is returned by the find function")),
             )
@@ -693,8 +692,7 @@ impl<'path> Components<'path> {
         let (extra, comp) = body.iter().rposition(|byte| byte == &b'/').map_or((0_usize, body), |idx| {
             (
                 1_usize,
-                &self
-                    .path
+                self.path
                     .get(start + idx + 1..)
                     .unwrap_or_else(|| unreachable!("The index exists since it is returned by the find function")),
             )
@@ -715,22 +713,22 @@ impl<'path> Iterator for &mut Components<'path> {
                     self.front = State::Body;
                     if self.has_double_slash_root() {
                         // SAFETY: `self.path` contains at least 2 element
-                        self.path = unsafe { &self.path.get_unchecked(2..) };
+                        self.path = unsafe { self.path.get_unchecked(2..) };
                         return Some(Component::DoubleSlashRootDir);
                     } else if self.has_root() {
                         // SAFETY: `self.path` contains at least 1 element
-                        self.path = unsafe { &self.path.get_unchecked(1..) };
+                        self.path = unsafe { self.path.get_unchecked(1..) };
                         return Some(Component::RootDir);
                     } else if self.include_cur_dir() {
                         // SAFETY: `self.path` contains at least 1 element
-                        self.path = unsafe { &self.path.get_unchecked(1..) };
+                        self.path = unsafe { self.path.get_unchecked(1..) };
                         return Some(Component::CurDir);
                     }
                 },
                 State::Body if !self.path.is_empty() => {
                     let (size, comp) = self.parse_next_component();
                     // SAFETY: It is ensure in `parse_next_component` that `self.path` contains at least `size` characters
-                    self.path = unsafe { &self.path.get_unchecked(size..) };
+                    self.path = unsafe { self.path.get_unchecked(size..) };
                     if comp.is_some() {
                         return comp;
                     }
@@ -788,7 +786,7 @@ impl<'path> DoubleEndedIterator for &mut Components<'path> {
                 State::Body if self.path.len() > self.len_before_body() => {
                     let (size, comp) = self.parse_next_component_back();
                     // SAFETY: It is ensure in `parse_next_component_back` that `self.path` contains at least `size` characters
-                    self.path = unsafe { &self.path.get_unchecked(..self.path.len() - size) };
+                    self.path = unsafe { self.path.get_unchecked(..self.path.len() - size) };
                     if comp.is_some() {
                         return comp;
                     }
@@ -824,10 +822,10 @@ impl FusedIterator for &mut Components<'_> {}
 
 impl ExactSizeIterator for &mut Components<'_> {}
 
-impl ToString for Components<'_> {
-    fn to_string(&self) -> String {
+impl Display for Components<'_> {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         // SAFETY: at each step of the iteration over self, self.path remains a valid string
-        unsafe { String::from_utf8_unchecked(self.path.to_vec()) }
+        write!(fmt, "{}", unsafe { String::from_utf8_unchecked(self.path.to_vec()) })
     }
 }
 

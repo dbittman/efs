@@ -465,7 +465,9 @@ impl<const DBPC: u32> IndirectedBlocks<DBPC> {
                 },
             }
 
-            while self.doubly_indirected_blocks.1.len() < blocks_per_indirection && let Some(block) = blocks_iterator.next()  {
+            while self.doubly_indirected_blocks.1.len() < blocks_per_indirection
+                && let Some(block) = blocks_iterator.next()
+            {
                 let indirection_block = (*block, blocks_iterator.take(blocks_per_indirection).copied().collect_vec());
                 self.doubly_indirected_blocks.1.push(indirection_block);
             }
@@ -498,7 +500,9 @@ impl<const DBPC: u32> IndirectedBlocks<DBPC> {
                             },
                         }
 
-                        while indirected_blocks.len() < blocks_per_indirection && let Some(block) = blocks_iterator.next() {
+                        while indirected_blocks.len() < blocks_per_indirection
+                            && let Some(block) = blocks_iterator.next()
+                        {
                             let indirection_block = (*block, blocks_iterator.take(blocks_per_indirection).copied().collect_vec());
                             indirected_blocks.push(indirection_block);
                         }
@@ -506,9 +510,13 @@ impl<const DBPC: u32> IndirectedBlocks<DBPC> {
                 },
             }
 
-            while self.triply_indirected_blocks.1.len() < blocks_per_indirection && let Some(block) = blocks_iterator.next() {
+            while self.triply_indirected_blocks.1.len() < blocks_per_indirection
+                && let Some(block) = blocks_iterator.next()
+            {
                 let mut doubly_indirection_block = (*block, Vec::new());
-                while let Some(block) = blocks_iterator.next() && doubly_indirection_block.1.len() < blocks_per_indirection {
+                while let Some(block) = blocks_iterator.next()
+                    && doubly_indirection_block.1.len() < blocks_per_indirection
+                {
                     let indirection_block = (*block, blocks_iterator.take(blocks_per_indirection).copied().collect_vec());
                     doubly_indirection_block.1.push(indirection_block);
                 }

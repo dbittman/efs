@@ -103,7 +103,7 @@ pub struct Base {
 
     /// Operating system ID from which the filesystem on this volume was created
     ///
-    /// See [OperatingSystem] for more information.
+    /// See [`OperatingSystem`] for more information.
     pub creator_os: u32,
 
     /// Major portion of version (combine with Minor portion above to construct full version field)

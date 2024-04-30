@@ -9,7 +9,7 @@ yanked = "deny"
 
 [licenses]
 allow-osi-fsf-free = "both"
-confidence-threshold = 1
+confidence-threshold = 1.0
 copyleft = "allow"
 default = "deny"
 unlicensed = "deny"

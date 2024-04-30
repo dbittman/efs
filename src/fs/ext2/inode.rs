@@ -79,7 +79,7 @@ pub struct Inode {
     /// and currently reserved blocks in case the file grows in size.
     ///
     ///  Since this value represents 512-byte blocks and not file system blocks, this value should not be directly used as an index
-    /// to the i_block array. Rather, the maximum index of the i_block array should be computed from `i_blocks /
+    /// to the `i_block` array. Rather, the maximum index of the `i_block` array should be computed from `i_blocks /
     /// ((1024<<s_log_block_size)/512)`, or once simplified, `i_blocks/(2<<s_log_block_size)`.
     pub blocks: u32,
 

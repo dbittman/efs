@@ -493,6 +493,7 @@ mod test {
         assert_eq!(file_1_content, file_2_content);
     }
 
+    #[allow(clippy::struct_field_names)]
     #[test]
     fn device_generic_read_at() {
         const OFFSET: usize = 123;
@@ -515,22 +516,19 @@ mod test {
         let test_bytes = unsafe { slice::from_raw_parts(addr_of!(test).cast::<u8>(), size_of::<Test>()) };
 
         let mut device = vec![0_u8; 1024];
-        let mut slice = Device::<u8, std::io::Error>::slice(
-            &device,
-            Address::try_from(OFFSET).unwrap()..Address::try_from(OFFSET + size_of::<Test>()).unwrap(),
-        )
-        .unwrap();
+        let mut slice =
+            Device::<u8, std::io::Error>::slice(&device, Address::from(OFFSET)..Address::from(OFFSET + size_of::<Test>())).unwrap();
         let buffer = slice.get_mut(..).unwrap();
         buffer.clone_from_slice(test_bytes);
 
         let commit = slice.commit();
         Device::<u8, std::io::Error>::commit(&mut device, commit).unwrap();
 
-        let read_test =
-            unsafe { Device::<u8, std::io::Error>::read_at::<Test>(&device, Address::try_from(OFFSET).unwrap()).unwrap() };
+        let read_test = unsafe { Device::<u8, std::io::Error>::read_at::<Test>(&device, Address::from(OFFSET)).unwrap() };
         assert_eq!(test, read_test);
     }
 
+    #[allow(clippy::struct_field_names)]
     #[test]
     fn device_generic_write_at() {
         const OFFSET: u64 = 123;

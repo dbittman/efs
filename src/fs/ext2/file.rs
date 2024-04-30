@@ -219,15 +219,15 @@ impl<Dev: Device<u8, Ext2Error>> file::File for File<Dev> {
             rdev: crate::types::Dev::default(),
             size: Off(self.inode.data_size().try_into().unwrap_or_default()),
             atim: Timespec {
-                tv_sec: Time(self.inode.atime.try_into().unwrap_or_default()),
+                tv_sec: Time(self.inode.atime.into()),
                 tv_nsec: i32::default(),
             },
             mtim: Timespec {
-                tv_sec: Time(self.inode.mtime.try_into().unwrap_or_default()),
+                tv_sec: Time(self.inode.mtime.into()),
                 tv_nsec: i32::default(),
             },
             ctim: Timespec {
-                tv_sec: Time(self.inode.ctime.try_into().unwrap_or_default()),
+                tv_sec: Time(self.inode.ctime.into()),
                 tv_nsec: i32::default(),
             },
             blksize: Blksize(filesystem.superblock.block_size().try_into().unwrap_or_default()),
@@ -730,7 +730,9 @@ impl<Dev: Device<u8, Ext2Error>> file::Directory for Directory<Dev> {
         user_id: Uid,
         group_id: Gid,
     ) -> Result<TypeWithFile<Self>, Error<Self::Error>> {
-        if let Ok(file) = self.entry(name.clone()) && file.is_some() {
+        if let Ok(file) = self.entry(name.clone())
+            && file.is_some()
+        {
             return Err(Error::Fs(FsError::EntryAlreadyExist(name.to_string())));
         }
 
@@ -996,7 +998,7 @@ impl<Dev: Device<u8, Ext2Error>> file::SymbolicLink for SymbolicLink<Dev> {
             self.file.update_inner_inode()?;
         }
 
-        self.pointed_file = pointed_file.to_owned();
+        pointed_file.clone_into(&mut self.pointed_file);
         Ok(())
     }
 }
