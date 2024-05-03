@@ -2,7 +2,7 @@
 //!
 //! An OS and architecture independent implementation of some Unix filesystems in Rust.
 //!
-//! /!\ Warning /!\ : this crate is not at all sure enough to be used in a real context. Do **NOT** manage any important data with
+//! /!\ Warning /!\ : this crate is not at all safe enough to be used in a real context. Do **NOT** manage any important data with
 //! this library, and make backups before using it!
 //!
 //! The purpose of this library is not to be production-ready, but to help people who make toy OS (with [Rust OSDev for example](https://os.phil-opp.com/)).
@@ -11,7 +11,7 @@
 //!
 //! This crate provides a general interface to deal with some UNIX filesytems, and adds supports for some of them.
 //!
-//! Currently, only the [Second Extended Filesystem](https://fr.wikipedia.org/wiki/Ext2) (ext2) is supported, but one can implements its own filesystem with this interface.
+//! Currently, only the [Second Extended Filesystem](https://en.wikipedia.org/wiki/Ext2) (ext2) is supported, but you can implement your own filesystem with this interface.
 //!
 //! This crate does **NOT** provide a virtual filesystem: you can either make one or use another crate on top on this one.
 //!
