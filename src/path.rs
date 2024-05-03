@@ -82,7 +82,7 @@ impl<'path> UnixStr<'path> {
         self.0.starts_with("//") && !self.0.starts_with("///")
     }
 
-    /// Does the [`UnixStr`] ends with a trailing backs
+    /// Returns whether the [`UnixStr`] ends with a trailing backslash.
 
     #[must_use]
     pub fn has_trailing_backslash(&self) -> bool {
@@ -185,7 +185,7 @@ impl<'path> Path<'path> {
         self.name.0.starts_with('/')
     }
 
-    /// Checks if the path is absolute.
+    /// Checks if the path is relative.
     ///
     /// Defined in [this POSIX definition](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap03.html#tag_03_324).
     ///
@@ -258,7 +258,7 @@ impl<'path> Path<'path> {
         &self.name
     }
 
-    /// Yields a mutable referebce to the underlying [`UnixStr`] slice.
+    /// Yields a mutable reference to the underlying [`UnixStr`] slice.
 
     #[must_use]
     pub const fn as_mut_unix_str(&mut self) -> &mut UnixStr<'path> {
