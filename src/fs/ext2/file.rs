@@ -299,9 +299,8 @@ impl<Dev: Device<u8, Ext2Error>> Read for File<Dev> {
         let filesystem = self.filesystem.borrow();
         self.inode
             .read_data(&filesystem.device, &filesystem.superblock, buf, self.io_offset)
-            .map(|bytes| {
+            .inspect(|&bytes| {
                 self.io_offset += bytes as u64;
-                bytes
             })
     }
 }

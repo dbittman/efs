@@ -99,7 +99,7 @@ impl<Dev: Device<u8, Ext2Error>> Block<Dev> {
     /// Returns an [`BlockAlreadyFree`](Ext2Error::BlockAlreadyFree) error if the given block was already free.
     ///
     /// Otherwise, returns an [`Error`] if the device cannot be written.
-    fn set_usage(&mut self, usage: bool) -> Result<(), Error<Ext2Error>> {
+    fn set_usage(&self, usage: bool) -> Result<(), Error<Ext2Error>> {
         self.filesystem.borrow_mut().locate_blocks(&[self.number], usage)
     }
 

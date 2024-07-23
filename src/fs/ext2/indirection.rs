@@ -108,7 +108,7 @@ impl<const DBPC: u32> IndirectedBlocks<DBPC> {
     /// Creates a new instance from complete list of data blocks.
 
     #[must_use]
-    pub(crate) fn new(
+    pub(crate) const fn new(
         blocks_per_indirection: u32,
         direct_blocks: DirectBlocks,
         singly_indirected_blocks: SimpleIndirection,

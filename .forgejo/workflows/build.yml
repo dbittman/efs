@@ -13,7 +13,7 @@ jobs:
       - name: Install Rust
         uses: msrd0/rust-toolchain@master
         with:
-          toolchain: nightly-2024-04-20
+          toolchain: nightly-2024-07-20
           components: rust-analyzer, rust-src, rustfmt, clippy
       - uses: actions/checkout@v3
       - name: Checkout LFS objects

@@ -1,19 +1,17 @@
+[graph]
 all-features = true
 
 [advisories]
-notice = "deny"
-unmaintained = "deny"
-unsound = "deny"
-vulnerability = "deny"
+version = 2
 yanked = "deny"
 
 [licenses]
-allow-osi-fsf-free = "both"
+version = 2
 confidence-threshold = 1.0
-copyleft = "allow"
-default = "deny"
-unlicensed = "deny"
 allow = [
+    "Apache-2.0",
+    "GPL-3.0",
+    "MIT",
     "Unicode-DFS-2016"
 ]
 

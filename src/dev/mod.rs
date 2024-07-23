@@ -152,7 +152,7 @@ impl<T: Clone> Commit<T> {
     /// Creates a new [`Commit`] instance.
 
     #[must_use]
-    pub fn new(inner: Vec<T>, starting_addr: Address) -> Self {
+    pub const fn new(inner: Vec<T>, starting_addr: Address) -> Self {
         Self {
             inner,
             starting_addr,

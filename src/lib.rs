@@ -338,7 +338,6 @@
     )
 )]
 #![feature(const_mut_refs)]
-#![feature(error_in_core)]
 #![feature(exact_size_is_empty)]
 #![feature(let_chains)]
 #![feature(never_type)]
