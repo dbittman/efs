@@ -980,7 +980,6 @@ impl<Dev: Device<u8, Ext2Error>> file::SymbolicLink for SymbolicLink<Dev> {
             unsafe {
                 Inode::write_on_device(&fs, self.file.inode_number, new_inode)?;
             };
-
             drop(fs);
 
             self.file.update_inner_inode()?;
@@ -1051,13 +1050,13 @@ mod test {
     use crate::io::{Seek, SeekFrom, Write};
     use crate::path::{Path, UnixStr};
     use crate::permissions::Permissions;
-    use crate::tests::copy_file;
+    use crate::tests::{copy_file, new_device_id};
     use crate::types::{Gid, Mode, Uid};
 
     #[test]
     fn parse_root() {
         let file = RefCell::new(File::options().read(true).write(true).open("./tests/fs/ext2/extended.ext2").unwrap());
-        let ext2 = Celled::new(Ext2::new(file, 0, false).unwrap());
+        let ext2 = Celled::new(Ext2::new(file, new_device_id(), false).unwrap());
         let root = Directory::new(&ext2, ROOT_DIRECTORY_INODE).unwrap();
         assert_eq!(
             root.entries
@@ -1072,7 +1071,7 @@ mod test {
     #[test]
     fn parse_root_entries() {
         let file = RefCell::new(File::options().read(true).write(true).open("./tests/fs/ext2/extended.ext2").unwrap());
-        let fs = Ext2::new(file, 0, false).unwrap();
+        let fs = Ext2::new(file, new_device_id(), false).unwrap();
         let root_inode = Inode::parse(&fs, ROOT_DIRECTORY_INODE).unwrap();
 
         let dot = unsafe {
@@ -1127,7 +1126,7 @@ mod test {
     #[test]
     fn parse_big_file_inode_data() {
         let file = RefCell::new(File::options().read(true).write(true).open("./tests/fs/ext2/extended.ext2").unwrap());
-        let ext2 = Celled::new(Ext2::new(file, 0, false).unwrap());
+        let ext2 = Celled::new(Ext2::new(file, new_device_id(), false).unwrap());
         let root = Directory::new(&ext2, ROOT_DIRECTORY_INODE).unwrap();
 
         let fs = ext2.borrow();
@@ -1164,7 +1163,7 @@ mod test {
     #[test]
     fn read_file() {
         let file = RefCell::new(File::options().read(true).write(true).open("./tests/fs/ext2/io_operations.ext2").unwrap());
-        let ext2 = Celled::new(Ext2::new(file, 0, false).unwrap());
+        let ext2 = Celled::new(Ext2::new(file, new_device_id(), false).unwrap());
 
         let TypeWithFile::Directory(root) = ext2.file(ROOT_DIRECTORY_INODE).unwrap() else {
             panic!("The root is always a directory.")
@@ -1181,7 +1180,7 @@ mod test {
     #[test]
     fn read_symlink() {
         let file = RefCell::new(File::options().read(true).write(true).open("./tests/fs/ext2/extended.ext2").unwrap());
-        let ext2 = Celled::new(Ext2::new(file, 0, false).unwrap());
+        let ext2 = Celled::new(Ext2::new(file, new_device_id(), false).unwrap());
         let root = Directory::new(&ext2, ROOT_DIRECTORY_INODE).unwrap();
 
         let TypeWithFile::SymbolicLink(symlink) =
@@ -1196,7 +1195,7 @@ mod test {
     #[test]
     fn set_inode() {
         let file = RefCell::new(copy_file("./tests/fs/ext2/io_operations.ext2").unwrap());
-        let ext2 = Celled::new(Ext2::new(file, 0, false).unwrap());
+        let ext2 = Celled::new(Ext2::new(file, new_device_id(), false).unwrap());
         let TypeWithFile::Directory(root) = ext2.file(ROOT_DIRECTORY_INODE).unwrap() else {
             panic!("The root is always a directory.")
         };
@@ -1219,7 +1218,7 @@ mod test {
     #[test]
     fn write_file_dbp_replace_without_allocation() {
         let file = RefCell::new(copy_file("./tests/fs/ext2/io_operations.ext2").unwrap());
-        let ext2 = Celled::new(Ext2::new(file, 0, false).unwrap());
+        let ext2 = Celled::new(Ext2::new(file, new_device_id(), false).unwrap());
         let TypeWithFile::Directory(root) = ext2.file(ROOT_DIRECTORY_INODE).unwrap() else {
             panic!("The root is always a directory.")
         };
@@ -1242,7 +1241,7 @@ mod test {
     #[test]
     fn write_file_dbp_extend_without_allocation() {
         let file = RefCell::new(copy_file("./tests/fs/ext2/io_operations.ext2").unwrap());
-        let ext2 = Celled::new(Ext2::new(file, 0, false).unwrap());
+        let ext2 = Celled::new(Ext2::new(file, new_device_id(), false).unwrap());
         let TypeWithFile::Directory(root) = ext2.file(ROOT_DIRECTORY_INODE).unwrap() else {
             panic!("The root is always a directory.")
         };
@@ -1267,7 +1266,7 @@ mod test {
         const BYTES_TO_WRITE: usize = 12_000;
 
         let file = RefCell::new(copy_file("./tests/fs/ext2/io_operations.ext2").unwrap());
-        let ext2 = Celled::new(Ext2::new(file, 0, false).unwrap());
+        let ext2 = Celled::new(Ext2::new(file, new_device_id(), false).unwrap());
         let TypeWithFile::Directory(root) = ext2.file(ROOT_DIRECTORY_INODE).unwrap() else {
             panic!("The root is always a directory.")
         };
@@ -1292,7 +1291,7 @@ mod test {
         const BYTES_TO_WRITE: usize = 23_000;
 
         let file = RefCell::new(copy_file("./tests/fs/ext2/io_operations.ext2").unwrap());
-        let ext2 = Celled::new(Ext2::new(file, 0, false).unwrap());
+        let ext2 = Celled::new(Ext2::new(file, new_device_id(), false).unwrap());
         let TypeWithFile::Directory(root) = ext2.file(ROOT_DIRECTORY_INODE).unwrap() else {
             panic!("The root is always a directory.")
         };
@@ -1321,7 +1320,7 @@ mod test {
         const BYTES_TO_WRITE: usize = 400_000;
 
         let file = RefCell::new(copy_file("./tests/fs/ext2/io_operations.ext2").unwrap());
-        let ext2 = Celled::new(Ext2::new(file, 0, false).unwrap());
+        let ext2 = Celled::new(Ext2::new(file, new_device_id(), false).unwrap());
         let TypeWithFile::Directory(root) = ext2.file(ROOT_DIRECTORY_INODE).unwrap() else {
             panic!("The root is always a directory.")
         };
@@ -1350,7 +1349,7 @@ mod test {
         const BYTES_TO_WRITE: usize = 70_000_000;
 
         let file = RefCell::new(copy_file("./tests/fs/ext2/io_operations.ext2").unwrap());
-        let ext2 = Celled::new(Ext2::new(file, 0, false).unwrap());
+        let ext2 = Celled::new(Ext2::new(file, new_device_id(), false).unwrap());
         let TypeWithFile::Directory(root) = ext2.file(ROOT_DIRECTORY_INODE).unwrap() else {
             panic!("The root is always a directory.")
         };
@@ -1375,7 +1374,7 @@ mod test {
         const BYTES_TO_WRITE: usize = 23_000;
 
         let file = RefCell::new(copy_file("./tests/fs/ext2/io_operations.ext2").unwrap());
-        let ext2 = Celled::new(Ext2::new(file, 0, false).unwrap());
+        let ext2 = Celled::new(Ext2::new(file, new_device_id(), false).unwrap());
         let TypeWithFile::Directory(root) = ext2.file(ROOT_DIRECTORY_INODE).unwrap() else {
             panic!("The root is always a directory.")
         };
@@ -1404,7 +1403,7 @@ mod test {
     #[allow(clippy::similar_names)]
     fn file_mode() {
         let file = RefCell::new(copy_file("./tests/fs/ext2/io_operations.ext2").unwrap());
-        let ext2 = Celled::new(Ext2::new(file, 0, false).unwrap());
+        let ext2 = Celled::new(Ext2::new(file, new_device_id(), false).unwrap());
         let TypeWithFile::Directory(root) = ext2.file(ROOT_DIRECTORY_INODE).unwrap() else {
             panic!("The root is always a directory.")
         };
@@ -1440,7 +1439,7 @@ mod test {
         const BYTES_TO_WRITE: usize = 400_000;
 
         let file = RefCell::new(copy_file("./tests/fs/ext2/io_operations.ext2").unwrap());
-        let ext2 = Celled::new(Ext2::new(file, 0, false).unwrap());
+        let ext2 = Celled::new(Ext2::new(file, new_device_id(), false).unwrap());
         let TypeWithFile::Directory(root) = ext2.file(ROOT_DIRECTORY_INODE).unwrap() else {
             panic!("The root is always a directory.")
         };
@@ -1474,7 +1473,7 @@ mod test {
     #[test]
     fn file_simlinks() {
         let file = RefCell::new(copy_file("./tests/fs/ext2/io_operations.ext2").unwrap());
-        let ext2 = Celled::new(Ext2::new(file, 0, false).unwrap());
+        let ext2 = Celled::new(Ext2::new(file, new_device_id(), false).unwrap());
         let TypeWithFile::Directory(root) = ext2.file(ROOT_DIRECTORY_INODE).unwrap() else {
             panic!("The root is always a directory.");
         };
@@ -1504,7 +1503,7 @@ mod test {
     #[test]
     fn new_files() {
         let file = RefCell::new(copy_file("./tests/fs/ext2/io_operations.ext2").unwrap());
-        let ext2 = Celled::new(Ext2::new(file, 0, false).unwrap());
+        let ext2 = Celled::new(Ext2::new(file, new_device_id(), false).unwrap());
         let TypeWithFile::Directory(mut root) = ext2.file(ROOT_DIRECTORY_INODE).unwrap() else {
             panic!("The root is always a directory.");
         };
@@ -1535,7 +1534,7 @@ mod test {
     #[allow(clippy::similar_names)]
     fn remove_files() {
         let file = RefCell::new(copy_file("./tests/fs/ext2/io_operations.ext2").unwrap());
-        let ext2 = Celled::new(Ext2::new(file, 0, false).unwrap());
+        let ext2 = Celled::new(Ext2::new(file, new_device_id(), false).unwrap());
         let TypeWithFile::Directory(mut root) = ext2.file(ROOT_DIRECTORY_INODE).unwrap() else {
             panic!("The root is always a directory.");
         };

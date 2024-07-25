@@ -525,26 +525,24 @@ impl Inode {
     /// device.
     ///
     /// Otherwise, returns an [`Error`] if the device cannot be read.
-    pub fn starting_addr<Dev: Device<u8, Ext2Error>>(
-        celled_device: &Celled<Dev>,
-        superblock: &Superblock,
-        n: u32,
-    ) -> Result<Address, Error<Ext2Error>> {
-        let base = superblock.base();
+    pub fn starting_addr<Dev: Device<u8, Ext2Error>>(fs: &Ext2<Dev>, n: u32) -> Result<Address, Error<Ext2Error>> {
+        let base = fs.superblock().base();
         if base.inodes_count < n || n == 0 {
             return Err(Error::Fs(FsError::Implementation(Ext2Error::NonExistingInode(n))));
         };
 
-        let block_group = Self::block_group(superblock, n);
-        let block_group_descriptor = BlockGroupDescriptor::parse(celled_device, superblock, block_group)?;
+        let block_group = Self::block_group(fs.superblock(), n);
+        let block_group_descriptor = BlockGroupDescriptor::parse(fs, block_group)?;
 
         let inode_table_starting_block = block_group_descriptor.inode_table;
-        let index = Self::group_index(superblock, n);
+        let index = Self::group_index(fs.superblock(), n);
 
         // SAFETY: it is assumed that `u16::MAX <= usize::MAX`
         Ok(unsafe {
-            Address::try_from(inode_table_starting_block * superblock.block_size() + index * u32::from(superblock.inode_size()))
-                .unwrap_unchecked()
+            Address::try_from(
+                inode_table_starting_block * fs.superblock().block_size() + index * u32::from(fs.superblock().inode_size()),
+            )
+            .unwrap_unchecked()
         })
     }
 
@@ -566,7 +564,7 @@ impl Inode {
             return Ok(inode);
         }
 
-        let starting_addr = Self::starting_addr(&fs.device, fs.superblock(), n)?;
+        let starting_addr = Self::starting_addr(fs, n)?;
         let device = fs.device.borrow();
 
         // SAFETY: all the possible failures are catched in the resulting error
@@ -587,7 +585,11 @@ impl Inode {
 
     /// Writes the given `inode` structure at its position.
     ///
-    /// # SAFETY
+    /// # Errors
+    ///
+    /// Returns a [`Error`] if the device cannot be written.
+    ///
+    /// # Safety
     ///
     /// The given `inode` must correspond to the given inode number `n`.
     pub(crate) unsafe fn write_on_device<Dev: Device<u8, Ext2Error>>(
@@ -595,7 +597,7 @@ impl Inode {
         n: u32,
         inode: Self,
     ) -> Result<(), Error<Ext2Error>> {
-        let starting_addr = Self::starting_addr(&fs.device, fs.superblock(), n)?;
+        let starting_addr = Self::starting_addr(fs, n)?;
         if fs.cache {
             INODE_CACHE.insert((fs.device_id, n), inode);
         }
@@ -830,6 +832,7 @@ mod test {
     use crate::fs::ext2::error::Ext2Error;
     use crate::fs::ext2::inode::{Inode, ROOT_DIRECTORY_INODE};
     use crate::fs::ext2::Ext2;
+    use crate::tests::new_device_id;
 
     #[test]
     fn struct_size() {
@@ -839,33 +842,33 @@ mod test {
     #[test]
     fn parse_root() {
         let file = RefCell::new(File::options().read(true).write(true).open("./tests/fs/ext2/base.ext2").unwrap());
-        let fs = Ext2::new(file, 0, false).unwrap();
+        let fs = Ext2::new(file, new_device_id(), false).unwrap();
         assert!(Inode::parse(&fs, ROOT_DIRECTORY_INODE).is_ok());
 
         let file = RefCell::new(File::options().read(true).write(true).open("./tests/fs/ext2/extended.ext2").unwrap());
-        let fs = Ext2::new(file, 0, false).unwrap();
+        let fs = Ext2::new(file, new_device_id(), false).unwrap();
         assert!(Inode::parse(&fs, ROOT_DIRECTORY_INODE).is_ok());
     }
 
     #[test]
     fn failed_parse() {
         let file = RefCell::new(File::options().read(true).write(true).open("./tests/fs/ext2/base.ext2").unwrap());
-        let fs = Ext2::new(file, 0, false).unwrap();
+        let fs = Ext2::new(file, new_device_id(), false).unwrap();
         assert!(Inode::parse(&fs, 0).is_err());
 
         let file = RefCell::new(File::options().read(true).write(true).open("./tests/fs/ext2/extended.ext2").unwrap());
-        let fs = Ext2::new(file, 0, false).unwrap();
+        let fs = Ext2::new(file, new_device_id(), false).unwrap();
         assert!(Inode::parse(&fs, 0).is_err());
     }
 
     #[test]
     fn starting_addr() {
         let file = RefCell::new(File::options().read(true).write(true).open("./tests/fs/ext2/base.ext2").unwrap());
-        let fs = Ext2::new(file, 0, false).unwrap();
+        let fs = Ext2::new(file, new_device_id(), false).unwrap();
 
         let root_auto = Inode::parse(&fs, ROOT_DIRECTORY_INODE).unwrap();
 
-        let starting_addr = Inode::starting_addr(&fs.device, fs.superblock(), ROOT_DIRECTORY_INODE).unwrap();
+        let starting_addr = Inode::starting_addr(&fs, ROOT_DIRECTORY_INODE).unwrap();
 
         let root_manual =
             unsafe { <RefCell<File> as Device<u8, Ext2Error>>::read_at::<Inode>(&fs.device.borrow(), starting_addr).unwrap() };
@@ -876,20 +879,18 @@ mod test {
     #[test]
     fn cache_test() {
         let file = RefCell::new(File::options().read(true).write(true).open("./tests/fs/ext2/base.ext2").unwrap());
-        let fs = Ext2::new(file, 0, false).unwrap();
+        let fs = Ext2::new(file, new_device_id(), false).unwrap();
 
         let start_time = time::Instant::now();
-        for _ in 0..10000 {
-            assert!(Inode::parse(&fs, ROOT_DIRECTORY_INODE).is_ok());
+        for _ in 0..100_000 {
             assert!(Inode::parse(&fs, ROOT_DIRECTORY_INODE).is_ok());
         }
         let time_cache_disabled = start_time.elapsed();
 
         let file = RefCell::new(File::options().read(true).write(true).open("./tests/fs/ext2/base.ext2").unwrap());
-        let fs = Ext2::new(file, 0, true).unwrap();
+        let fs = Ext2::new(file, new_device_id(), true).unwrap();
         let start_time = time::Instant::now();
-        for _ in 0..10000 {
-            assert!(Inode::parse(&fs, ROOT_DIRECTORY_INODE).is_ok());
+        for _ in 0..100_000 {
             assert!(Inode::parse(&fs, ROOT_DIRECTORY_INODE).is_ok());
         }
         let time_cache_enabled = start_time.elapsed();

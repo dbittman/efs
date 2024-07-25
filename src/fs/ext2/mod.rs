@@ -189,7 +189,7 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
     pub fn get_block_bitmap(&self, block_group_number: u32) -> Result<Bitmap<u8, Ext2Error, Dev>, Error<Ext2Error>> {
         let superblock = self.superblock();
 
-        let block_group_descriptor = BlockGroupDescriptor::parse(&self.device, superblock, block_group_number)?;
+        let block_group_descriptor = BlockGroupDescriptor::parse(self, block_group_number)?;
         let starting_addr = Address::new((block_group_descriptor.block_bitmap * superblock.block_size()) as usize);
         let length = (superblock.base().blocks_per_group / 8) as usize;
 
@@ -224,7 +224,7 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
         for mut block_group_count in 0_u32..total_block_group_count {
             block_group_count = (block_group_count + start_block_group) % total_block_group_count;
 
-            let block_group_descriptor = BlockGroupDescriptor::parse(&self.device, self.superblock(), block_group_count)?;
+            let block_group_descriptor = BlockGroupDescriptor::parse(self, block_group_count)?;
             if block_group_descriptor.free_blocks_count > 0 {
                 let bitmap = self.get_block_bitmap(block_group_count)?;
                 let group_free_block_index = bitmap.find_n_unset_bits(n as usize);
@@ -299,21 +299,14 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
         ) -> Result<(), Error<Ext2Error>> {
             bitmap.write_back()?;
 
-            let mut new_block_group_descriptor = BlockGroupDescriptor::parse(&ext2.device, ext2.superblock(), block_group_number)?;
+            let mut new_block_group_descriptor = BlockGroupDescriptor::parse(ext2, block_group_number)?;
 
             if usage {
                 new_block_group_descriptor.free_blocks_count -= number_blocks_changed_in_group;
-                ext2.device.borrow_mut().write_at(
-                    BlockGroupDescriptor::starting_addr(ext2.superblock(), block_group_number)?,
-                    new_block_group_descriptor,
-                )
             } else {
                 new_block_group_descriptor.free_blocks_count += number_blocks_changed_in_group;
-                ext2.device.borrow_mut().write_at(
-                    BlockGroupDescriptor::starting_addr(ext2.superblock(), block_group_number)?,
-                    new_block_group_descriptor,
-                )
             }
+            BlockGroupDescriptor::write_on_device(ext2, block_group_number, new_block_group_descriptor)
         }
 
         let block_opt = blocks.first();
@@ -409,7 +402,7 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
     pub fn get_inode_bitmap(&self, block_group_number: u32) -> Result<Bitmap<u8, Ext2Error, Dev>, Error<Ext2Error>> {
         let superblock = self.superblock();
 
-        let block_group_descriptor = BlockGroupDescriptor::parse(&self.device, superblock, block_group_number)?;
+        let block_group_descriptor = BlockGroupDescriptor::parse(self, block_group_number)?;
         let starting_addr = Address::new((block_group_descriptor.inode_bitmap * superblock.block_size()) as usize);
         let length = (superblock.base().inodes_per_group / 8) as usize;
 
@@ -475,9 +468,7 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
         };
 
         let block_group_number = Inode::block_group(&superblock, inode_number);
-        let block_group_descriptor = BlockGroupDescriptor::parse(&self.device, &superblock, block_group_number)?;
-
-        let mut device = self.device.borrow_mut();
+        let block_group_descriptor = BlockGroupDescriptor::parse(self, block_group_number)?;
 
         let mut new_block_group_descriptor = block_group_descriptor;
 
@@ -487,10 +478,9 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
             new_block_group_descriptor.free_inodes_count += 1;
         }
 
-        let block_group_descriptor_starting_address = BlockGroupDescriptor::starting_addr(&superblock, block_group_number)?;
         // SAFETY: the starting address is the one of the block group descriptor
         unsafe {
-            device.write_at(block_group_descriptor_starting_address, new_block_group_descriptor)?;
+            BlockGroupDescriptor::write_on_device(self, block_group_number, new_block_group_descriptor)?;
         };
 
         let bitmap_starting_byte = u64::from(block_group_descriptor.inode_bitmap) * u64::from(superblock.block_size());
@@ -501,6 +491,8 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
         let bitmap_inode_address = Address::new(
             usize::try_from(bitmap_starting_byte + inode_index).expect("Could not fit the starting byte of the inode on a usize"),
         );
+
+        let mut device = self.device.borrow_mut();
 
         #[allow(clippy::range_plus_one)]
         let mut slice = device.slice(bitmap_inode_address..bitmap_inode_address + 1)?;
@@ -644,13 +636,13 @@ mod test {
     use crate::io::{Read, Write};
     use crate::path::{Path, UnixStr};
     use crate::permissions::Permissions;
-    use crate::tests::copy_file;
+    use crate::tests::{copy_file, new_device_id};
     use crate::types::{Gid, Uid};
 
     #[test]
     fn base_fs() {
         let device = RefCell::new(File::options().read(true).write(true).open("./tests/fs/ext2/base.ext2").unwrap());
-        let ext2 = Ext2::new(device, 0, false).unwrap();
+        let ext2 = Ext2::new(device, new_device_id(), false).unwrap();
         let root = ext2.inode(ROOT_DIRECTORY_INODE).unwrap();
         assert_eq!(root.file_type().unwrap(), Type::Directory);
     }
@@ -658,7 +650,7 @@ mod test {
     #[test]
     fn fetch_file() {
         let device = RefCell::new(File::options().read(true).write(true).open("./tests/fs/ext2/extended.ext2").unwrap());
-        let ext2 = Celled::new(Ext2::new(device, 0, false).unwrap());
+        let ext2 = Celled::new(Ext2::new(device, new_device_id(), false).unwrap());
 
         let TypeWithFile::Directory(root) = ext2.file(ROOT_DIRECTORY_INODE).unwrap() else { panic!() };
         let Some(TypeWithFile::Regular(mut big_file)) = root.entry(UnixStr::new("big_file").unwrap()).unwrap() else { panic!() };
@@ -671,7 +663,7 @@ mod test {
     #[test]
     fn get_bitmap() {
         let device = RefCell::new(File::options().read(true).write(true).open("./tests/fs/ext2/base.ext2").unwrap());
-        let ext2 = Ext2::new(device, 0, false).unwrap();
+        let ext2 = Ext2::new(device, new_device_id(), false).unwrap();
 
         assert_eq!(ext2.get_block_bitmap(0).unwrap().length() * 8, ext2.superblock().base().blocks_per_group as usize);
     }
@@ -679,7 +671,7 @@ mod test {
     #[test]
     fn free_block_numbers() {
         let device = RefCell::new(File::options().read(true).write(true).open("./tests/fs/ext2/base.ext2").unwrap());
-        let ext2 = Ext2::new(device, 0, false).unwrap();
+        let ext2 = Ext2::new(device, new_device_id(), false).unwrap();
         let free_blocks = ext2.free_blocks(1_024).unwrap();
         let superblock = ext2.superblock().clone();
         let bitmap = ext2.get_block_bitmap(0).unwrap();
@@ -705,7 +697,7 @@ mod test {
     #[test]
     fn free_block_small_allocation_deallocation() {
         let file = RefCell::new(copy_file("./tests/fs/ext2/io_operations.ext2").unwrap());
-        let mut ext2 = Ext2::new(file, 0, false).unwrap();
+        let mut ext2 = Ext2::new(file, new_device_id(), false).unwrap();
 
         let mut free_blocks = ext2.free_blocks(1_024).unwrap();
         ext2.allocate_blocks(&free_blocks).unwrap();
@@ -730,7 +722,7 @@ mod test {
     #[test]
     fn free_block_big_allocation_deallocation() {
         let file = RefCell::new(copy_file("./tests/fs/ext2/io_operations.ext2").unwrap());
-        let mut ext2 = Ext2::new(file, 0, false).unwrap();
+        let mut ext2 = Ext2::new(file, new_device_id(), false).unwrap();
 
         let free_blocks = ext2.free_blocks(20_000).unwrap();
         ext2.allocate_blocks(&free_blocks).unwrap();
@@ -758,7 +750,7 @@ mod test {
     #[test]
     fn free_inode_allocation_deallocation() {
         let file = RefCell::new(copy_file("./tests/fs/ext2/io_operations.ext2").unwrap());
-        let ext2 = Ext2::new(file, 0, false).unwrap();
+        let ext2 = Ext2::new(file, new_device_id(), false).unwrap();
 
         let celled_fs = Celled::new(ext2);
         let mut fs = celled_fs.borrow_mut();
@@ -792,7 +784,7 @@ mod test {
     #[test]
     fn fs_interface() {
         let file = RefCell::new(copy_file("./tests/fs/ext2/io_operations.ext2").unwrap());
-        let ext2 = Ext2::new(file, 0, false).unwrap();
+        let ext2 = Ext2::new(file, new_device_id(), false).unwrap();
         let fs = Celled::new(ext2);
 
         let root = fs.root().unwrap();

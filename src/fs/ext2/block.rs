@@ -236,7 +236,7 @@ mod test {
     use crate::fs::ext2::superblock::Superblock;
     use crate::fs::ext2::Ext2;
     use crate::io::{Read, Seek, SeekFrom, Write};
-    use crate::tests::copy_file;
+    use crate::tests::{copy_file, new_device_id};
 
     #[test]
     fn block_read() {
@@ -268,7 +268,7 @@ mod test {
         const BLOCK_NUMBER: u32 = 10_234;
 
         let file = RefCell::new(copy_file("./tests/fs/ext2/io_operations.ext2").unwrap());
-        let ext2 = Celled::new(Ext2::new(file, 0, false).unwrap());
+        let ext2 = Celled::new(Ext2::new(file, new_device_id(), false).unwrap());
         let fs = ext2.borrow();
 
         let mut block = Block::new(ext2.clone(), BLOCK_NUMBER);
@@ -288,14 +288,14 @@ mod test {
         const BLOCK_NUMBER: u32 = 9;
 
         let file = RefCell::new(copy_file("./tests/fs/ext2/io_operations.ext2").unwrap());
-        let ext2 = Celled::new(Ext2::new(file, 0, false).unwrap());
+        let ext2 = Celled::new(Ext2::new(file, new_device_id(), false).unwrap());
         let superblock = ext2.borrow().superblock().clone();
 
         let mut block = Block::new(ext2.clone(), BLOCK_NUMBER);
         let block_group = block.block_group(&superblock);
 
         let fs = ext2.borrow();
-        let block_group_descriptor = BlockGroupDescriptor::parse(&fs.device, fs.superblock(), block_group).unwrap();
+        let block_group_descriptor = BlockGroupDescriptor::parse(&fs, block_group).unwrap();
         let free_block_count = block_group_descriptor.free_blocks_count;
 
         let bitmap = fs.get_block_bitmap(block_group).unwrap();
@@ -307,7 +307,7 @@ mod test {
         block.set_free().unwrap();
 
         let fs = ext2.borrow();
-        let new_free_block_count = BlockGroupDescriptor::parse(&fs.device, fs.superblock(), block.block_group(&superblock))
+        let new_free_block_count = BlockGroupDescriptor::parse(&fs, block.block_group(&superblock))
             .unwrap()
             .free_blocks_count;
 
@@ -321,14 +321,14 @@ mod test {
         const BLOCK_NUMBER: u32 = 1920;
 
         let file = RefCell::new(copy_file("./tests/fs/ext2/io_operations.ext2").unwrap());
-        let ext2 = Celled::new(Ext2::new(file, 0, false).unwrap());
+        let ext2 = Celled::new(Ext2::new(file, new_device_id(), false).unwrap());
         let superblock = ext2.borrow().superblock().clone();
 
         let mut block = Block::new(ext2.clone(), BLOCK_NUMBER);
         let block_group = block.block_group(&superblock);
 
         let fs = ext2.borrow();
-        let block_group_descriptor = BlockGroupDescriptor::parse(&fs.device, fs.superblock(), block_group).unwrap();
+        let block_group_descriptor = BlockGroupDescriptor::parse(&fs, block_group).unwrap();
         let free_block_count = block_group_descriptor.free_blocks_count;
 
         let bitmap = fs.get_block_bitmap(block_group).unwrap();
@@ -340,7 +340,7 @@ mod test {
         block.set_used().unwrap();
 
         let fs = ext2.borrow();
-        let new_free_block_count = BlockGroupDescriptor::parse(&fs.device, fs.superblock(), block.block_group(&superblock))
+        let new_free_block_count = BlockGroupDescriptor::parse(&fs, block.block_group(&superblock))
             .unwrap()
             .free_blocks_count;
 
