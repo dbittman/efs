@@ -254,7 +254,7 @@ mod test {
         .unwrap()
         .commit();
 
-        let ext2 = Celled::new(Ext2::new_celled(celled_file, 0).unwrap());
+        let ext2 = Celled::new(Ext2::new_celled(celled_file, 0, false).unwrap());
         let mut block = Block::new(ext2, BLOCK_NUMBER);
         block.seek(SeekFrom::Start(123)).unwrap();
         let mut buffer_auto = [0_u8; 59];
@@ -268,7 +268,7 @@ mod test {
         const BLOCK_NUMBER: u32 = 10_234;
 
         let file = RefCell::new(copy_file("./tests/fs/ext2/io_operations.ext2").unwrap());
-        let ext2 = Celled::new(Ext2::new(file, 0).unwrap());
+        let ext2 = Celled::new(Ext2::new(file, 0, false).unwrap());
         let fs = ext2.borrow();
 
         let mut block = Block::new(ext2.clone(), BLOCK_NUMBER);
@@ -288,7 +288,7 @@ mod test {
         const BLOCK_NUMBER: u32 = 9;
 
         let file = RefCell::new(copy_file("./tests/fs/ext2/io_operations.ext2").unwrap());
-        let ext2 = Celled::new(Ext2::new(file, 0).unwrap());
+        let ext2 = Celled::new(Ext2::new(file, 0, false).unwrap());
         let superblock = ext2.borrow().superblock().clone();
 
         let mut block = Block::new(ext2.clone(), BLOCK_NUMBER);
@@ -321,7 +321,7 @@ mod test {
         const BLOCK_NUMBER: u32 = 1920;
 
         let file = RefCell::new(copy_file("./tests/fs/ext2/io_operations.ext2").unwrap());
-        let ext2 = Celled::new(Ext2::new(file, 0).unwrap());
+        let ext2 = Celled::new(Ext2::new(file, 0, false).unwrap());
         let superblock = ext2.borrow().superblock().clone();
 
         let mut block = Block::new(ext2.clone(), BLOCK_NUMBER);

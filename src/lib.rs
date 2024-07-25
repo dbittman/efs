@@ -132,7 +132,7 @@
 //!         .unwrap(),
 //! );
 //!
-//! let ext2 = Ext2::new(device, 0).unwrap();
+//! let ext2 = Ext2::new(device, 0, false).unwrap();
 //! let fs = Celled::new(ext2);
 //!
 //! // `fs` now contains a `FileSystem` with the following structure:
@@ -348,6 +348,7 @@ extern crate core;
 #[cfg(feature = "std")]
 extern crate std;
 
+pub mod cache;
 pub mod dev;
 pub mod error;
 pub mod file;

@@ -13,7 +13,8 @@ use super::block_group::BlockGroupDescriptor;
 use super::error::Ext2Error;
 use super::indirection::IndirectedBlocks;
 use super::superblock::{OperatingSystem, Superblock};
-use super::Celled;
+use super::{Celled, Ext2};
+use crate::cache::Cache;
 use crate::dev::sector::Address;
 use crate::dev::Device;
 use crate::error::Error;
@@ -41,6 +42,11 @@ pub const BOOT_LOADER_INODE: u32 = 5;
 
 /// Reserved undeleted directory inode number.
 pub const UNDELETED_DIRECTORY_INODE: u32 = 6;
+
+/// Cache for inodes.
+///
+/// Stores the couple `((device, inode_number), inode)` for each visited inode.
+static INODE_CACHE: Cache<(u32, u32), Inode> = Cache::new();
 
 /// Inode.
 ///
@@ -553,21 +559,47 @@ impl Inode {
     /// type.
     ///
     /// Returns an [`Error`] if the device could not be read.
-    pub fn parse<Dev: Device<u8, Ext2Error>>(
-        celled_device: &Celled<Dev>,
-        superblock: &Superblock,
-        n: u32,
-    ) -> Result<Self, Error<Ext2Error>> {
-        let starting_addr = Self::starting_addr(celled_device, superblock, n)?;
-        let device = celled_device.borrow();
+    pub fn parse<Dev: Device<u8, Ext2Error>>(fs: &Ext2<Dev>, n: u32) -> Result<Self, Error<Ext2Error>> {
+        if fs.cache
+            && let Some(inode) = INODE_CACHE.get_copy(&(fs.device_id, n))
+        {
+            return Ok(inode);
+        }
+
+        let starting_addr = Self::starting_addr(&fs.device, fs.superblock(), n)?;
+        let device = fs.device.borrow();
 
         // SAFETY: all the possible failures are catched in the resulting error
         let inode = unsafe { device.read_at::<Self>(starting_addr) }?;
 
-        match inode.file_type() {
-            Ok(_) => Ok(inode),
-            Err(err) => Err(Error::Fs(FsError::Implementation(err))),
+        let inode = match inode.file_type() {
+            Ok(_) => inode,
+            Err(err) => Err(Error::Fs(FsError::Implementation(err)))?,
+        };
+
+        // It's the first time the inode is read.
+        if fs.cache {
+            INODE_CACHE.insert((fs.device_id, n), inode);
         }
+
+        Ok(inode)
+    }
+
+    /// Writes the given `inode` structure at its position.
+    ///
+    /// # SAFETY
+    ///
+    /// The given `inode` must correspond to the given inode number `n`.
+    pub(crate) unsafe fn write_on_device<Dev: Device<u8, Ext2Error>>(
+        fs: &Ext2<Dev>,
+        n: u32,
+        inode: Self,
+    ) -> Result<(), Error<Ext2Error>> {
+        let starting_addr = Self::starting_addr(&fs.device, fs.superblock(), n)?;
+        if fs.cache {
+            INODE_CACHE.insert((fs.device_id, n), inode);
+        }
+        fs.device.borrow_mut().write_at(starting_addr, inode)
     }
 
     /// Returns the complete list of block numbers containing this inode's data (indirect blocks are not considered).
@@ -792,12 +824,12 @@ mod test {
     use core::cell::RefCell;
     use core::mem::size_of;
     use std::fs::File;
+    use std::time;
 
     use crate::dev::Device;
     use crate::fs::ext2::error::Ext2Error;
     use crate::fs::ext2::inode::{Inode, ROOT_DIRECTORY_INODE};
-    use crate::fs::ext2::superblock::Superblock;
-    use crate::fs::ext2::Celled;
+    use crate::fs::ext2::Ext2;
 
     #[test]
     fn struct_size() {
@@ -807,42 +839,61 @@ mod test {
     #[test]
     fn parse_root() {
         let file = RefCell::new(File::options().read(true).write(true).open("./tests/fs/ext2/base.ext2").unwrap());
-        let celled_file = Celled::new(file);
-        let superblock = Superblock::parse(&celled_file).unwrap();
-        assert!(Inode::parse(&celled_file, &superblock, ROOT_DIRECTORY_INODE).is_ok());
+        let fs = Ext2::new(file, 0, false).unwrap();
+        assert!(Inode::parse(&fs, ROOT_DIRECTORY_INODE).is_ok());
 
         let file = RefCell::new(File::options().read(true).write(true).open("./tests/fs/ext2/extended.ext2").unwrap());
-        let celled_file = Celled::new(file);
-        let superblock = Superblock::parse(&celled_file).unwrap();
-        assert!(Inode::parse(&celled_file, &superblock, ROOT_DIRECTORY_INODE).is_ok());
+        let fs = Ext2::new(file, 0, false).unwrap();
+        assert!(Inode::parse(&fs, ROOT_DIRECTORY_INODE).is_ok());
     }
 
     #[test]
     fn failed_parse() {
         let file = RefCell::new(File::options().read(true).write(true).open("./tests/fs/ext2/base.ext2").unwrap());
-        let celled_file = Celled::new(file);
-        let superblock = Superblock::parse(&celled_file).unwrap();
-        assert!(Inode::parse(&celled_file, &superblock, 0).is_err());
+        let fs = Ext2::new(file, 0, false).unwrap();
+        assert!(Inode::parse(&fs, 0).is_err());
 
         let file = RefCell::new(File::options().read(true).write(true).open("./tests/fs/ext2/extended.ext2").unwrap());
-        let celled_file = Celled::new(file);
-        let superblock = Superblock::parse(&celled_file).unwrap();
-        assert!(Inode::parse(&celled_file, &superblock, superblock.base().inodes_count + 1).is_err());
+        let fs = Ext2::new(file, 0, false).unwrap();
+        assert!(Inode::parse(&fs, 0).is_err());
     }
 
     #[test]
     fn starting_addr() {
         let file = RefCell::new(File::options().read(true).write(true).open("./tests/fs/ext2/base.ext2").unwrap());
-        let celled_file = Celled::new(file);
-        let superblock = Superblock::parse(&celled_file).unwrap();
+        let fs = Ext2::new(file, 0, false).unwrap();
 
-        let root_auto = Inode::parse(&celled_file, &superblock, ROOT_DIRECTORY_INODE).unwrap();
+        let root_auto = Inode::parse(&fs, ROOT_DIRECTORY_INODE).unwrap();
 
-        let starting_addr = Inode::starting_addr(&celled_file, &superblock, ROOT_DIRECTORY_INODE).unwrap();
+        let starting_addr = Inode::starting_addr(&fs.device, fs.superblock(), ROOT_DIRECTORY_INODE).unwrap();
 
         let root_manual =
-            unsafe { <RefCell<File> as Device<u8, Ext2Error>>::read_at::<Inode>(&celled_file.borrow(), starting_addr).unwrap() };
+            unsafe { <RefCell<File> as Device<u8, Ext2Error>>::read_at::<Inode>(&fs.device.borrow(), starting_addr).unwrap() };
 
         assert_eq!(root_auto, root_manual);
+    }
+
+    #[test]
+    fn cache_test() {
+        let file = RefCell::new(File::options().read(true).write(true).open("./tests/fs/ext2/base.ext2").unwrap());
+        let fs = Ext2::new(file, 0, false).unwrap();
+
+        let start_time = time::Instant::now();
+        for _ in 0..10000 {
+            assert!(Inode::parse(&fs, ROOT_DIRECTORY_INODE).is_ok());
+            assert!(Inode::parse(&fs, ROOT_DIRECTORY_INODE).is_ok());
+        }
+        let time_cache_disabled = start_time.elapsed();
+
+        let file = RefCell::new(File::options().read(true).write(true).open("./tests/fs/ext2/base.ext2").unwrap());
+        let fs = Ext2::new(file, 0, true).unwrap();
+        let start_time = time::Instant::now();
+        for _ in 0..10000 {
+            assert!(Inode::parse(&fs, ROOT_DIRECTORY_INODE).is_ok());
+            assert!(Inode::parse(&fs, ROOT_DIRECTORY_INODE).is_ok());
+        }
+        let time_cache_enabled = start_time.elapsed();
+
+        assert!(time_cache_disabled > time_cache_enabled);
     }
 }
