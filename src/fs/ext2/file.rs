@@ -131,10 +131,6 @@ impl<Dev: Device<u8, Ext2Error>> File<Dev> {
 
         let mut fs = self.filesystem.borrow_mut();
 
-        // SAFETY: the result is a u32 as `size` is valid (it has been checked)
-        let previous_data_block_number =
-            unsafe { u32::try_from(self.inode.data_size() / u64::from(fs.superblock().block_size())).unwrap_unchecked() };
-
         let mut new_inode = self.inode;
         // SAFETY: the result is smaller than `u32::MAX`
         new_inode.size = unsafe { u32::try_from(u64::from(u32::MAX) & size).unwrap_unchecked() };
@@ -145,11 +141,10 @@ impl<Dev: Device<u8, Ext2Error>> File<Dev> {
         };
 
         // SAFETY: the result is a u32 as `size` is valid (it has been checked)
-        let kept_data_blocks_number = unsafe { u32::try_from(size / u64::from(fs.superblock().block_size())).unwrap_unchecked() };
-        let mut indirection_blocks = self.inode.indirected_blocks(&fs.device, fs.superblock())?;
-        indirection_blocks.truncate_back_data_blocks(previous_data_block_number);
-        let symmetrical_difference =
-            indirection_blocks.truncate_front_data_blocks(previous_data_block_number - kept_data_blocks_number);
+        let kept_data_blocks_number =
+            unsafe { 1 + u32::try_from(size.saturating_sub(1) / u64::from(fs.superblock().block_size())).unwrap_unchecked() };
+        let indirection_blocks = self.inode.indirected_blocks(&fs)?;
+        let symmetrical_difference = indirection_blocks.truncate_front_data_blocks(kept_data_blocks_number);
 
         let mut deallocated_blocks = symmetrical_difference.changed_data_blocks();
         deallocated_blocks.append(
@@ -159,6 +154,7 @@ impl<Dev: Device<u8, Ext2Error>> File<Dev> {
                 .map(|(_, (indirection_block, _))| indirection_block)
                 .collect_vec(),
         );
+
         fs.deallocate_blocks(&deallocated_blocks)?;
 
         drop(fs);
@@ -288,11 +284,9 @@ impl<Dev: Device<u8, Ext2Error>> Base for File<Dev> {
 impl<Dev: Device<u8, Ext2Error>> Read for File<Dev> {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, Error<Self::IOError>> {
         let filesystem = self.filesystem.borrow();
-        self.inode
-            .read_data(&filesystem.device, &filesystem.superblock, buf, self.io_offset)
-            .inspect(|&bytes| {
-                self.io_offset += bytes as u64;
-            })
+        self.inode.read_data(&filesystem, buf, self.io_offset).inspect(|&bytes| {
+            self.io_offset += bytes as u64;
+        })
     }
 }
 
@@ -318,7 +312,7 @@ impl<Dev: Device<u8, Ext2Error>> Write for File<Dev> {
             return Err(Error::Fs(FsError::Implementation(Ext2Error::FileTooLarge)));
         }
 
-        let mut indirected_blocks: IndirectedBlocks<12> = self.inode.indirected_blocks(&fs.device, fs.superblock())?;
+        let mut indirected_blocks: IndirectedBlocks<12> = self.inode.indirected_blocks(&fs)?;
         // SAFETY: there are at most u32::MAX blocks on the filesystem
         indirected_blocks.truncate_back_data_blocks(unsafe {
             // In case of blocks that are not used and not 0
@@ -564,7 +558,7 @@ impl<Dev: Device<u8, Ext2Error>> Directory<Dev> {
         let data_size = file.inode.data_size();
         let data_blocks = 1 + (data_size - 1) / block_size;
 
-        let mut indirected_blocks = file.inode.indirected_blocks(&fs.device, fs.superblock())?;
+        let mut indirected_blocks = file.inode.indirected_blocks(&fs)?;
         // SAFETY: there are at most u32::MAX blocks on this filesystem
         indirected_blocks.truncate_back_data_blocks(unsafe { u32::try_from(data_blocks).unwrap_unchecked() });
 
@@ -911,7 +905,7 @@ impl<Dev: Device<u8, Ext2Error>> SymbolicLink<Dev> {
                 core::slice::from_raw_parts(addr_of!(file.inode.direct_block_pointers).cast(), data_size)
             });
         } else {
-            let _: usize = file.inode.read_data(&fs.device, fs.superblock(), &mut buffer, 0)?;
+            let _: usize = file.inode.read_data(&fs, &mut buffer, 0)?;
         }
         let pointed_file = buffer.split(|char| *char == b'\0').next().ok_or(Ext2Error::BadString)?.to_vec();
         Ok(Self {
@@ -1148,15 +1142,13 @@ mod test {
 
         for offset in 0_usize..1_024_usize {
             let mut buffer = [0_u8; 1_024];
-            big_file_inode
-                .read_data(&fs.device, fs.superblock(), &mut buffer, (offset * 1_024) as u64)
-                .unwrap();
+            big_file_inode.read_data(&fs, &mut buffer, (offset * 1_024) as u64).unwrap();
 
             assert_eq!(buffer.iter().all_equal_value(), Ok(&1));
         }
 
         let mut buffer = [0_u8; 1_024];
-        big_file_inode.read_data(&fs.device, fs.superblock(), &mut buffer, 0x0010_0000).unwrap();
+        big_file_inode.read_data(&fs, &mut buffer, 0x0010_0000).unwrap();
         assert_eq!(buffer.iter().all_equal_value(), Ok(&0));
     }
 

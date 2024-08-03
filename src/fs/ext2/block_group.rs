@@ -24,6 +24,7 @@ static BLOCK_GROUP_DESCRIPTOR_CACHE: Cache<(u32, u32), BlockGroupDescriptor> = C
 /// Contains information regarding where important data structures for that block group are located.
 #[repr(C, packed)]
 #[derive(Debug, Clone, Copy)]
+#[cfg_attr(test, derive(PartialEq, Eq))]
 #[allow(clippy::module_name_repetitions)]
 pub struct BlockGroupDescriptor {
     /// Block address of block usage bitmap.
@@ -131,7 +132,7 @@ mod test {
 
     use super::{BlockGroupDescriptor, BLOCK_GROUP_DESCRIPTOR_SIZE};
     use crate::fs::ext2::Ext2;
-    use crate::tests::new_device_id;
+    use crate::tests::{copy_file, new_device_id};
 
     #[test]
     fn struct_size() {
@@ -180,5 +181,19 @@ mod test {
         let time_cache_enabled = start_time.elapsed();
 
         assert!(time_cache_disabled > time_cache_enabled);
+    }
+
+    #[test]
+    fn write_back() {
+        let file = RefCell::new(copy_file("./tests/fs/ext2/io_operations.ext2").unwrap());
+        let fs = Ext2::new(file, new_device_id(), false).unwrap();
+
+        let mut bgd = BlockGroupDescriptor::parse(&fs, 0).unwrap();
+        bgd.free_blocks_count = 0;
+        bgd.reserved = [0x9A; 12];
+        unsafe { BlockGroupDescriptor::write_on_device(&fs, 0, bgd).unwrap() };
+
+        let new_bgd = BlockGroupDescriptor::parse(&fs, 0).unwrap();
+        assert_eq!(bgd, new_bgd);
     }
 }

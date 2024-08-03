@@ -583,7 +583,6 @@ impl<const DBPC: u32> IndirectedBlocks<DBPC> {
     /// Truncates the start of the indirected blocks at the `n`th data block (excluded).
     ///
     /// In other words, all the data blocks but the `n` firsts will be kept.
-
     #[must_use]
     pub fn truncate_front_data_blocks(self, mut n: u32) -> SymmetricDifference<DBPC> {
         let blocks_per_indirection = self.blocks_per_indirection;

@@ -153,16 +153,16 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
     ///
     /// Must ensure that the given superblock is coherent with the current state of the filesystem.
     unsafe fn set_superblock(&mut self, superblock: &Superblock) -> Result<(), Error<Ext2Error>> {
-        self.update_inner_superblock()?;
         let mut device = self.device.borrow_mut();
-
         device.write_at(Address::new(SUPERBLOCK_START_BYTE), *superblock.base())?;
 
         if let Some(extended) = superblock.extended_fields() {
             device.write_at(Address::new(SUPERBLOCK_START_BYTE + size_of::<superblock::Base>()), *extended)?;
         }
 
-        Ok(())
+        drop(device);
+
+        self.update_inner_superblock()
     }
 
     /// Sets the counter of free blocks in the superblock.
@@ -279,7 +279,6 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
     /// Returns an [`NonExistingBlock`](Ext2Error::NonExistingBlock) error if a given block does not exist.
     ///
     /// Otherwise, returns the same errors as [`get_block_bitmap`](struct.Ext2.html#method.get_block_bitmap).
-
     fn locate_blocks(&mut self, blocks: &[u32], usage: bool) -> Result<(), Error<Ext2Error>> {
         /// Updates the block group bitmap and the free block count in the descriptor.
         ///
@@ -307,6 +306,10 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
                 new_block_group_descriptor.free_blocks_count += number_blocks_changed_in_group;
             }
             BlockGroupDescriptor::write_on_device(ext2, block_group_number, new_block_group_descriptor)
+        }
+
+        if !self.cache {
+            self.update_inner_superblock()?;
         }
 
         let block_opt = blocks.first();
@@ -417,6 +420,10 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
     ///
     /// Returns an [`Error`] if the device cannot be read or written.
     pub fn free_inode(&mut self) -> Result<u32, Error<Ext2Error>> {
+        if !self.cache {
+            self.update_inner_superblock()?;
+        }
+
         for block_group_number in 0..self.superblock().block_group_count() {
             let inode_bitmap = self.get_inode_bitmap(block_group_number)?;
             if let Some(index) = inode_bitmap.iter().position(|byte| *byte != u8::MAX) {
@@ -566,8 +573,7 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
                 || file_type == Type::Directory
                 || (file_type == Type::SymbolicLink && inode.data_size() >= SYMBOLIC_LINK_INODE_STORE_LIMIT as u64)
             {
-                let superblock = self.superblock();
-                let indirected_blocks = inode.indirected_blocks(&self.device, superblock)?;
+                let indirected_blocks: indirection::IndirectedBlocks<12> = inode.indirected_blocks(self)?;
                 self.deallocate_blocks(&indirected_blocks.flatten_data_blocks())?;
             }
             self.locate_inode(inode_number, false)?;
@@ -631,6 +637,7 @@ mod test {
     use crate::dev::celled::Celled;
     use crate::file::{Directory, SymbolicLink, Type, TypeWithFile};
     use crate::fs::ext2::block::Block;
+    use crate::fs::ext2::block_group::BlockGroupDescriptor;
     use crate::fs::ext2::inode::{Flags, Inode, TypePermissions};
     use crate::fs::FileSystem;
     use crate::io::{Read, Write};
@@ -692,6 +699,14 @@ mod test {
         for i in 1_u32..1_024 {
             assert_eq!(ext2.free_blocks(i).unwrap().len(), i as usize, "{i}");
         }
+
+        let superblock_free_block_count = ext2.superblock().base().free_blocks_count;
+        let mut block_group_descriptors_free_block_count = 0;
+        for i in 0..ext2.superblock().block_group_count() {
+            let bgd = BlockGroupDescriptor::parse(&ext2, i).unwrap();
+            block_group_descriptors_free_block_count += u32::from(bgd.free_blocks_count);
+        }
+        assert_eq!(superblock_free_block_count, block_group_descriptors_free_block_count);
     }
 
     #[test]
@@ -724,10 +739,26 @@ mod test {
         let file = RefCell::new(copy_file("./tests/fs/ext2/io_operations.ext2").unwrap());
         let mut ext2 = Ext2::new(file, new_device_id(), false).unwrap();
 
+        let superblock_free_block_count = ext2.superblock().base().free_blocks_count;
+        let mut block_group_descriptors_free_block_count = 0;
+        for i in 0..ext2.superblock().block_group_count() {
+            let bgd = BlockGroupDescriptor::parse(&ext2, i).unwrap();
+            block_group_descriptors_free_block_count += u32::from(bgd.free_blocks_count);
+        }
+        assert_eq!(superblock_free_block_count, block_group_descriptors_free_block_count);
+
         let free_blocks = ext2.free_blocks(20_000).unwrap();
         ext2.allocate_blocks(&free_blocks).unwrap();
 
         let fs = Celled::new(ext2);
+
+        let superblock_free_block_count = fs.borrow().superblock().base().free_blocks_count;
+        let mut block_group_descriptors_free_block_count = 0;
+        for i in 0..fs.borrow().superblock().block_group_count() {
+            let bgd = BlockGroupDescriptor::parse(&fs.borrow(), i).unwrap();
+            block_group_descriptors_free_block_count += u32::from(bgd.free_blocks_count);
+        }
+        assert_eq!(superblock_free_block_count, block_group_descriptors_free_block_count);
 
         let superblock = fs.borrow().superblock().clone();
         for block in &free_blocks {
@@ -745,6 +776,14 @@ mod test {
             let bitmap = fs.borrow().get_block_bitmap(superblock.block_group(*block)).unwrap();
             assert!(Block::new(fs.clone(), *block).is_free(&superblock, &bitmap), "Deallocation: {block}");
         }
+
+        let superblock_free_block_count = fs.borrow().superblock().base().free_blocks_count;
+        let mut block_group_descriptors_free_block_count = 0;
+        for i in 0..fs.borrow().superblock().block_group_count() {
+            let bgd = BlockGroupDescriptor::parse(&fs.borrow(), i).unwrap();
+            block_group_descriptors_free_block_count += u32::from(bgd.free_blocks_count);
+        }
+        assert_eq!(superblock_free_block_count, block_group_descriptors_free_block_count);
     }
 
     #[test]

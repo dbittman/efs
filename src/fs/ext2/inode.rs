@@ -13,7 +13,7 @@ use super::block_group::BlockGroupDescriptor;
 use super::error::Ext2Error;
 use super::indirection::IndirectedBlocks;
 use super::superblock::{OperatingSystem, Superblock};
-use super::{Celled, Ext2};
+use super::Ext2;
 use crate::cache::Cache;
 use crate::dev::sector::Address;
 use crate::dev::Device;
@@ -615,20 +615,18 @@ impl Inode {
     /// Panics if the given `superblock` is ill-formed.
     pub fn indirected_blocks<Dev: Device<u8, Ext2Error>>(
         &self,
-        celled_device: &Celled<Dev>,
-        superblock: &Superblock,
+        fs: &Ext2<Dev>,
     ) -> Result<IndirectedBlocks<DIRECT_BLOCK_POINTER_COUNT>, Error<Ext2Error>> {
         /// Returns the list of block addresses contained in the given indirect block.
         #[allow(clippy::cast_ptr_alignment)]
         fn read_indirect_block<Dev: Device<u8, Ext2Error>>(
-            celled_device: &Celled<Dev>,
-            superblock: &Superblock,
+            fs: &Ext2<Dev>,
             block_number: u32,
         ) -> Result<Vec<u32>, Error<Ext2Error>> {
-            let device = celled_device.borrow();
+            let device = fs.device.borrow();
 
-            let block_address = Address::from((block_number * superblock.block_size()) as usize);
-            let slice = device.slice(block_address..block_address + superblock.block_size() as usize)?;
+            let block_address = Address::from((block_number * fs.superblock().block_size()) as usize);
+            let slice = device.slice(block_address..block_address + fs.superblock().block_size() as usize)?;
             let byte_array = slice.as_ref();
             let address_array =
                 // SAFETY: casting n `u8` to `u32` with n a multiple of 4 (as the block size is a power of 2, generally above 512)
@@ -636,10 +634,10 @@ impl Inode {
             Ok(address_array.iter().filter(|&block_number| (*block_number != 0)).copied().collect_vec())
         }
 
-        let data_blocks = u32::try_from(1 + (self.data_size().saturating_sub(1)) / u64::from(superblock.block_size()))
+        let data_blocks = u32::try_from(1 + (self.data_size().saturating_sub(1)) / u64::from(fs.superblock().block_size()))
             .expect("Ill-formed superblock: there should be at most u32::MAX blocks");
         let mut parsed_data_blocks = 0_u32;
-        let blocks_per_indirection = superblock.block_size() / 4;
+        let blocks_per_indirection = fs.superblock().block_size() / 4;
 
         let direct_block_pointers = self
             .direct_block_pointers
@@ -662,11 +660,10 @@ impl Inode {
             return Ok(indirected_blocks);
         }
 
-        indirected_blocks.singly_indirected_blocks.1.append(&mut read_indirect_block(
-            celled_device,
-            superblock,
-            indirected_blocks.singly_indirected_blocks.0,
-        )?);
+        indirected_blocks
+            .singly_indirected_blocks
+            .1
+            .append(&mut read_indirect_block(fs, indirected_blocks.singly_indirected_blocks.0)?);
         parsed_data_blocks += blocks_per_indirection;
 
         if indirected_blocks.doubly_indirected_blocks.0 == 0 || parsed_data_blocks >= data_blocks {
@@ -674,8 +671,7 @@ impl Inode {
             return Ok(indirected_blocks);
         }
 
-        let singly_indirect_block_pointers =
-            read_indirect_block(celled_device, superblock, indirected_blocks.doubly_indirected_blocks.0)?;
+        let singly_indirect_block_pointers = read_indirect_block(fs, indirected_blocks.doubly_indirected_blocks.0)?;
 
         for block_pointer in singly_indirect_block_pointers {
             if block_pointer == 0 || parsed_data_blocks >= data_blocks {
@@ -686,7 +682,7 @@ impl Inode {
             indirected_blocks
                 .doubly_indirected_blocks
                 .1
-                .push((block_pointer, read_indirect_block(celled_device, superblock, block_pointer)?));
+                .push((block_pointer, read_indirect_block(fs, block_pointer)?));
             parsed_data_blocks += blocks_per_indirection;
         }
 
@@ -695,8 +691,7 @@ impl Inode {
             return Ok(indirected_blocks);
         }
 
-        let triply_indirected_blocks =
-            read_indirect_block(celled_device, superblock, indirected_blocks.triply_indirected_blocks.0)?;
+        let triply_indirected_blocks = read_indirect_block(fs, indirected_blocks.triply_indirected_blocks.0)?;
 
         for block_pointer_pointer in triply_indirected_blocks {
             if block_pointer_pointer == 0 || parsed_data_blocks >= data_blocks {
@@ -706,7 +701,7 @@ impl Inode {
 
             let mut dib = Vec::new();
 
-            let singly_indirect_block_pointers = read_indirect_block(celled_device, superblock, block_pointer_pointer)?;
+            let singly_indirect_block_pointers = read_indirect_block(fs, block_pointer_pointer)?;
             parsed_data_blocks += blocks_per_indirection;
 
             for block_pointer in singly_indirect_block_pointers {
@@ -715,7 +710,7 @@ impl Inode {
                     return Ok(indirected_blocks);
                 }
 
-                dib.push((block_pointer, read_indirect_block(celled_device, superblock, block_pointer)?));
+                dib.push((block_pointer, read_indirect_block(fs, block_pointer)?));
             }
 
             indirected_blocks.triply_indirected_blocks.1.push((block_pointer_pointer, dib));
@@ -740,15 +735,14 @@ impl Inode {
     /// Panics if the data block starting addresses do not fit on a [`usize`].
     pub fn read_data<Dev: Device<u8, Ext2Error>>(
         &self,
-        celled_device: &Celled<Dev>,
-        superblock: &Superblock,
+        fs: &Ext2<Dev>,
         buffer: &mut [u8],
         mut offset: u64,
     ) -> Result<usize, Error<Ext2Error>> {
-        let indirected_blocks = self.indirected_blocks(celled_device, superblock)?;
+        let indirected_blocks = self.indirected_blocks(fs)?;
         let blocks = indirected_blocks.flatten_data_blocks();
 
-        let device = celled_device.borrow();
+        let device = fs.device.borrow();
         let buffer_length = buffer.len();
 
         let mut read_bytes = 0_usize;
@@ -758,9 +752,9 @@ impl Inode {
             }
 
             if offset == 0 {
-                let count = (superblock.block_size() as usize).min(buffer_length - read_bytes);
+                let count = (fs.superblock().block_size() as usize).min(buffer_length - read_bytes);
                 let block_addr = Address::from(
-                    usize::try_from(u64::from(block_number) * u64::from(superblock.block_size()))
+                    usize::try_from(u64::from(block_number) * u64::from(fs.superblock().block_size()))
                         .expect("Could not fit the requested block address on a usize"),
                 );
                 let slice = device.slice(block_addr..block_addr + count)?;
@@ -771,17 +765,17 @@ impl Inode {
                 block_buffer.clone_from_slice(slice.as_ref());
 
                 read_bytes += count;
-            } else if offset >= u64::from(superblock.block_size()) {
-                offset -= u64::from(superblock.block_size());
+            } else if offset >= u64::from(fs.superblock().block_size()) {
+                offset -= u64::from(fs.superblock().block_size());
             } else {
-                let data_count = (superblock.block_size() as usize).min(buffer_length - read_bytes);
+                let data_count = (fs.superblock().block_size() as usize).min(buffer_length - read_bytes);
                 // SAFETY: `offset < superblock.block_size()` and `superblock.block_size()` is generally around few KB, which is
                 // fine when `usize > u8`.
                 let offset_usize = unsafe { usize::try_from(offset).unwrap_unchecked() };
                 match data_count.checked_sub(offset_usize) {
                     None => read_bytes = buffer_length,
                     Some(count) => {
-                        let block_addr = Address::from((block_number * superblock.block_size()) as usize);
+                        let block_addr = Address::from((block_number * fs.superblock().block_size()) as usize);
                         let slice = device.slice(block_addr + offset_usize..block_addr + offset_usize + count)?;
 
                         // SAFETY: buffer contains at least `block_size.min(remaining_bytes_count)` since `remaining_bytes_count <=
