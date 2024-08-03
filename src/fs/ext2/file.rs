@@ -23,8 +23,8 @@ use crate::error::Error;
 use crate::file::{self, DirectoryEntry, Stat, Type, TypeWithFile};
 use crate::fs::error::FsError;
 use crate::fs::ext2::block::Block;
-use crate::fs::ext2::indirection::IndirectedBlocks;
 use crate::fs::ext2::inode::DIRECT_BLOCK_POINTER_COUNT;
+use crate::fs::structures::indirection::IndirectedBlocks;
 use crate::fs::PATH_MAX;
 use crate::io::{Base, Read, Seek, SeekFrom, Write};
 use crate::path::{UnixStr, CUR_DIR, PARENT_DIR};
@@ -313,7 +313,7 @@ impl<Dev: Device<u8, Ext2Error>> Write for File<Dev> {
             return Err(Error::Fs(FsError::Implementation(Ext2Error::FileTooLarge)));
         }
 
-        let mut indirected_blocks: IndirectedBlocks<12> = self.inode.indirected_blocks(&fs)?;
+        let mut indirected_blocks = self.inode.indirected_blocks(&fs)?;
         // SAFETY: there are at most u32::MAX blocks on the filesystem
         indirected_blocks.truncate_back_data_blocks(unsafe {
             // In case of blocks that are not used and not 0
@@ -534,6 +534,9 @@ impl<Dev: Device<u8, Ext2Error>> file::Regular for Regular<Dev> {
 }
 
 /// Interface for ext2's directories.
+///
+/// In ext2, the content of a directory is a list of [`Entry`], which are the children of the directory. In particular, `.` and `..`
+/// are always children of a directory.
 #[derive(Debug)]
 pub struct Directory<Dev: Device<u8, Ext2Error>> {
     /// Inner file containing the generic file.

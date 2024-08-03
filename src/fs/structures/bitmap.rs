@@ -7,9 +7,9 @@ use core::fmt::Debug;
 use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
 
-use super::celled::Celled;
-use super::sector::Address;
-use super::Device;
+use crate::celled::Celled;
+use crate::dev::sector::Address;
+use crate::dev::Device;
 use crate::error::Error;
 
 /// Generic bitmap structure.

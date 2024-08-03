@@ -11,7 +11,6 @@ use itertools::Itertools;
 
 use super::block_group::BlockGroupDescriptor;
 use super::error::Ext2Error;
-use super::indirection::IndirectedBlocks;
 use super::superblock::{OperatingSystem, Superblock};
 use super::Ext2;
 use crate::cache::Cache;
@@ -20,6 +19,7 @@ use crate::dev::Device;
 use crate::error::Error;
 use crate::file::Type;
 use crate::fs::error::FsError;
+use crate::fs::structures::indirection::IndirectedBlocks;
 use crate::permissions::Permissions;
 
 /// Number of direct block pointers in an inode.
@@ -48,9 +48,19 @@ pub const UNDELETED_DIRECTORY_INODE: u32 = 6;
 /// Stores the couple `((device, inode_number), inode)` for each visited inode.
 static INODE_CACHE: Cache<(u32, u32), Inode> = Cache::new();
 
-/// Inode.
+/// An ext2 inode.
 ///
-/// **Inode addresses start at 1.**
+/// Each file corresponds to an inode, which contains all the metadata and pointers to the data blocks of the file it represents.
+///
+/// All the content of a file is located on data blocks, which are common [ext2 blocks](super::block::Block). As a file can grow
+/// very large, only [`DIRECT_BLOCK_POINTER_COUNT`] data blocks are directly addressed (by their block numbers). For the further
+/// data blocks, an indirection mechanism is created: a special block, called a singly indirected block, will be filled with a table
+/// of [`u32`] containing the block numbers of the next data blocks (each [`u32`] corresponds to a block number). This inode
+/// contains in the field [`singly_indirect_block_pointer`](struct.Inode.html#structfield.singly_indirect_block_pointer) the block
+/// number of the singly indirected block. For the next data blocks, and following this indirection logic, a doubly indirected block
+/// and a triply indirected block may also be used. All the indirection logic is deal with the structure [`IndirectedBlocks`].
+///
+/// Note: **Inode addresses start at 1**.
 #[repr(C, packed)]
 #[derive(Debug, Clone, Copy)]
 pub struct Inode {

@@ -1,6 +1,90 @@
+//! # ext2
+//!
 //! Implementation of the Second Extended Filesystem (ext2fs) filesystem.
 //!
-//! See [its Wikipedia page](https://fr.wikipedia.org/wiki/Ext2), [its kernel.org page](https://www.kernel.org/doc/html/latest/filesystems/ext2.html), [its OSDev page](https://wiki.osdev.org/Ext2), and the [*The Second Extended Filesystem* book](https://www.nongnu.org/ext2-doc/ext2.html) for more information.
+//! See [its Wikipedia page](https://en.wikipedia.org/wiki/Ext2), [its kernel.org page](https://www.kernel.org/doc/html/latest/filesystems/ext2.html), [its OSDev page](https://wiki.osdev.org/Ext2), and the [*The Second Extended Filesystem* book](https://www.nongnu.org/ext2-doc/ext2.html) for more information.
+//!
+//! ## Description
+//!
+//! The ext2 filesystem structure is such like this:
+//!
+//! ```txt
+//! +-----------------------------------------------------------+
+//! |                                                           |
+//! +-----------------------------------------------------------+
+//! |                        Superblock                         |
+//! | (Filesystem metadata: size, number of blocks, inodes,     |
+//! |  free space, etc.)                                        |
+//! +-----------------------------------------------------------+
+//! |                     Group Descriptors                     |
+//! | (Pointers to block and inode bitmaps, inode tables,       |
+//! |  free block counts, etc. for each block group)            |
+//! +-----------------------------+-----------------------------+
+//! |        Block Group 1        |        Block Group 2      | |
+//! | +-------------------------+ | +-------------------------+ |
+//! | | Block Bitmap            | | | Block Bitmap            | |
+//! | +-------------------------+ | +-------------------------+ |
+//! | | Inode Bitmap            | | | Inode Bitmap            | |
+//! | +-------------------------+ | +-------------------------+ |
+//! | | Inode Table             | | | Inode Table             | |
+//! | +-------------------------+ | +-------------------------+ |
+//! | | Data Blocks             | | | Data Blocks             | |
+//! | | (Files, directories,    | | | (Files, directories,    | |
+//! | |  etc.)                  | | |  etc.)                  | |
+//! | +-------------------------+ | +-------------------------+ |
+//! +-----------------------------+-----------------------------+
+//!                             ...
+//! +-----------------------------+-----------------------------+
+//! |        Block Group N - 1    |        Block Group N      | |
+//! | +-------------------------+ | +-------------------------+ |
+//! | | Block Bitmap            | | | Block Bitmap            | |
+//! | +-------------------------+ | +-------------------------+ |
+//! | | Inode Bitmap            | | | Inode Bitmap            | |
+//! | +-------------------------+ | +-------------------------+ |
+//! | | Inode Table             | | | Inode Table             | |
+//! | +-------------------------+ | +-------------------------+ |
+//! | | Data Blocks             | | | Data Blocks             | |
+//! | | (Files, directories,    | | | (Files, directories,    | |
+//! | |  etc.)                  | | |  etc.)                  | |
+//! | +-------------------------+ | +-------------------------+ |
+//! +-----------------------------+-----------------------------+
+//! ```
+//!
+//! Important things to know about ext2:
+//!
+//! - The [`Device`] is splitted in contiguous [`Block`](block::Block)s that have all the same size in bytes. This is **NOT** the
+//!   block as in block device, here "block" always refers to ext2's blocks. They start at 0, so the `n`th block will start at the
+//!   adress `n * block_size`.
+//!
+//! - The [superblock](Superblock) contains all the important filesystem metadata, such as the total number of blocks, the number of
+//!   free blocks, the state of the filesystem, the supported features, etc.
+//!
+//! - The data blocks are splitted in block groups containing the same amount of blocks. Each block group is descriped by a [block
+//!   group descriptor](BlockGroupDescriptor) containing all the relevant metadata about its block group.
+//!
+//! - Each file is described by an [inode](Inode) containing all the metadata of the file and pointers to the data blocks. See the
+//!   documentation of the [`Inode`] structure for more information.
+//!
+//! - The block and inode bitmaps keep track of which blocks and inodes are currently used or not. This is useful to find empty
+//!   space when writting in a file or allocating a new file.
+//!
+//! ## Concurrency
+//!
+//! When instancing a new instance of [`Ext2`], the principal structure to manipulate an ext2 filesystem, you can choose whether to
+//! enable caches or not.
+//!
+//! - When the cache is not enabled, all the structures will be read whenever needed to make sure no change has been made by an
+//!   external program. Only the [superblock](Superblock) will be kept in memory because of its high usage: it will only be updated
+//!   before each write operation.
+//!
+//! - When the cache is enabled the [superblock](Superblock), the [inodes](Inode), the [block group
+//!   descriptors](BlockGroupDescriptor) and the [directories](Directory) will be cached so that the program does not need to read
+//!   the current state of the filesystem to know the content of those structures.
+//!
+//! Enabling the cache will consume more memory but can greatly increase speed when dealing with a high number of requests.
+//!
+//! The cache **CANNOT** be used if an external program is writing on this filesystem at the same time. When using the cache, you
+//! have to make sure that all the write operations are made by this library.
 
 use alloc::borrow::ToOwned;
 use alloc::vec;
@@ -14,9 +98,9 @@ use self::error::Ext2Error;
 use self::file::{Directory, Regular, SymbolicLink, SYMBOLIC_LINK_INODE_STORE_LIMIT};
 use self::inode::{Flags, Inode, TypePermissions, ROOT_DIRECTORY_INODE};
 use self::superblock::{ReadOnlyFeatures, RequiredFeatures, Superblock, SUPERBLOCK_START_BYTE};
+use super::structures::bitmap::Bitmap;
 use super::FileSystem;
-use crate::dev::bitmap::Bitmap;
-use crate::dev::celled::Celled;
+use crate::celled::Celled;
 use crate::dev::sector::Address;
 use crate::dev::Device;
 use crate::error::Error;
@@ -28,7 +112,6 @@ pub mod block_group;
 pub mod directory;
 pub mod error;
 pub mod file;
-pub mod indirection;
 pub mod inode;
 pub mod superblock;
 
@@ -575,7 +658,7 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
                 || file_type == Type::Directory
                 || (file_type == Type::SymbolicLink && inode.data_size() >= SYMBOLIC_LINK_INODE_STORE_LIMIT as u64)
             {
-                let indirected_blocks: indirection::IndirectedBlocks<12> = inode.indirected_blocks(self)?;
+                let indirected_blocks = inode.indirected_blocks(self)?;
                 self.deallocate_blocks(&indirected_blocks.flatten_data_blocks())?;
             }
             self.locate_inode(inode_number, false)?;
@@ -638,7 +721,7 @@ mod test {
 
     use super::inode::ROOT_DIRECTORY_INODE;
     use super::Ext2;
-    use crate::dev::celled::Celled;
+    use crate::celled::Celled;
     use crate::file::{Directory, SymbolicLink, Type, TypeWithFile};
     use crate::fs::ext2::block::Block;
     use crate::fs::ext2::block_group::BlockGroupDescriptor;

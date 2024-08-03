@@ -7,7 +7,7 @@ use core::mem::size_of;
 use bitflags::bitflags;
 
 use super::error::Ext2Error;
-use super::Celled;
+use crate::celled::Celled;
 use crate::dev::sector::Address;
 use crate::dev::Device;
 use crate::error::Error;
@@ -600,10 +600,10 @@ impl ExtendedFields {
 /// Superblock of the Ext2 filesystem.
 #[derive(Debug, Clone)]
 pub enum Superblock {
-    /// Basic superblock (with a [`major version`](struct.Base.html#structfield.rev_level) lower than 1)
+    /// Basic superblock (with a [`major version`](struct.Base.html#structfield.rev_level) lower than 1).
     Basic(Base),
 
-    /// Extended superblock (with a [`major_version`](struct.Base.html#structfield.rev_level) greater than or equal to 1)
+    /// Extended superblock (with a [`major_version`](struct.Base.html#structfield.rev_level) greater than or equal to 1).
     Extended(Base, ExtendedFields),
 }
 
@@ -798,8 +798,8 @@ mod test {
     use std::fs::File;
 
     use super::Superblock;
+    use crate::celled::Celled;
     use crate::fs::ext2::superblock::{Base, ExtendedFields};
-    use crate::fs::ext2::Celled;
 
     #[test]
     fn struct_size() {

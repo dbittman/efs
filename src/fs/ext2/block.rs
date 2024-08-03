@@ -11,7 +11,7 @@ use alloc::vec::Vec;
 use super::error::Ext2Error;
 use super::superblock::Superblock;
 use super::Ext2;
-use crate::dev::celled::Celled;
+use crate::celled::Celled;
 use crate::dev::sector::Address;
 use crate::dev::Device;
 use crate::error::Error;
@@ -19,6 +19,10 @@ use crate::fs::error::FsError;
 use crate::io::{Base, Read, Seek, SeekFrom, Write};
 
 /// An ext2 block.
+///
+/// The [`Device`] is splitted in contiguous ext2 blocks that have all the same size in bytes. This is **NOT** the block as in block
+/// device, here "block" always refers to ext2's blocks. They start at 0, so the `n`th block will start at the adress `n *
+/// block_size`. Thus, a block is entirely described by its number.
 #[derive(Clone)]
 pub struct Block<Dev: Device<u8, Ext2Error>> {
     /// Block number.
@@ -212,7 +216,7 @@ mod test {
     use core::cell::RefCell;
     use std::fs::File;
 
-    use crate::dev::celled::Celled;
+    use crate::celled::Celled;
     use crate::dev::sector::Address;
     use crate::dev::Device;
     use crate::fs::ext2::block::Block;

@@ -117,7 +117,7 @@ impl TryFrom<FileType> for Type {
     }
 }
 
-/// A directory entry
+/// A directory entry.
 #[derive(Debug, Clone)]
 pub struct Entry {
     /// Inode index.

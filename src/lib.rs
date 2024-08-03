@@ -2,8 +2,12 @@
 //!
 //! An OS and architecture independent implementation of some Unix filesystems in Rust.
 //!
-//! /!\ Warning /!\ : this crate is not at all safe enough to be used in a real context. Do **NOT** manage any important data with
-//! this library, and make backups before using it!
+//! <div class="warning">
+//!
+//! This crate is provided as is and do not offer any guaranty. It is still in early development so bugs are excepted to occur. If
+//! you find one, please report it at <https://codeberg.org/RatCornu/efs/issues>. In all cases, please do **NOT** use this library for important data, and make sure to backup your data before using it.
+//!
+//! </div>
 //!
 //! The purpose of this library is not to be production-ready, but to help people who make toy OS (with [Rust OSDev for example](https://os.phil-opp.com/)).
 //!
@@ -98,6 +102,15 @@
 //!     // `file` is a `Device`
 //!     ```
 //!
+//! ### Concurrency
+//!
+//! This library do not offer any guaranty for the behaviour of file manipulations when an other program is making write operations
+//! on the same device at the same time in a general context. Each filesystem implementation documentation contains a paragraph on
+//! its handle on concurrency, you can refer to it for more information.
+//!
+//! In concrete terms, in particular for OS developers, it's your duty, and more precisely the duty of the [virtual filesystem](https://en.wikipedia.org/wiki/Virtual_file_system)
+//! to handle the case where two programs tries to modify the same data at the same time.
+//!
 //! ### Example
 //!
 //! Here is a complete example of what can be do with the interfaces provided.
@@ -108,7 +121,7 @@
 //! use core::cell::RefCell;
 //! use core::str::FromStr;
 //!
-//! use efs::dev::celled::Celled;
+//! use efs::celled::Celled;
 //! use efs::file::{Directory, SymbolicLink, Type, TypeWithFile};
 //! use efs::fs::ext2::Ext2;
 //! use efs::fs::FileSystem;
@@ -349,6 +362,7 @@ extern crate core;
 extern crate std;
 
 pub mod cache;
+pub mod celled;
 pub mod dev;
 pub mod error;
 pub mod file;
