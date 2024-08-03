@@ -9,8 +9,6 @@
 //!
 //! </div>
 //!
-//! The purpose of this library is not to be production-ready, but to help people who make toy OS (with [Rust OSDev for example](https://os.phil-opp.com/)).
-//!
 //! ## Details
 //!
 //! This crate provides a general interface to deal with some UNIX filesytems, and adds supports for some of them.
@@ -26,8 +24,8 @@
 //! * As defined in POSIX, a file can either be a [`Regular`](crate::file::Regular), a [`Directory`](crate::file::Directory), a
 //!   [`SymbolicLink`](crate::file::SymbolicLink), a [`Fifo`](crate::file::Fifo), a
 //!   [`CharacterDevice`](crate::file::CharacterDevice), a [`BlockDevice`](crate::file::BlockDevice) or a
-//!   [`Socket`](crate::file::Socket). Traits are available for each one of them, with basic read and write operations. Moreover, a
-//!   read-only version of each trait is available.
+//!   [`Socket`](crate::file::Socket). Traits are available for each one of them, with basic read and `write` operations. Moreover,
+//!   a read-only version of each trait is available.
 //!
 //! * [`File`](crate::file::File) is the base trait of all other file traits. It provides an interface to retrieve and modify
 //!   general attributes of a POSIX file (basically everything returned by the `stat` command on a UNIX OS).
@@ -104,9 +102,9 @@
 //!
 //! ### Concurrency
 //!
-//! This library do not offer any guaranty for the behaviour of file manipulations when an other program is making write operations
-//! on the same device at the same time in a general context. Each filesystem implementation documentation contains a paragraph on
-//! its handle on concurrency, you can refer to it for more information.
+//! This library do not offer any guaranty for the behaviour of file manipulations when an other program is making `write`
+//! operations on the same device at the same time in a general context. Each filesystem implementation documentation contains a
+//! paragraph on its handle on concurrency, you can refer to it for more information.
 //!
 //! In concrete terms, in particular for OS developers, it's your duty, and more precisely the duty of the [virtual filesystem](https://en.wikipedia.org/wiki/Virtual_file_system)
 //! to handle the case where two programs tries to modify the same data at the same time.
