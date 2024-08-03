@@ -10,6 +10,7 @@ use core::ptr::{addr_of, addr_of_mut, slice_from_raw_parts};
 
 use bitflags::Flags;
 use itertools::Itertools;
+use spin::Mutex;
 
 use super::directory::{self, Entry, FileType};
 use super::error::Ext2Error;
@@ -541,7 +542,12 @@ pub struct Directory<Dev: Device<u8, Ext2Error>> {
     /// Entries contained in this directory.
     ///
     /// They are stored as a list of entries in each data block.
-    entries: Vec<Vec<Entry>>,
+    entries: Mutex<Vec<Vec<Entry>>>,
+
+    /// Should the directory content be cached ?
+    ///
+    /// If the directory is cached, the content will not be read directly from the device but from this object.
+    cache: bool,
 }
 
 impl<Dev: Device<u8, Ext2Error>> Directory<Dev> {
@@ -552,7 +558,23 @@ impl<Dev: Device<u8, Ext2Error>> Directory<Dev> {
     /// Returns the same errors as [`Entry::parse`].
     pub fn new(filesystem: &Celled<Ext2<Dev>>, inode_number: u32) -> Result<Self, Error<Ext2Error>> {
         let file = File::new(filesystem, inode_number)?;
-        let fs = filesystem.borrow();
+        let cache = file.filesystem.borrow().cache;
+        let entries = Mutex::new(Self::parse(&file)?);
+
+        Ok(Self {
+            file,
+            entries,
+            cache,
+        })
+    }
+
+    /// Parse this inode's content as a list of directory entries.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same errors as [`Entry::parse`].
+    fn parse(file: &File<Dev>) -> Result<Vec<Vec<Entry>>, Error<Ext2Error>> {
+        let fs = file.filesystem.borrow();
 
         let block_size = u64::from(fs.superblock().block_size());
         let data_size = file.inode.data_size();
@@ -585,12 +607,22 @@ impl<Dev: Device<u8, Ext2Error>> Directory<Dev> {
             entries.push(entries_in_block);
         }
 
-        Ok(Self { file, entries })
+        Ok(entries)
+    }
+
+    /// Updates the inner `entries` field of this directory.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same errors as [`Entry::parse`].
+    fn update_inner_entries(&self) -> Result<(), Error<Ext2Error>> {
+        *self.entries.lock() = Self::parse(&self.file)?;
+        Ok(())
     }
 
     /// Writes all the entries of the block `block_index`.
     ///
-    /// This function does not perform any check: the entries must be in a coherent state. It is recommanded to perform
+    /// This function does not perform any check: the entries **MUST** be in a coherent state. It is recommanded to perform
     /// [`defragment`](struct.Directory.html#method.defragment) beforehand.
     ///
     /// # Safety
@@ -602,7 +634,7 @@ impl<Dev: Device<u8, Ext2Error>> Directory<Dev> {
         self.file.seek(SeekFrom::Start((block_index as u64) * block_size))?;
 
         let mut buffer = Vec::new();
-        for entry in self.entries.get_unchecked(block_index) {
+        for entry in self.entries.lock().get_unchecked(block_index) {
             buffer.append(&mut entry.as_bytes().clone());
             buffer.append(&mut vec![0_u8; entry.free_space() as usize]);
         }
@@ -613,7 +645,7 @@ impl<Dev: Device<u8, Ext2Error>> Directory<Dev> {
 
     /// Writes all the entries.
     ///
-    /// This function does not perform any check: the entries must be in a coherent state. It is recommanded to perform
+    /// This function does not perform any check: the entries **MUST** be in a coherent state. It is recommanded to perform
     /// [`defragment`](struct.Directory.html#method.defragment) beforehand.
     ///
     /// # Safety
@@ -622,14 +654,15 @@ impl<Dev: Device<u8, Ext2Error>> Directory<Dev> {
     /// data block.
     unsafe fn write_all_entries(&mut self) -> Result<(), Error<Ext2Error>> {
         self.file.truncate(0)?;
-        for block_index in 0..self.entries.len() {
+        let nb_entries = self.entries.lock().len();
+        for block_index in 0..nb_entries {
             self.write_block_entry(block_index)?;
         }
         Ok(())
     }
 
     /// Defragments the directory by compacting (if necessary) all the entries.
-    fn defragment(&mut self) {
+    fn defragment(&self) {
         let block_size = u16::try_from(self.file.filesystem.borrow().superblock().block_size())
             .expect("Ill-formed superblock: block size should be castable in a u16");
 
@@ -637,7 +670,7 @@ impl<Dev: Device<u8, Ext2Error>> Directory<Dev> {
 
         let mut entries_in_block = Vec::<Entry>::new();
         let mut accumulated_size = 0_u16;
-        for mut entry in self.entries.clone().into_iter().flatten() {
+        for mut entry in self.entries.lock().clone().into_iter().flatten() {
             if accumulated_size + entry.minimal_size() > block_size {
                 if let Some(ent) = entries_in_block.last_mut() {
                     ent.rec_len = block_size - accumulated_size;
@@ -656,12 +689,12 @@ impl<Dev: Device<u8, Ext2Error>> Directory<Dev> {
             new_entries.push(entries_in_block);
         }
 
-        self.entries = new_entries;
+        *self.entries.lock() = new_entries;
     }
 
     /// Returns, if it exists, the block index and the entry index containing at least `necessary_space` free space.
     fn find_space(&self, necessary_space: u16) -> Option<(usize, usize)> {
-        for (block_index, entries_in_block) in self.entries.iter().enumerate() {
+        for (block_index, entries_in_block) in self.entries.lock().iter().enumerate() {
             for (entry_index, entry) in entries_in_block.iter().enumerate() {
                 if entry.free_space() >= necessary_space {
                     return Some((block_index, entry_index));
@@ -677,7 +710,8 @@ impl<Dev: Device<u8, Ext2Error>> Clone for Directory<Dev> {
     fn clone(&self) -> Self {
         Self {
             file: self.file.clone(),
-            entries: self.entries.clone(),
+            entries: Mutex::new(self.entries.lock().clone()),
+            cache: self.cache,
         }
     }
 }
@@ -695,7 +729,11 @@ impl<Dev: Device<u8, Ext2Error>> file::Directory for Directory<Dev> {
     fn entries(&self) -> Result<Vec<file::DirectoryEntry<Self>>, Error<Ext2Error>> {
         let mut entries = Vec::new();
 
-        for entry in self.entries.iter().flatten() {
+        if self.cache {
+            self.update_inner_entries()?;
+        }
+
+        for entry in self.entries.lock().iter().flatten() {
             entries.push(DirectoryEntry {
                 // SAFETY: it is checked at the entry creation that the name is a valid CString
                 filename: unsafe { entry.name.clone().try_into().unwrap_unchecked() },
@@ -775,8 +813,9 @@ impl<Dev: Device<u8, Ext2Error>> file::Directory for Directory<Dev> {
         };
         new_entry.rec_len = new_entry.minimal_size();
         if let Some((block_index, entry_index)) = self.find_space(new_entry.minimal_size()) {
+            let mut self_entries = self.entries.lock();
             // SAFETY: `find_space` returns a valid block index
-            let entries_in_block = unsafe { self.entries.get_unchecked_mut(block_index) };
+            let entries_in_block = unsafe { self_entries.get_unchecked_mut(block_index) };
             // SAFETY: `find_space` returs a valid entry index
             let previous_entry = unsafe { entries_in_block.get_unchecked_mut(entry_index) };
 
@@ -784,11 +823,12 @@ impl<Dev: Device<u8, Ext2Error>> file::Directory for Directory<Dev> {
             previous_entry.rec_len = previous_entry.minimal_size();
 
             entries_in_block.insert(entry_index + 1, new_entry);
+            drop(self_entries);
 
             // SAFETY: all necessary changes have been made
             unsafe { self.write_block_entry(block_index) }?;
         } else {
-            self.entries.push(vec![new_entry]);
+            self.entries.lock().push(vec![new_entry]);
             self.defragment();
             // SAFETY: `defragment` has been called above
             unsafe { self.write_all_entries() }?;
@@ -804,25 +844,40 @@ impl<Dev: Device<u8, Ext2Error>> file::Directory for Directory<Dev> {
 
         let block_size = u64::from(self.file.filesystem.borrow().superblock().block_size());
         let entry_name_cstring = entry_name.clone().into();
-        for (block_index, entries_in_block) in self.entries.clone().into_iter().enumerate() {
+        let entries_clone = self.entries.lock().clone();
+        for (block_index, entries_in_block) in entries_clone.into_iter().enumerate() {
             for (index, entry) in entries_in_block.clone().into_iter().enumerate() {
                 if entry.name == entry_name_cstring {
+                    let mut self_entries = self.entries.lock();
                     // SAFETY: `block_index` is returned by `enumerate`
-                    let block = unsafe { self.entries.get_unchecked_mut(block_index) };
+                    let block = unsafe { self_entries.get_unchecked_mut(block_index) };
                     block.remove(index);
-                    if let Some(previous_entry) = block.get_mut(index - 1) {
+
+                    // Case: the removed entry is not the first of the block
+                    if index > 0
+                        && let Some(previous_entry) = block.get_mut(index - 1)
+                    {
                         previous_entry.rec_len += entry.rec_len;
-                        // SAFETY: the content of this block is coherent
-                        unsafe { self.write_block_entry(block_index) }?;
-                    } else if let Some(next_entry) = block.get_mut(index + 1) {
+                    }
+                    // Case: the removed entry is the first of the block
+                    else if let Some(next_entry) = block.get_mut(index) {
                         next_entry.rec_len += entry.rec_len;
+                    }
+                    // Case: the removed entry is the first and only entry of the block
+                    else {
+                        self.entries.lock().remove(block_index);
+                        let nb_entries = self.entries.lock().len();
+                        self.file.truncate(block_size * nb_entries as u64)?;
+                    }
+
+                    let block_len = block.len();
+                    drop(self_entries);
+                    if index > 0 || block_len > 0 {
                         // SAFETY: the content of this block is coherent
                         unsafe { self.write_block_entry(block_index) }?;
                     } else {
-                        self.entries.remove(block_index);
-                        self.file.truncate(block_size * (block_index - 1) as u64)?;
-
-                        for i in block_index..self.entries.len() {
+                        let nb_entries = self.entries.lock().len();
+                        for i in block_index..nb_entries {
                             // SAFETY: this block is untouched
                             unsafe { self.write_block_entry(i) }?;
                         }
@@ -832,7 +887,7 @@ impl<Dev: Device<u8, Ext2Error>> file::Directory for Directory<Dev> {
 
                     if let TypeWithFile::Directory(mut dir) = self.file.filesystem.file(entry.inode)? {
                         let mut new_inode = self.file.inode;
-                        let sub_entries = dir.entries.clone().into_iter().flatten().collect_vec();
+                        let sub_entries = dir.entries.lock().clone().into_iter().flatten().collect_vec();
                         for sub_entry in sub_entries {
                             // SAFETY: sub entry name has been checked at `dir` creation
                             let sub_entry_name: UnixStr<'_> = unsafe { sub_entry.name.try_into().unwrap_unchecked() };
@@ -1009,7 +1064,6 @@ macro_rules! generic_file {
             /// # Errors
             ///
             /// Returns the same errors as [`File::new`].
-
             pub fn new(filesystem: &Celled<Ext2<Dev>>, inode_number: u32) -> Result<Self, Error<Ext2Error>> {
                 Ok(Self { file: File::new(filesystem, inode_number)? })
             }
@@ -1050,10 +1104,12 @@ mod test {
     #[test]
     fn parse_root() {
         let file = RefCell::new(File::options().read(true).write(true).open("./tests/fs/ext2/extended.ext2").unwrap());
-        let ext2 = Celled::new(Ext2::new(file, new_device_id(), false).unwrap());
+        let ext2 = Celled::new(Ext2::new(file, new_device_id(), true).unwrap());
         let root = Directory::new(&ext2, ROOT_DIRECTORY_INODE).unwrap();
         assert_eq!(
             root.entries
+                .lock()
+                .clone()
                 .into_iter()
                 .flatten()
                 .map(|entry| entry.name.to_string_lossy().to_string())
@@ -1063,7 +1119,7 @@ mod test {
     }
 
     #[test]
-    fn parse_root_entries() {
+    fn parse_root_entries_without_cache() {
         let file = RefCell::new(File::options().read(true).write(true).open("./tests/fs/ext2/extended.ext2").unwrap());
         let fs = Ext2::new(file, new_device_id(), false).unwrap();
         let root_inode = Inode::parse(&fs, ROOT_DIRECTORY_INODE).unwrap();
@@ -1118,14 +1174,70 @@ mod test {
     }
 
     #[test]
+    fn parse_root_entries_with_cache() {
+        let file = RefCell::new(File::options().read(true).write(true).open("./tests/fs/ext2/extended.ext2").unwrap());
+        let fs = Ext2::new(file, new_device_id(), true).unwrap();
+        let root_inode = Inode::parse(&fs, ROOT_DIRECTORY_INODE).unwrap();
+
+        let dot = unsafe {
+            Entry::parse(&fs, Address::new((root_inode.direct_block_pointers[0] * fs.superblock().block_size()) as usize))
+        }
+        .unwrap();
+        let two_dots = unsafe {
+            Entry::parse(
+                &fs,
+                Address::new((root_inode.direct_block_pointers[0] * fs.superblock().block_size()) as usize + dot.rec_len as usize),
+            )
+        }
+        .unwrap();
+        let lost_and_found = unsafe {
+            Entry::parse(
+                &fs,
+                Address::new(
+                    (root_inode.direct_block_pointers[0] * fs.superblock().block_size()) as usize
+                        + (dot.rec_len + two_dots.rec_len) as usize,
+                ),
+            )
+        }
+        .unwrap();
+        let big_file = unsafe {
+            Entry::parse(
+                &fs,
+                Address::new(
+                    (root_inode.direct_block_pointers[0] * fs.superblock().block_size()) as usize
+                        + (dot.rec_len + two_dots.rec_len + lost_and_found.rec_len) as usize,
+                ),
+            )
+        }
+        .unwrap();
+        let symlink = unsafe {
+            Entry::parse(
+                &fs,
+                Address::new(
+                    (root_inode.direct_block_pointers[0] * fs.superblock().block_size()) as usize
+                        + (dot.rec_len + two_dots.rec_len + lost_and_found.rec_len + big_file.rec_len) as usize,
+                ),
+            )
+        }
+        .unwrap();
+
+        assert_eq!(dot.name.as_c_str().to_string_lossy(), ".");
+        assert_eq!(two_dots.name.as_c_str().to_string_lossy(), "..");
+        assert_eq!(lost_and_found.name.as_c_str().to_string_lossy(), "lost+found");
+        assert_eq!(big_file.name.as_c_str().to_string_lossy(), "big_file");
+        assert_eq!(symlink.name.as_c_str().to_string_lossy(), "symlink");
+    }
+
+    #[test]
     fn parse_big_file_inode_data() {
         let file = RefCell::new(File::options().read(true).write(true).open("./tests/fs/ext2/extended.ext2").unwrap());
-        let ext2 = Celled::new(Ext2::new(file, new_device_id(), false).unwrap());
+        let ext2 = Celled::new(Ext2::new(file, new_device_id(), true).unwrap());
         let root = Directory::new(&ext2, ROOT_DIRECTORY_INODE).unwrap();
 
         let fs = ext2.borrow();
         let big_file_inode_number = root
             .entries
+            .lock()
             .iter()
             .flatten()
             .find(|entry| entry.name.to_string_lossy() == "big_file")
