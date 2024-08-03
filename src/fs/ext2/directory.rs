@@ -152,7 +152,7 @@ impl Entry {
     ///
     /// Must also ensure the requirements of [`Device::read_at`].
     pub unsafe fn parse<Dev: Device<u8, Ext2Error>>(fs: &Ext2<Dev>, starting_addr: Address) -> Result<Self, Error<Ext2Error>> {
-        let device = fs.device.borrow();
+        let device = fs.device.lock();
 
         let header = device.read_at::<Header>(starting_addr)?;
         let buffer = device.read_at::<[u8; 256]>(starting_addr + size_of::<Header>())?;

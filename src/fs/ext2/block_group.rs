@@ -86,7 +86,7 @@ impl BlockGroupDescriptor {
             return Ok(block_group_descriptor);
         }
 
-        let device = fs.device.borrow();
+        let device = fs.device.lock();
 
         let block_group_descriptor_address = Self::starting_addr(fs.superblock(), n)?;
 
@@ -119,7 +119,7 @@ impl BlockGroupDescriptor {
         if fs.cache {
             BLOCK_GROUP_DESCRIPTOR_CACHE.insert((fs.device_id, n), block_group_descriptor);
         }
-        fs.device.borrow_mut().write_at(starting_addr, block_group_descriptor)
+        fs.device.lock().write_at(starting_addr, block_group_descriptor)
     }
 }
 

@@ -58,7 +58,7 @@ impl<Dev: Device<u8, Ext2Error>> Debug for File<Dev> {
     fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         formatter
             .debug_struct("File")
-            .field("device_id", &self.filesystem.borrow().device_id)
+            .field("device_id", &self.filesystem.lock().device_id)
             .field("inode_number", &self.inode_number)
             .field("inode", &self.inode)
             .field("io_offset", &self.io_offset)
@@ -84,7 +84,7 @@ impl<Dev: Device<u8, Ext2Error>> File<Dev> {
     ///
     /// Returns the same errors as [`Inode::parse`].
     pub fn new(filesystem: &Celled<Ext2<Dev>>, inode_number: u32) -> Result<Self, Error<Ext2Error>> {
-        let fs = filesystem.borrow();
+        let fs = filesystem.lock();
         let inode = Inode::parse(&fs, inode_number)?;
         Ok(Self {
             filesystem: filesystem.clone(),
@@ -96,7 +96,7 @@ impl<Dev: Device<u8, Ext2Error>> File<Dev> {
 
     /// Updates the inner [`Inode`].
     fn update_inner_inode(&mut self) -> Result<(), Error<Ext2Error>> {
-        let fs = self.filesystem.borrow();
+        let fs = self.filesystem.lock();
         self.inode = Inode::parse(&fs, self.inode_number)?;
         Ok(())
     }
@@ -111,7 +111,7 @@ impl<Dev: Device<u8, Ext2Error>> File<Dev> {
     ///
     /// Must ensure that the given inode is coherent with the current state of the filesystem.
     unsafe fn set_inode(&mut self, inode: &Inode) -> Result<(), Error<Ext2Error>> {
-        let fs = self.filesystem.borrow();
+        let fs = self.filesystem.lock();
         Inode::write_on_device(&fs, self.inode_number, *inode)?;
         drop(fs);
 
@@ -130,7 +130,7 @@ impl<Dev: Device<u8, Ext2Error>> File<Dev> {
             return Ok(());
         }
 
-        let mut fs = self.filesystem.borrow_mut();
+        let mut fs = self.filesystem.lock();
 
         let mut new_inode = self.inode;
         // SAFETY: the result is smaller than `u32::MAX`
@@ -195,7 +195,7 @@ impl<Dev: Device<u8, Ext2Error>> file::File for File<Dev> {
     type Error = Ext2Error;
 
     fn stat(&self) -> file::Stat {
-        let filesystem = self.filesystem.borrow();
+        let filesystem = self.filesystem.lock();
 
         Stat {
             dev: crate::types::Dev(filesystem.device_id),
@@ -284,7 +284,7 @@ impl<Dev: Device<u8, Ext2Error>> Base for File<Dev> {
 
 impl<Dev: Device<u8, Ext2Error>> Read for File<Dev> {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, Error<Self::IOError>> {
-        let filesystem = self.filesystem.borrow();
+        let filesystem = self.filesystem.lock();
         self.inode.read_data(&filesystem, buf, self.io_offset).inspect(|&bytes| {
             self.io_offset += bytes as u64;
         })
@@ -293,7 +293,7 @@ impl<Dev: Device<u8, Ext2Error>> Read for File<Dev> {
 
 impl<Dev: Device<u8, Ext2Error>> Write for File<Dev> {
     fn write(&mut self, buf: &[u8]) -> Result<usize, Error<Self::IOError>> {
-        let mut fs = self.filesystem.borrow_mut();
+        let mut fs = self.filesystem.lock();
         let superblock = fs.superblock().clone();
         let block_size = u64::from(fs.superblock().block_size());
 
@@ -405,7 +405,7 @@ impl<Dev: Device<u8, Ext2Error>> Write for File<Dev> {
 
         // SAFETY: the result cannot be greater than `u32::MAX`
         updated_inode.size = unsafe { u32::try_from(new_size & u64::from(u32::MAX)).unwrap_unchecked() };
-        updated_inode.blocks = data_blocks_needed * self.filesystem.borrow().superblock().block_size() / 512;
+        updated_inode.blocks = data_blocks_needed * self.filesystem.lock().superblock().block_size() / 512;
 
         // SAFETY: the result cannot be greater than `u32::MAX`
         updated_inode.dir_acl = unsafe { u32::try_from((new_size >> 32) & u64::from(u32::MAX)).unwrap_unchecked() };
@@ -558,7 +558,7 @@ impl<Dev: Device<u8, Ext2Error>> Directory<Dev> {
     /// Returns the same errors as [`Entry::parse`].
     pub fn new(filesystem: &Celled<Ext2<Dev>>, inode_number: u32) -> Result<Self, Error<Ext2Error>> {
         let file = File::new(filesystem, inode_number)?;
-        let cache = file.filesystem.borrow().cache;
+        let cache = file.filesystem.lock().cache;
         let entries = Mutex::new(Self::parse(&file)?);
 
         Ok(Self {
@@ -574,7 +574,7 @@ impl<Dev: Device<u8, Ext2Error>> Directory<Dev> {
     ///
     /// Returns the same errors as [`Entry::parse`].
     fn parse(file: &File<Dev>) -> Result<Vec<Vec<Entry>>, Error<Ext2Error>> {
-        let fs = file.filesystem.borrow();
+        let fs = file.filesystem.lock();
 
         let block_size = u64::from(fs.superblock().block_size());
         let data_size = file.inode.data_size();
@@ -595,7 +595,7 @@ impl<Dev: Device<u8, Ext2Error>> Directory<Dev> {
                         Error::Device(DevError::OutOfBounds(
                             "address",
                             (u64::from(block) * block_size + accumulated_size).into(),
-                            (0_i128, fs.device.borrow().size().0.into()),
+                            (0_i128, fs.device.lock().size().0.into()),
                         ))
                     })?);
 
@@ -630,7 +630,7 @@ impl<Dev: Device<u8, Ext2Error>> Directory<Dev> {
     /// Must ensure that the entries are in a valid state regarding to the completion of data blocks and the number of entry per
     /// data block. Furthermore, `block_index` must be a valid index of `self.entries`.
     unsafe fn write_block_entry(&mut self, block_index: usize) -> Result<(), Error<Ext2Error>> {
-        let block_size = u64::from(self.file.filesystem.borrow().superblock().block_size());
+        let block_size = u64::from(self.file.filesystem.lock().superblock().block_size());
         self.file.seek(SeekFrom::Start((block_index as u64) * block_size))?;
 
         let mut buffer = Vec::new();
@@ -663,7 +663,7 @@ impl<Dev: Device<u8, Ext2Error>> Directory<Dev> {
 
     /// Defragments the directory by compacting (if necessary) all the entries.
     fn defragment(&self) {
-        let block_size = u16::try_from(self.file.filesystem.borrow().superblock().block_size())
+        let block_size = u16::try_from(self.file.filesystem.lock().superblock().block_size())
             .expect("Ill-formed superblock: block size should be castable in a u16");
 
         let mut new_entries = Vec::new();
@@ -758,7 +758,7 @@ impl<Dev: Device<u8, Ext2Error>> file::Directory for Directory<Dev> {
             return Err(Error::Fs(FsError::EntryAlreadyExist(name.to_string())));
         }
 
-        let mut fs = self.file.filesystem.borrow_mut();
+        let mut fs = self.file.filesystem.lock();
         let block_size = fs.superblock().block_size();
 
         let inode_number = fs.free_inode()?;
@@ -842,7 +842,7 @@ impl<Dev: Device<u8, Ext2Error>> file::Directory for Directory<Dev> {
             return Err(Error::Fs(FsError::RemoveRefused));
         }
 
-        let block_size = u64::from(self.file.filesystem.borrow().superblock().block_size());
+        let block_size = u64::from(self.file.filesystem.lock().superblock().block_size());
         let entry_name_cstring = entry_name.clone().into();
         let entries_clone = self.entries.lock().clone();
         for (block_index, entries_in_block) in entries_clone.into_iter().enumerate() {
@@ -883,7 +883,7 @@ impl<Dev: Device<u8, Ext2Error>> file::Directory for Directory<Dev> {
                         }
                     }
 
-                    let file_type_feature = self.file.filesystem.borrow().options().file_type;
+                    let file_type_feature = self.file.filesystem.lock().options().file_type;
 
                     if let TypeWithFile::Directory(mut dir) = self.file.filesystem.file(entry.inode)? {
                         let mut new_inode = self.file.inode;
@@ -899,7 +899,7 @@ impl<Dev: Device<u8, Ext2Error>> file::Directory for Directory<Dev> {
                                         new_inode.links_count -= 1;
                                     }
                                 } else {
-                                    let fs = self.file.filesystem.borrow();
+                                    let fs = self.file.filesystem.lock();
                                     let sub_entry_inode = fs.inode(sub_entry.inode)?;
                                     if sub_entry_inode.file_type()? == Type::Directory {
                                         new_inode.links_count -= 1;
@@ -915,7 +915,7 @@ impl<Dev: Device<u8, Ext2Error>> file::Directory for Directory<Dev> {
                         }
                     }
 
-                    let mut fs = self.file.filesystem.borrow_mut();
+                    let mut fs = self.file.filesystem.lock();
                     return fs.deallocate_inode(entry.inode);
                 }
             }
@@ -947,7 +947,6 @@ impl<Dev: Device<u8, Ext2Error>> SymbolicLink<Dev> {
     ///
     /// Otherwise, returns the same errors as [`Ext2::inode`].
     pub fn new(filesystem: &Celled<Ext2<Dev>>, inode_number: u32) -> Result<Self, Error<Ext2Error>> {
-        let fs = filesystem.borrow();
         let file = File::new(&filesystem.clone(), inode_number)?;
 
         let data_size = usize::try_from(file.inode.data_size()).unwrap_or(PATH_MAX);
@@ -960,7 +959,7 @@ impl<Dev: Device<u8, Ext2Error>> SymbolicLink<Dev> {
                 core::slice::from_raw_parts(addr_of!(file.inode.direct_block_pointers).cast(), data_size)
             });
         } else {
-            let _: usize = file.inode.read_data(&fs, &mut buffer, 0)?;
+            let _: usize = file.inode.read_data(&filesystem.lock(), &mut buffer, 0)?;
         }
         let pointed_file = buffer.split(|char| *char == b'\0').next().ok_or(Ext2Error::BadString)?.to_vec();
         Ok(Self {
@@ -1000,7 +999,7 @@ impl<Dev: Device<u8, Ext2Error>> file::SymbolicLink for SymbolicLink<Dev> {
                 let data_slice = unsafe { core::slice::from_raw_parts_mut(data_ptr, SYMBOLIC_LINK_INODE_STORE_LIMIT) };
                 data_slice.clone_from_slice(&[b'\0'; SYMBOLIC_LINK_INODE_STORE_LIMIT]);
 
-                let fs = self.file.filesystem.borrow();
+                let fs = self.file.filesystem.lock();
                 // SAFETY: the starting address correspond to the one of this inode
                 unsafe {
                     Inode::write_on_device(&fs, self.file.inode_number, new_inode)?;
@@ -1024,7 +1023,7 @@ impl<Dev: Device<u8, Ext2Error>> file::SymbolicLink for SymbolicLink<Dev> {
             let data_slice = unsafe { core::slice::from_raw_parts_mut(data_ptr, bytes.len()) };
             data_slice.clone_from_slice(bytes);
 
-            let fs = self.file.filesystem.borrow();
+            let fs = self.file.filesystem.lock();
             // SAFETY: the starting address correspond to the one of this inode
             unsafe {
                 Inode::write_on_device(&fs, self.file.inode_number, new_inode)?;
@@ -1234,7 +1233,7 @@ mod test {
         let ext2 = Celled::new(Ext2::new(file, new_device_id(), true).unwrap());
         let root = Directory::new(&ext2, ROOT_DIRECTORY_INODE).unwrap();
 
-        let fs = ext2.borrow();
+        let fs = ext2.lock();
         let big_file_inode_number = root
             .entries
             .lock()
@@ -1315,7 +1314,7 @@ mod test {
         new_inode.flags = 0xabcd;
         unsafe { foo.file.set_inode(&new_inode) }.unwrap();
 
-        assert_eq!(foo.file.inode, Inode::parse(&ext2.borrow(), foo.file.inode_number).unwrap());
+        assert_eq!(foo.file.inode, Inode::parse(&ext2.lock(), foo.file.inode_number).unwrap());
         assert_eq!(foo.file.inode, new_inode);
     }
 
@@ -1337,7 +1336,7 @@ mod test {
         foo.write(replace_text).unwrap();
         foo.flush().unwrap();
 
-        assert_eq!(foo.file.inode, Inode::parse(&ext2.borrow(), foo.file.inode_number).unwrap());
+        assert_eq!(foo.file.inode, Inode::parse(&ext2.lock(), foo.file.inode_number).unwrap());
 
         assert_eq!(String::from_utf8(foo.read_all().unwrap()).unwrap(), "Hello earth!\n");
     }
@@ -1360,7 +1359,7 @@ mod test {
         foo.write(replace_text).unwrap();
         foo.flush().unwrap();
 
-        assert_eq!(foo.file.inode, Inode::parse(&ext2.borrow(), foo.file.inode_number).unwrap());
+        assert_eq!(foo.file.inode, Inode::parse(&ext2.lock(), foo.file.inode_number).unwrap());
 
         assert_eq!(foo.read_all().unwrap(), b"Hello earth!\nI love dogs!\n");
     }
@@ -1384,7 +1383,7 @@ mod test {
         foo.write(replace_text).unwrap();
         foo.flush().unwrap();
 
-        assert_eq!(foo.file.inode, Inode::parse(&ext2.borrow(), foo.file.inode_number).unwrap());
+        assert_eq!(foo.file.inode, Inode::parse(&ext2.lock(), foo.file.inode_number).unwrap());
 
         assert_eq!(foo.read_all().unwrap().len(), BYTES_TO_WRITE);
         assert_eq!(foo.read_all().unwrap().into_iter().all_equal_value(), Ok(b'a'));
@@ -1414,7 +1413,7 @@ mod test {
         foo.write(&replace_text).unwrap();
         foo.flush().unwrap();
 
-        assert_eq!(foo.file.inode, Inode::parse(&ext2.borrow(), foo.file.inode_number).unwrap());
+        assert_eq!(foo.file.inode, Inode::parse(&ext2.lock(), foo.file.inode_number).unwrap());
         assert_eq!(foo.read_all().unwrap().len(), BYTES_TO_WRITE);
         assert_eq!(foo.read_all().unwrap(), replace_text);
     }
@@ -1443,7 +1442,7 @@ mod test {
         foo.write(&replace_text).unwrap();
         foo.flush().unwrap();
 
-        assert_eq!(foo.file.inode, Inode::parse(&ext2.borrow(), foo.file.inode_number).unwrap());
+        assert_eq!(foo.file.inode, Inode::parse(&ext2.lock(), foo.file.inode_number).unwrap());
         assert_eq!(foo.read_all().unwrap().len(), BYTES_TO_WRITE);
         assert_eq!(foo.read_all().unwrap(), replace_text);
     }
@@ -1468,7 +1467,7 @@ mod test {
         foo.write(&replace_text).unwrap();
         foo.flush().unwrap();
 
-        assert_eq!(foo.file.inode, Inode::parse(&ext2.borrow(), foo.file.inode_number).unwrap());
+        assert_eq!(foo.file.inode, Inode::parse(&ext2.lock(), foo.file.inode_number).unwrap());
         assert_eq!(foo.read_all().unwrap().len(), BYTES_TO_WRITE);
         assert_eq!(foo.read_all().unwrap(), replace_text);
     }
@@ -1498,7 +1497,7 @@ mod test {
         foo.write(&replace_text[BYTES_TO_WRITE / 2..]).unwrap();
         foo.flush().unwrap();
 
-        assert_eq!(foo.file.inode, Inode::parse(&ext2.borrow(), foo.file.inode_number).unwrap());
+        assert_eq!(foo.file.inode, Inode::parse(&ext2.lock(), foo.file.inode_number).unwrap());
         assert_eq!(foo.read_all().unwrap().len(), BYTES_TO_WRITE);
         assert_eq!(foo.read_all().unwrap(), replace_text);
     }
@@ -1527,7 +1526,7 @@ mod test {
         crate::file::File::set_uid(&mut foo, Uid(1)).unwrap();
         crate::file::File::set_gid(&mut foo, Gid(2)).unwrap();
 
-        let fs = ext2.borrow();
+        let fs = ext2.lock();
         let inode = Inode::parse(&fs, foo.file.inode_number).unwrap();
 
         let mode = inode.mode;
@@ -1553,7 +1552,7 @@ mod test {
             panic!("`foo.txt` has been created as a regular file")
         };
 
-        let initial_free_block_number = ext2.borrow().superblock().base().free_blocks_count;
+        let initial_free_block_number = ext2.lock().superblock().base().free_blocks_count;
         let initial_foo_size = foo.file.inode.data_size();
 
         let replace_text = vec![b'a'; BYTES_TO_WRITE];
@@ -1568,7 +1567,7 @@ mod test {
         assert_eq!(foo.read_all().unwrap().len(), 10000);
 
         foo.truncate(initial_foo_size).unwrap();
-        let new_free_block_number = ext2.borrow().superblock().base().free_blocks_count;
+        let new_free_block_number = ext2.lock().superblock().base().free_blocks_count;
 
         assert_eq!(foo.file.inode.data_size(), initial_foo_size);
         assert!(new_free_block_number >= initial_free_block_number); // Non used blocks could be deallocated
@@ -1666,7 +1665,7 @@ mod test {
         };
         let ex2_inode = ex2.file.inode_number;
 
-        let fs = ext2.borrow();
+        let fs = ext2.lock();
         let superblock = fs.superblock();
         let ex1_bitmap = fs.get_inode_bitmap(Inode::block_group(superblock, ex1_inode)).unwrap();
         assert!(Inode::is_used(ex1_inode, superblock, &ex1_bitmap));
@@ -1676,7 +1675,7 @@ mod test {
 
         crate::file::Directory::remove_entry(&mut root, UnixStr::new("folder").unwrap()).unwrap();
 
-        let fs = ext2.borrow();
+        let fs = ext2.lock();
         let superblock = fs.superblock();
         let ex1_bitmap = fs.get_inode_bitmap(Inode::block_group(superblock, ex1_inode)).unwrap();
         assert!(Inode::is_free(ex1_inode, superblock, &ex1_bitmap));

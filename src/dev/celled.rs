@@ -4,13 +4,13 @@
 //! object point to the same initial one;
 
 use alloc::sync::Arc;
-use core::cell::RefCell;
 
 use derive_more::{Deref, DerefMut};
+use spin::Mutex;
 
 /// Type alias for celled objects.
 #[derive(Debug, Deref, DerefMut)]
-pub struct Celled<T>(Arc<RefCell<T>>);
+pub struct Celled<T>(Arc<Mutex<T>>);
 
 impl<T> Clone for Celled<T> {
     fn clone(&self) -> Self {
@@ -21,6 +21,6 @@ impl<T> Clone for Celled<T> {
 impl<T> Celled<T> {
     /// Creates a new celled object.
     pub fn new(obj: T) -> Self {
-        Self(Arc::new(RefCell::new(obj)))
+        Self(Arc::new(Mutex::new(obj)))
     }
 }

@@ -565,7 +565,7 @@ impl Inode {
         }
 
         let starting_addr = Self::starting_addr(fs, n)?;
-        let device = fs.device.borrow();
+        let device = fs.device.lock();
 
         // SAFETY: all the possible failures are catched in the resulting error
         let inode = unsafe { device.read_at::<Self>(starting_addr) }?;
@@ -601,7 +601,7 @@ impl Inode {
         if fs.cache {
             INODE_CACHE.insert((fs.device_id, n), inode);
         }
-        fs.device.borrow_mut().write_at(starting_addr, inode)
+        fs.device.lock().write_at(starting_addr, inode)
     }
 
     /// Returns the complete list of block numbers containing this inode's data (indirect blocks are not considered).
@@ -623,7 +623,7 @@ impl Inode {
             fs: &Ext2<Dev>,
             block_number: u32,
         ) -> Result<Vec<u32>, Error<Ext2Error>> {
-            let device = fs.device.borrow();
+            let device = fs.device.lock();
 
             let block_address = Address::from((block_number * fs.superblock().block_size()) as usize);
             let slice = device.slice(block_address..block_address + fs.superblock().block_size() as usize)?;
@@ -742,7 +742,7 @@ impl Inode {
         let indirected_blocks = self.indirected_blocks(fs)?;
         let blocks = indirected_blocks.flatten_data_blocks();
 
-        let device = fs.device.borrow();
+        let device = fs.device.lock();
         let buffer_length = buffer.len();
 
         let mut read_bytes = 0_usize;
@@ -865,7 +865,7 @@ mod test {
         let starting_addr = Inode::starting_addr(&fs, ROOT_DIRECTORY_INODE).unwrap();
 
         let root_manual =
-            unsafe { <RefCell<File> as Device<u8, Ext2Error>>::read_at::<Inode>(&fs.device.borrow(), starting_addr).unwrap() };
+            unsafe { <RefCell<File> as Device<u8, Ext2Error>>::read_at::<Inode>(&fs.device.lock(), starting_addr).unwrap() };
 
         assert_eq!(root_auto, root_manual);
     }

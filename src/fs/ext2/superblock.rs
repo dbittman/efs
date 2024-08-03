@@ -616,7 +616,7 @@ impl Superblock {
     ///
     /// Returns an [`Error`] if the device could not be read.
     pub fn parse<Dev: Device<u8, Ext2Error>>(celled_device: &Celled<Dev>) -> Result<Self, Error<Ext2Error>> {
-        let device = celled_device.borrow();
+        let device = celled_device.lock();
 
         // SAFETY: all the possible failures are catched in the resulting error
         let superblock_base = unsafe { device.read_at::<Base>(Address::from(SUPERBLOCK_START_BYTE)) }?;
