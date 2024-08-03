@@ -11,14 +11,15 @@ use itertools::Itertools;
 
 use super::block_group::BlockGroupDescriptor;
 use super::error::Ext2Error;
-use super::indirection::IndirectedBlocks;
 use super::superblock::{OperatingSystem, Superblock};
-use super::Celled;
+use super::Ext2;
+use crate::cache::Cache;
 use crate::dev::sector::Address;
 use crate::dev::Device;
 use crate::error::Error;
 use crate::file::Type;
 use crate::fs::error::FsError;
+use crate::fs::structures::indirection::IndirectedBlocks;
 use crate::permissions::Permissions;
 
 /// Number of direct block pointers in an inode.
@@ -42,9 +43,24 @@ pub const BOOT_LOADER_INODE: u32 = 5;
 /// Reserved undeleted directory inode number.
 pub const UNDELETED_DIRECTORY_INODE: u32 = 6;
 
-/// Inode.
+/// Cache for inodes.
 ///
-/// **Inode addresses start at 1.**
+/// Stores the couple `((device, inode_number), inode)` for each visited inode.
+static INODE_CACHE: Cache<(u32, u32), Inode> = Cache::new();
+
+/// An ext2 inode.
+///
+/// Each file corresponds to an inode, which contains all the metadata and pointers to the data blocks of the file it represents.
+///
+/// All the content of a file is located on data blocks, which are common [ext2 blocks](super::block::Block). As a file can grow
+/// very large, only [`DIRECT_BLOCK_POINTER_COUNT`] data blocks are directly addressed (by their block numbers). For the further
+/// data blocks, an indirection mechanism is created: a special block, called a singly indirected block, will be filled with a table
+/// of [`u32`] containing the block numbers of the next data blocks (each [`u32`] corresponds to a block number). This inode
+/// contains in the field [`singly_indirect_block_pointer`](struct.Inode.html#structfield.singly_indirect_block_pointer) the block
+/// number of the singly indirected block. For the next data blocks, and following this indirection logic, a doubly indirected block
+/// and a triply indirected block may also be used. All the indirection logic is deal with the structure [`IndirectedBlocks`].
+///
+/// Note: **Inode addresses start at 1**.
 #[repr(C, packed)]
 #[derive(Debug, Clone, Copy)]
 pub struct Inode {
@@ -519,26 +535,24 @@ impl Inode {
     /// device.
     ///
     /// Otherwise, returns an [`Error`] if the device cannot be read.
-    pub fn starting_addr<Dev: Device<u8, Ext2Error>>(
-        celled_device: &Celled<Dev>,
-        superblock: &Superblock,
-        n: u32,
-    ) -> Result<Address, Error<Ext2Error>> {
-        let base = superblock.base();
+    pub fn starting_addr<Dev: Device<u8, Ext2Error>>(fs: &Ext2<Dev>, n: u32) -> Result<Address, Error<Ext2Error>> {
+        let base = fs.superblock().base();
         if base.inodes_count < n || n == 0 {
             return Err(Error::Fs(FsError::Implementation(Ext2Error::NonExistingInode(n))));
         };
 
-        let block_group = Self::block_group(superblock, n);
-        let block_group_descriptor = BlockGroupDescriptor::parse(celled_device, superblock, block_group)?;
+        let block_group = Self::block_group(fs.superblock(), n);
+        let block_group_descriptor = BlockGroupDescriptor::parse(fs, block_group)?;
 
         let inode_table_starting_block = block_group_descriptor.inode_table;
-        let index = Self::group_index(superblock, n);
+        let index = Self::group_index(fs.superblock(), n);
 
         // SAFETY: it is assumed that `u16::MAX <= usize::MAX`
         Ok(unsafe {
-            Address::try_from(inode_table_starting_block * superblock.block_size() + index * u32::from(superblock.inode_size()))
-                .unwrap_unchecked()
+            Address::try_from(
+                inode_table_starting_block * fs.superblock().block_size() + index * u32::from(fs.superblock().inode_size()),
+            )
+            .unwrap_unchecked()
         })
     }
 
@@ -553,21 +567,51 @@ impl Inode {
     /// type.
     ///
     /// Returns an [`Error`] if the device could not be read.
-    pub fn parse<Dev: Device<u8, Ext2Error>>(
-        celled_device: &Celled<Dev>,
-        superblock: &Superblock,
-        n: u32,
-    ) -> Result<Self, Error<Ext2Error>> {
-        let starting_addr = Self::starting_addr(celled_device, superblock, n)?;
-        let device = celled_device.borrow();
+    pub fn parse<Dev: Device<u8, Ext2Error>>(fs: &Ext2<Dev>, n: u32) -> Result<Self, Error<Ext2Error>> {
+        if fs.cache
+            && let Some(inode) = INODE_CACHE.get_copy(&(fs.device_id, n))
+        {
+            return Ok(inode);
+        }
+
+        let starting_addr = Self::starting_addr(fs, n)?;
+        let device = fs.device.lock();
 
         // SAFETY: all the possible failures are catched in the resulting error
         let inode = unsafe { device.read_at::<Self>(starting_addr) }?;
 
-        match inode.file_type() {
-            Ok(_) => Ok(inode),
-            Err(err) => Err(Error::Fs(FsError::Implementation(err))),
+        let inode = match inode.file_type() {
+            Ok(_) => inode,
+            Err(err) => Err(Error::Fs(FsError::Implementation(err)))?,
+        };
+
+        // It's the first time the inode is read.
+        if fs.cache {
+            INODE_CACHE.insert((fs.device_id, n), inode);
         }
+
+        Ok(inode)
+    }
+
+    /// Writes the given `inode` structure at its position.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`Error`] if the device cannot be written.
+    ///
+    /// # Safety
+    ///
+    /// The given `inode` must correspond to the given inode number `n`.
+    pub(crate) unsafe fn write_on_device<Dev: Device<u8, Ext2Error>>(
+        fs: &Ext2<Dev>,
+        n: u32,
+        inode: Self,
+    ) -> Result<(), Error<Ext2Error>> {
+        let starting_addr = Self::starting_addr(fs, n)?;
+        if fs.cache {
+            INODE_CACHE.insert((fs.device_id, n), inode);
+        }
+        fs.device.lock().write_at(starting_addr, inode)
     }
 
     /// Returns the complete list of block numbers containing this inode's data (indirect blocks are not considered).
@@ -581,20 +625,18 @@ impl Inode {
     /// Panics if the given `superblock` is ill-formed.
     pub fn indirected_blocks<Dev: Device<u8, Ext2Error>>(
         &self,
-        celled_device: &Celled<Dev>,
-        superblock: &Superblock,
+        fs: &Ext2<Dev>,
     ) -> Result<IndirectedBlocks<DIRECT_BLOCK_POINTER_COUNT>, Error<Ext2Error>> {
         /// Returns the list of block addresses contained in the given indirect block.
         #[allow(clippy::cast_ptr_alignment)]
         fn read_indirect_block<Dev: Device<u8, Ext2Error>>(
-            celled_device: &Celled<Dev>,
-            superblock: &Superblock,
+            fs: &Ext2<Dev>,
             block_number: u32,
         ) -> Result<Vec<u32>, Error<Ext2Error>> {
-            let device = celled_device.borrow();
+            let device = fs.device.lock();
 
-            let block_address = Address::from((block_number * superblock.block_size()) as usize);
-            let slice = device.slice(block_address..block_address + superblock.block_size() as usize)?;
+            let block_address = Address::from((block_number * fs.superblock().block_size()) as usize);
+            let slice = device.slice(block_address..block_address + fs.superblock().block_size() as usize)?;
             let byte_array = slice.as_ref();
             let address_array =
                 // SAFETY: casting n `u8` to `u32` with n a multiple of 4 (as the block size is a power of 2, generally above 512)
@@ -602,10 +644,10 @@ impl Inode {
             Ok(address_array.iter().filter(|&block_number| (*block_number != 0)).copied().collect_vec())
         }
 
-        let data_blocks = u32::try_from(1 + (self.data_size().saturating_sub(1)) / u64::from(superblock.block_size()))
+        let data_blocks = u32::try_from(1 + (self.data_size().saturating_sub(1)) / u64::from(fs.superblock().block_size()))
             .expect("Ill-formed superblock: there should be at most u32::MAX blocks");
         let mut parsed_data_blocks = 0_u32;
-        let blocks_per_indirection = superblock.block_size() / 4;
+        let blocks_per_indirection = fs.superblock().block_size() / 4;
 
         let direct_block_pointers = self
             .direct_block_pointers
@@ -628,11 +670,10 @@ impl Inode {
             return Ok(indirected_blocks);
         }
 
-        indirected_blocks.singly_indirected_blocks.1.append(&mut read_indirect_block(
-            celled_device,
-            superblock,
-            indirected_blocks.singly_indirected_blocks.0,
-        )?);
+        indirected_blocks
+            .singly_indirected_blocks
+            .1
+            .append(&mut read_indirect_block(fs, indirected_blocks.singly_indirected_blocks.0)?);
         parsed_data_blocks += blocks_per_indirection;
 
         if indirected_blocks.doubly_indirected_blocks.0 == 0 || parsed_data_blocks >= data_blocks {
@@ -640,8 +681,7 @@ impl Inode {
             return Ok(indirected_blocks);
         }
 
-        let singly_indirect_block_pointers =
-            read_indirect_block(celled_device, superblock, indirected_blocks.doubly_indirected_blocks.0)?;
+        let singly_indirect_block_pointers = read_indirect_block(fs, indirected_blocks.doubly_indirected_blocks.0)?;
 
         for block_pointer in singly_indirect_block_pointers {
             if block_pointer == 0 || parsed_data_blocks >= data_blocks {
@@ -652,7 +692,7 @@ impl Inode {
             indirected_blocks
                 .doubly_indirected_blocks
                 .1
-                .push((block_pointer, read_indirect_block(celled_device, superblock, block_pointer)?));
+                .push((block_pointer, read_indirect_block(fs, block_pointer)?));
             parsed_data_blocks += blocks_per_indirection;
         }
 
@@ -661,8 +701,7 @@ impl Inode {
             return Ok(indirected_blocks);
         }
 
-        let triply_indirected_blocks =
-            read_indirect_block(celled_device, superblock, indirected_blocks.triply_indirected_blocks.0)?;
+        let triply_indirected_blocks = read_indirect_block(fs, indirected_blocks.triply_indirected_blocks.0)?;
 
         for block_pointer_pointer in triply_indirected_blocks {
             if block_pointer_pointer == 0 || parsed_data_blocks >= data_blocks {
@@ -672,7 +711,7 @@ impl Inode {
 
             let mut dib = Vec::new();
 
-            let singly_indirect_block_pointers = read_indirect_block(celled_device, superblock, block_pointer_pointer)?;
+            let singly_indirect_block_pointers = read_indirect_block(fs, block_pointer_pointer)?;
             parsed_data_blocks += blocks_per_indirection;
 
             for block_pointer in singly_indirect_block_pointers {
@@ -681,7 +720,7 @@ impl Inode {
                     return Ok(indirected_blocks);
                 }
 
-                dib.push((block_pointer, read_indirect_block(celled_device, superblock, block_pointer)?));
+                dib.push((block_pointer, read_indirect_block(fs, block_pointer)?));
             }
 
             indirected_blocks.triply_indirected_blocks.1.push((block_pointer_pointer, dib));
@@ -706,15 +745,14 @@ impl Inode {
     /// Panics if the data block starting addresses do not fit on a [`usize`].
     pub fn read_data<Dev: Device<u8, Ext2Error>>(
         &self,
-        celled_device: &Celled<Dev>,
-        superblock: &Superblock,
+        fs: &Ext2<Dev>,
         buffer: &mut [u8],
         mut offset: u64,
     ) -> Result<usize, Error<Ext2Error>> {
-        let indirected_blocks = self.indirected_blocks(celled_device, superblock)?;
+        let indirected_blocks = self.indirected_blocks(fs)?;
         let blocks = indirected_blocks.flatten_data_blocks();
 
-        let device = celled_device.borrow();
+        let device = fs.device.lock();
         let buffer_length = buffer.len();
 
         let mut read_bytes = 0_usize;
@@ -724,9 +762,9 @@ impl Inode {
             }
 
             if offset == 0 {
-                let count = (superblock.block_size() as usize).min(buffer_length - read_bytes);
+                let count = (fs.superblock().block_size() as usize).min(buffer_length - read_bytes);
                 let block_addr = Address::from(
-                    usize::try_from(u64::from(block_number) * u64::from(superblock.block_size()))
+                    usize::try_from(u64::from(block_number) * u64::from(fs.superblock().block_size()))
                         .expect("Could not fit the requested block address on a usize"),
                 );
                 let slice = device.slice(block_addr..block_addr + count)?;
@@ -737,17 +775,17 @@ impl Inode {
                 block_buffer.clone_from_slice(slice.as_ref());
 
                 read_bytes += count;
-            } else if offset >= u64::from(superblock.block_size()) {
-                offset -= u64::from(superblock.block_size());
+            } else if offset >= u64::from(fs.superblock().block_size()) {
+                offset -= u64::from(fs.superblock().block_size());
             } else {
-                let data_count = (superblock.block_size() as usize).min(buffer_length - read_bytes);
+                let data_count = (fs.superblock().block_size() as usize).min(buffer_length - read_bytes);
                 // SAFETY: `offset < superblock.block_size()` and `superblock.block_size()` is generally around few KB, which is
                 // fine when `usize > u8`.
                 let offset_usize = unsafe { usize::try_from(offset).unwrap_unchecked() };
                 match data_count.checked_sub(offset_usize) {
                     None => read_bytes = buffer_length,
                     Some(count) => {
-                        let block_addr = Address::from((block_number * superblock.block_size()) as usize);
+                        let block_addr = Address::from((block_number * fs.superblock().block_size()) as usize);
                         let slice = device.slice(block_addr + offset_usize..block_addr + offset_usize + count)?;
 
                         // SAFETY: buffer contains at least `block_size.min(remaining_bytes_count)` since `remaining_bytes_count <=
@@ -792,12 +830,13 @@ mod test {
     use core::cell::RefCell;
     use core::mem::size_of;
     use std::fs::File;
+    use std::time;
 
     use crate::dev::Device;
     use crate::fs::ext2::error::Ext2Error;
     use crate::fs::ext2::inode::{Inode, ROOT_DIRECTORY_INODE};
-    use crate::fs::ext2::superblock::Superblock;
-    use crate::fs::ext2::Celled;
+    use crate::fs::ext2::Ext2;
+    use crate::tests::new_device_id;
 
     #[test]
     fn struct_size() {
@@ -807,42 +846,59 @@ mod test {
     #[test]
     fn parse_root() {
         let file = RefCell::new(File::options().read(true).write(true).open("./tests/fs/ext2/base.ext2").unwrap());
-        let celled_file = Celled::new(file);
-        let superblock = Superblock::parse(&celled_file).unwrap();
-        assert!(Inode::parse(&celled_file, &superblock, ROOT_DIRECTORY_INODE).is_ok());
+        let fs = Ext2::new(file, new_device_id(), false).unwrap();
+        assert!(Inode::parse(&fs, ROOT_DIRECTORY_INODE).is_ok());
 
         let file = RefCell::new(File::options().read(true).write(true).open("./tests/fs/ext2/extended.ext2").unwrap());
-        let celled_file = Celled::new(file);
-        let superblock = Superblock::parse(&celled_file).unwrap();
-        assert!(Inode::parse(&celled_file, &superblock, ROOT_DIRECTORY_INODE).is_ok());
+        let fs = Ext2::new(file, new_device_id(), false).unwrap();
+        assert!(Inode::parse(&fs, ROOT_DIRECTORY_INODE).is_ok());
     }
 
     #[test]
     fn failed_parse() {
         let file = RefCell::new(File::options().read(true).write(true).open("./tests/fs/ext2/base.ext2").unwrap());
-        let celled_file = Celled::new(file);
-        let superblock = Superblock::parse(&celled_file).unwrap();
-        assert!(Inode::parse(&celled_file, &superblock, 0).is_err());
+        let fs = Ext2::new(file, new_device_id(), false).unwrap();
+        assert!(Inode::parse(&fs, 0).is_err());
 
         let file = RefCell::new(File::options().read(true).write(true).open("./tests/fs/ext2/extended.ext2").unwrap());
-        let celled_file = Celled::new(file);
-        let superblock = Superblock::parse(&celled_file).unwrap();
-        assert!(Inode::parse(&celled_file, &superblock, superblock.base().inodes_count + 1).is_err());
+        let fs = Ext2::new(file, new_device_id(), false).unwrap();
+        assert!(Inode::parse(&fs, 0).is_err());
     }
 
     #[test]
     fn starting_addr() {
         let file = RefCell::new(File::options().read(true).write(true).open("./tests/fs/ext2/base.ext2").unwrap());
-        let celled_file = Celled::new(file);
-        let superblock = Superblock::parse(&celled_file).unwrap();
+        let fs = Ext2::new(file, new_device_id(), false).unwrap();
 
-        let root_auto = Inode::parse(&celled_file, &superblock, ROOT_DIRECTORY_INODE).unwrap();
+        let root_auto = Inode::parse(&fs, ROOT_DIRECTORY_INODE).unwrap();
 
-        let starting_addr = Inode::starting_addr(&celled_file, &superblock, ROOT_DIRECTORY_INODE).unwrap();
+        let starting_addr = Inode::starting_addr(&fs, ROOT_DIRECTORY_INODE).unwrap();
 
         let root_manual =
-            unsafe { <RefCell<File> as Device<u8, Ext2Error>>::read_at::<Inode>(&celled_file.borrow(), starting_addr).unwrap() };
+            unsafe { <RefCell<File> as Device<u8, Ext2Error>>::read_at::<Inode>(&fs.device.lock(), starting_addr).unwrap() };
 
         assert_eq!(root_auto, root_manual);
+    }
+
+    #[test]
+    fn cache_test() {
+        let file = RefCell::new(File::options().read(true).write(true).open("./tests/fs/ext2/base.ext2").unwrap());
+        let fs = Ext2::new(file, new_device_id(), false).unwrap();
+
+        let start_time = time::Instant::now();
+        for _ in 0..100_000 {
+            assert!(Inode::parse(&fs, ROOT_DIRECTORY_INODE).is_ok());
+        }
+        let time_cache_disabled = start_time.elapsed();
+
+        let file = RefCell::new(File::options().read(true).write(true).open("./tests/fs/ext2/base.ext2").unwrap());
+        let fs = Ext2::new(file, new_device_id(), true).unwrap();
+        let start_time = time::Instant::now();
+        for _ in 0..100_000 {
+            assert!(Inode::parse(&fs, ROOT_DIRECTORY_INODE).is_ok());
+        }
+        let time_cache_enabled = start_time.elapsed();
+
+        assert!(time_cache_disabled > time_cache_enabled);
     }
 }

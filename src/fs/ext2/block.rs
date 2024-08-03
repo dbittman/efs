@@ -11,7 +11,7 @@ use alloc::vec::Vec;
 use super::error::Ext2Error;
 use super::superblock::Superblock;
 use super::Ext2;
-use crate::dev::celled::Celled;
+use crate::celled::Celled;
 use crate::dev::sector::Address;
 use crate::dev::Device;
 use crate::error::Error;
@@ -19,6 +19,10 @@ use crate::fs::error::FsError;
 use crate::io::{Base, Read, Seek, SeekFrom, Write};
 
 /// An ext2 block.
+///
+/// The [`Device`] is splitted in contiguous ext2 blocks that have all the same size in bytes. This is **NOT** the block as in block
+/// device, here "block" always refers to ext2's blocks. They start at 0, so the `n`th block will start at the adress `n *
+/// block_size`. Thus, a block is entirely described by its number.
 #[derive(Clone)]
 pub struct Block<Dev: Device<u8, Ext2Error>> {
     /// Block number.
@@ -62,7 +66,7 @@ impl<Dev: Device<u8, Ext2Error>> Block<Dev> {
     ///
     /// Returns an [`Error`] if the device cannot be read.
     pub fn read_all(&mut self) -> Result<Vec<u8>, Error<Ext2Error>> {
-        let block_size = self.filesystem.borrow().superblock().block_size();
+        let block_size = self.filesystem.lock().superblock().block_size();
         let mut buffer = vec![0_u8; block_size as usize];
         self.seek(SeekFrom::Start(0))?;
         self.read(&mut buffer)?;
@@ -100,7 +104,7 @@ impl<Dev: Device<u8, Ext2Error>> Block<Dev> {
     ///
     /// Otherwise, returns an [`Error`] if the device cannot be written.
     fn set_usage(&self, usage: bool) -> Result<(), Error<Ext2Error>> {
-        self.filesystem.borrow_mut().locate_blocks(&[self.number], usage)
+        self.filesystem.lock().locate_blocks(&[self.number], usage)
     }
 
     /// Sets the current block as free in the block bitmap, and updates the superblock accordingly.
@@ -111,14 +115,7 @@ impl<Dev: Device<u8, Ext2Error>> Block<Dev> {
     ///
     /// Otherwise, returns an [`Error`] if the device cannot be written.
     pub fn set_free(&mut self) -> Result<(), Error<Ext2Error>> {
-        self.set_usage(false)?;
-        let mut fs = self.filesystem.borrow_mut();
-        let current_free_blocks = fs.superblock().base().free_blocks_count;
-
-        // SAFETY:  Assuming that the superblock was initially correct, the number of free blocks increased by 1
-        unsafe { fs.set_free_blocks(current_free_blocks + 1) }?;
-
-        Ok(())
+        self.set_usage(false)
     }
 
     /// Sets the current block as used in the block bitmap, and updates the superblock accordingly.
@@ -129,15 +126,7 @@ impl<Dev: Device<u8, Ext2Error>> Block<Dev> {
     ///
     /// Otherwise, returns an [`Error`] if the device cannot be written.
     pub fn set_used(&mut self) -> Result<(), Error<Ext2Error>> {
-        self.set_usage(true)?;
-
-        let mut fs = self.filesystem.borrow_mut();
-        let current_free_blocks = fs.superblock().base().free_blocks_count;
-
-        // SAFETY:  Assuming that the superblock was initially correct, the number of free blocks increased by 1
-        unsafe { fs.set_free_blocks(current_free_blocks - 1) }?;
-
-        Ok(())
+        self.set_usage(true)
     }
 }
 
@@ -153,8 +142,8 @@ impl<Dev: Device<u8, Ext2Error>> Base for Block<Dev> {
 
 impl<Dev: Device<u8, Ext2Error>> Read for Block<Dev> {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, Error<Ext2Error>> {
-        let fs = self.filesystem.borrow();
-        let device = fs.device.borrow();
+        let fs = self.filesystem.lock();
+        let device = fs.device.lock();
 
         let length = ((fs.superblock().block_size() - self.io_offset) as usize).min(buf.len());
         let starting_addr = Address::new((self.number * fs.superblock().block_size() + self.io_offset) as usize);
@@ -170,8 +159,8 @@ impl<Dev: Device<u8, Ext2Error>> Read for Block<Dev> {
 
 impl<Dev: Device<u8, Ext2Error>> Write for Block<Dev> {
     fn write(&mut self, buf: &[u8]) -> Result<usize, Error<Ext2Error>> {
-        let fs = self.filesystem.borrow();
-        let mut device = fs.device.borrow_mut();
+        let fs = self.filesystem.lock();
+        let mut device = fs.device.lock();
 
         let length = ((fs.superblock().block_size() - self.io_offset) as usize).min(buf.len());
         let starting_addr = Address::new((self.number * fs.superblock().block_size() + self.io_offset) as usize);
@@ -194,7 +183,7 @@ impl<Dev: Device<u8, Ext2Error>> Write for Block<Dev> {
 
 impl<Dev: Device<u8, Ext2Error>> Seek for Block<Dev> {
     fn seek(&mut self, pos: SeekFrom) -> Result<u64, Error<Ext2Error>> {
-        let fs = self.filesystem.borrow();
+        let fs = self.filesystem.lock();
 
         let block_size = i64::from(fs.superblock().block_size());
         let previous_offset = self.io_offset;
@@ -227,7 +216,7 @@ mod test {
     use core::cell::RefCell;
     use std::fs::File;
 
-    use crate::dev::celled::Celled;
+    use crate::celled::Celled;
     use crate::dev::sector::Address;
     use crate::dev::Device;
     use crate::fs::ext2::block::Block;
@@ -236,7 +225,7 @@ mod test {
     use crate::fs::ext2::superblock::Superblock;
     use crate::fs::ext2::Ext2;
     use crate::io::{Read, Seek, SeekFrom, Write};
-    use crate::tests::copy_file;
+    use crate::tests::{copy_file, new_device_id};
 
     #[test]
     fn block_read() {
@@ -248,13 +237,13 @@ mod test {
 
         let block_starting_addr = Address::new((BLOCK_NUMBER * superblock.block_size()).try_into().unwrap());
         let slice = <RefCell<File> as Device<u8, Ext2Error>>::slice(
-            &celled_file.borrow(),
+            &celled_file.lock(),
             block_starting_addr + 123..block_starting_addr + 123 + 59,
         )
         .unwrap()
         .commit();
 
-        let ext2 = Celled::new(Ext2::new_celled(celled_file, 0).unwrap());
+        let ext2 = Celled::new(Ext2::new_celled(celled_file, 0, false).unwrap());
         let mut block = Block::new(ext2, BLOCK_NUMBER);
         block.seek(SeekFrom::Start(123)).unwrap();
         let mut buffer_auto = [0_u8; 59];
@@ -268,11 +257,11 @@ mod test {
         const BLOCK_NUMBER: u32 = 10_234;
 
         let file = RefCell::new(copy_file("./tests/fs/ext2/io_operations.ext2").unwrap());
-        let ext2 = Celled::new(Ext2::new(file, 0).unwrap());
-        let fs = ext2.borrow();
+        let ext2 = Celled::new(Ext2::new(file, new_device_id(), false).unwrap());
+        let superblock = ext2.lock().superblock().clone();
 
-        let mut block = Block::new(ext2.clone(), BLOCK_NUMBER);
-        let mut buffer = vec![0_u8; usize::try_from(fs.superblock().block_size()).unwrap() - 123];
+        let mut block = Block::new(ext2, BLOCK_NUMBER);
+        let mut buffer = vec![0_u8; usize::try_from(superblock.block_size()).unwrap() - 123];
         buffer[..59].copy_from_slice(&[1_u8; 59]);
         block.seek(SeekFrom::Start(123)).unwrap();
         block.write(&buffer).unwrap();
@@ -288,14 +277,14 @@ mod test {
         const BLOCK_NUMBER: u32 = 9;
 
         let file = RefCell::new(copy_file("./tests/fs/ext2/io_operations.ext2").unwrap());
-        let ext2 = Celled::new(Ext2::new(file, 0).unwrap());
-        let superblock = ext2.borrow().superblock().clone();
+        let ext2: Celled<Ext2<RefCell<File>>> = Celled::new(Ext2::new(file, new_device_id(), false).unwrap());
+        let superblock = ext2.lock().superblock().clone();
 
         let mut block = Block::new(ext2.clone(), BLOCK_NUMBER);
         let block_group = block.block_group(&superblock);
 
-        let fs = ext2.borrow();
-        let block_group_descriptor = BlockGroupDescriptor::parse(&fs.device, fs.superblock(), block_group).unwrap();
+        let fs = ext2.lock();
+        let block_group_descriptor = BlockGroupDescriptor::parse(&fs, block_group).unwrap();
         let free_block_count = block_group_descriptor.free_blocks_count;
 
         let bitmap = fs.get_block_bitmap(block_group).unwrap();
@@ -306,8 +295,8 @@ mod test {
 
         block.set_free().unwrap();
 
-        let fs = ext2.borrow();
-        let new_free_block_count = BlockGroupDescriptor::parse(&fs.device, fs.superblock(), block.block_group(&superblock))
+        let fs = ext2.lock();
+        let new_free_block_count = BlockGroupDescriptor::parse(&fs, block.block_group(&superblock))
             .unwrap()
             .free_blocks_count;
 
@@ -321,26 +310,27 @@ mod test {
         const BLOCK_NUMBER: u32 = 1920;
 
         let file = RefCell::new(copy_file("./tests/fs/ext2/io_operations.ext2").unwrap());
-        let ext2 = Celled::new(Ext2::new(file, 0).unwrap());
-        let superblock = ext2.borrow().superblock().clone();
+        let ext2 = Celled::new(Ext2::new(file, new_device_id(), false).unwrap());
+        let superblock = ext2.lock().superblock().clone();
 
         let mut block = Block::new(ext2.clone(), BLOCK_NUMBER);
         let block_group = block.block_group(&superblock);
 
-        let fs = ext2.borrow();
-        let block_group_descriptor = BlockGroupDescriptor::parse(&fs.device, fs.superblock(), block_group).unwrap();
+        let fs = ext2.lock();
+
+        let block_group_descriptor = BlockGroupDescriptor::parse(&fs, block_group).unwrap();
         let free_block_count = block_group_descriptor.free_blocks_count;
 
         let bitmap = fs.get_block_bitmap(block_group).unwrap();
 
-        drop(fs);
-
         assert!(block.is_free(&superblock, &bitmap));
+
+        drop(fs);
 
         block.set_used().unwrap();
 
-        let fs = ext2.borrow();
-        let new_free_block_count = BlockGroupDescriptor::parse(&fs.device, fs.superblock(), block.block_group(&superblock))
+        let fs = ext2.lock();
+        let new_free_block_count = BlockGroupDescriptor::parse(&fs, block.block_group(&superblock))
             .unwrap()
             .free_blocks_count;
 

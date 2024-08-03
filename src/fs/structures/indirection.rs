@@ -1,4 +1,4 @@
-//! Manipulation of indirection in ext2, for the major part for inodes' blocks.
+//! Manipulation of indirection in extended filesystems (ext2, ext3 and ext4), for the major part for inodes' blocks.
 //!
 //! See [this Wikipedia section](https://en.wikipedia.org/wiki/Ext2#Inodes) for more information.
 
@@ -583,7 +583,6 @@ impl<const DBPC: u32> IndirectedBlocks<DBPC> {
     /// Truncates the start of the indirected blocks at the `n`th data block (excluded).
     ///
     /// In other words, all the data blocks but the `n` firsts will be kept.
-
     #[must_use]
     pub fn truncate_front_data_blocks(self, mut n: u32) -> SymmetricDifference<DBPC> {
         let blocks_per_indirection = self.blocks_per_indirection;
@@ -947,8 +946,8 @@ mod test {
     use alloc::vec;
 
     use super::{IndirectedBlocks, Indirection};
-    use crate::fs::ext2::indirection::SymmetricDifference;
     use crate::fs::ext2::inode::DIRECT_BLOCK_POINTER_COUNT;
+    use crate::fs::structures::indirection::SymmetricDifference;
 
     #[test]
     fn direct_indirection() {

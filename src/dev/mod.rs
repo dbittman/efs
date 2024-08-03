@@ -1,4 +1,4 @@
-//! Everything related to the devices
+//! Everything related to the devices.
 
 use alloc::borrow::{Cow, ToOwned};
 use alloc::boxed::Box;
@@ -20,8 +20,6 @@ use crate::dev::error::DevError;
 use crate::error::Error;
 use crate::io::{Base, Read, Seek, SeekFrom, Write};
 
-pub mod bitmap;
-pub mod celled;
 pub mod error;
 pub mod sector;
 pub mod size;

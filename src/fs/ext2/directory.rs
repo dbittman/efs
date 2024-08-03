@@ -9,7 +9,7 @@ use core::fmt::Debug;
 use core::mem::size_of;
 
 use super::error::Ext2Error;
-use super::Celled;
+use super::Ext2;
 use crate::dev::sector::Address;
 use crate::dev::Device;
 use crate::error::Error;
@@ -117,7 +117,7 @@ impl TryFrom<FileType> for Type {
     }
 }
 
-/// A directory entry
+/// A directory entry.
 #[derive(Debug, Clone)]
 pub struct Entry {
     /// Inode index.
@@ -151,11 +151,8 @@ impl Entry {
     /// Must ensure that a directory entry is located at `starting_addr`.
     ///
     /// Must also ensure the requirements of [`Device::read_at`].
-    pub unsafe fn parse<Dev: Device<u8, Ext2Error>>(
-        celled_device: &Celled<Dev>,
-        starting_addr: Address,
-    ) -> Result<Self, Error<Ext2Error>> {
-        let device = celled_device.borrow();
+    pub unsafe fn parse<Dev: Device<u8, Ext2Error>>(fs: &Ext2<Dev>, starting_addr: Address) -> Result<Self, Error<Ext2Error>> {
+        let device = fs.device.lock();
 
         let header = device.read_at::<Header>(starting_addr)?;
         let buffer = device.read_at::<[u8; 256]>(starting_addr + size_of::<Header>())?;

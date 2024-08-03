@@ -3,24 +3,24 @@
 //! It provides an interface to contenerize objects with the guarantee that the `clone` method is not expansive and the new celled
 //! object point to the same initial one;
 
-use alloc::rc::Rc;
-use core::cell::RefCell;
+use alloc::sync::Arc;
 
 use derive_more::{Deref, DerefMut};
+use spin::Mutex;
 
 /// Type alias for celled objects.
 #[derive(Debug, Deref, DerefMut)]
-pub struct Celled<T>(Rc<RefCell<T>>);
+pub struct Celled<T>(Arc<Mutex<T>>);
 
 impl<T> Clone for Celled<T> {
     fn clone(&self) -> Self {
-        Self(Rc::clone(&self.0))
+        Self(Arc::clone(&self.0))
     }
 }
 
 impl<T> Celled<T> {
     /// Creates a new celled object.
     pub fn new(obj: T) -> Self {
-        Self(Rc::new(RefCell::new(obj)))
+        Self(Arc::new(Mutex::new(obj)))
     }
 }

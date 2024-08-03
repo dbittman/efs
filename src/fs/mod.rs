@@ -16,6 +16,7 @@ use crate::permissions::Permissions;
 use crate::types::{Gid, Uid};
 
 pub mod error;
+pub mod structures;
 
 #[cfg(feature = "ext2")]
 pub mod ext2;

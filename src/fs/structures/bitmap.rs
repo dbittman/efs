@@ -7,9 +7,9 @@ use core::fmt::Debug;
 use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
 
-use super::celled::Celled;
-use super::sector::Address;
-use super::Device;
+use crate::celled::Celled;
+use crate::dev::sector::Address;
+use crate::dev::Device;
 use crate::error::Error;
 
 /// Generic bitmap structure.
@@ -52,7 +52,7 @@ impl<E: core::error::Error, T: Copy, Dev: Device<T, E>> Bitmap<T, E, Dev> {
     ///
     /// Returns an [`Error`] if the device cannot be read.
     pub fn new(celled_device: Celled<Dev>, starting_addr: Address, length: usize) -> Result<Self, Error<E>> {
-        let inner = celled_device.borrow().slice(starting_addr..(starting_addr + length))?.to_vec();
+        let inner = celled_device.lock().slice(starting_addr..(starting_addr + length))?.to_vec();
         Ok(Self {
             device: celled_device,
             inner,
@@ -80,7 +80,7 @@ impl<E: core::error::Error, T: Copy, Dev: Device<T, E>> Bitmap<T, E, Dev> {
     ///
     /// Returns an [`Error`] if the device cannot be written.
     pub fn write_back(&mut self) -> Result<(), Error<E>> {
-        let mut device = self.device.borrow_mut();
+        let mut device = self.device.lock();
         let mut slice = device.slice(self.starting_addr..(self.starting_addr + self.length))?;
         slice.clone_from_slice(&self.inner);
         let commit = slice.commit();
