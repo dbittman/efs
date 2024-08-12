@@ -85,8 +85,14 @@ pub enum Ext2Error {
     NonExistingInode(u32),
 
     /// `NotEnoughFreeBlocks(requested, available)`: Requested more free blocks than currently available.
-    #[display("Not Enough Free Blocks: requested {_0} free blocks while only {_1} are available")]
-    NotEnoughFreeBlocks(u32, u32),
+    #[display("Not Enough Free Blocks: requested {requested} free blocks while only {available} are available")]
+    NotEnoughFreeBlocks {
+        /// Number of requested blocks.
+        requested: u32,
+
+        /// Number of currently available blocks.
+        available: u32,
+    },
 
     /// Requested an inode while none is available.
     #[display("Not Enough Inodes: requested an inode but all inodes are in use")]

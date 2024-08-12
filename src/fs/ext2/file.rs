@@ -600,11 +600,12 @@ impl<Dev: Device<u8, Ext2Error>> Directory<Dev> {
             while accumulated_size < block_size {
                 let starting_addr =
                     Address::from(usize::try_from(u64::from(block) * block_size + accumulated_size).map_err(|_err| {
-                        Error::Device(DevError::OutOfBounds(
-                            "address",
-                            (u64::from(block) * block_size + accumulated_size).into(),
-                            (0_i128, fs.device.lock().size().0.into()),
-                        ))
+                        Error::Device(DevError::OutOfBounds {
+                            structure: "address",
+                            value: (u64::from(block) * block_size + accumulated_size).into(),
+                            lower_bound: 0_i128,
+                            upper_bound: fs.device.lock().size().0.into(),
+                        })
                     })?);
 
                 // SAFETY: `starting_addr` contains the beginning of an entry

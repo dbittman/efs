@@ -44,10 +44,14 @@ pub enum FsError<E: core::error::Error> {
     RemoveRefused,
 
     /// Tried to assign a wrong type to a file.
-    ///
-    /// `WrongFileType(expected, given)`
-    #[display("Wrong File Type: {_0:?} file type expected, {_1:?} given")]
-    WrongFileType(Type, Type),
+    #[display("Wrong File Type: {expected:?} file type expected, {given:?} given")]
+    WrongFileType {
+        /// Expected file type.
+        expected: Type,
+
+        /// Given file type.
+        given: Type,
+    },
 }
 
 impl<E: core::error::Error> core::error::Error for FsError<E> {}

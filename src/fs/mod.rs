@@ -217,7 +217,10 @@ pub trait FileSystem<Dir: Directory> {
             | TypeWithFile::CharacterDevice(_)
             | TypeWithFile::BlockDevice(_)
             | TypeWithFile::Socket(_) => {
-                return Err(Error::Fs(FsError::WrongFileType(Type::Directory, parent_dir_file.into())));
+                return Err(Error::Fs(FsError::WrongFileType {
+                    expected: Type::Directory,
+                    given: parent_dir_file.into(),
+                }));
             },
         };
 
@@ -254,7 +257,10 @@ pub trait FileSystem<Dir: Directory> {
             | TypeWithFile::CharacterDevice(_)
             | TypeWithFile::BlockDevice(_)
             | TypeWithFile::Socket(_) => {
-                return Err(Error::Fs(FsError::WrongFileType(Type::Directory, parent_dir_file.into())));
+                return Err(Error::Fs(FsError::WrongFileType {
+                    expected: Type::Directory,
+                    given: parent_dir_file.into(),
+                }));
             },
         };
 

@@ -212,12 +212,12 @@ pub trait Device<T: Copy, E: core::error::Error> {
 
     unsafe fn read_at<O: Copy>(&self, starting_addr: Address) -> Result<O, Error<E>> {
         let length = size_of::<O>();
-        let range = starting_addr
-            ..Address::forward_checked(starting_addr, length).ok_or(Error::Device(DevError::OutOfBounds(
-                "address",
-                i128::try_from(starting_addr.index() + length).unwrap_unchecked(),
-                (0, self.size().0.into()),
-            )))?;
+        let range = starting_addr..Address::forward_checked(starting_addr, length).ok_or(Error::Device(DevError::OutOfBounds {
+            structure: "address",
+            value: i128::try_from(starting_addr.index() + length).unwrap_unchecked(),
+            lower_bound: 0,
+            upper_bound: self.size().0.into(),
+        }))?;
         let slice = self.slice(range)?;
         let ptr = slice.inner.as_ptr();
         Ok(ptr.cast::<O>().read())
@@ -247,12 +247,12 @@ pub trait Device<T: Copy, E: core::error::Error> {
         assert!(length > 0, "Cannot write a 0-byte object on a device");
         let object_slice = slice::from_raw_parts(addr_of!(object).cast::<T>(), length / size_of::<T>());
 
-        let range = starting_addr
-            ..Address::forward_checked(starting_addr, length).ok_or(Error::Device(DevError::OutOfBounds(
-                "address",
-                i128::try_from(starting_addr.index() + length).unwrap_unchecked(),
-                (0, self.size().0.into()),
-            )))?;
+        let range = starting_addr..Address::forward_checked(starting_addr, length).ok_or(Error::Device(DevError::OutOfBounds {
+            structure: "address",
+            value: i128::try_from(starting_addr.index() + length).unwrap_unchecked(),
+            lower_bound: 0,
+            upper_bound: self.size().0.into(),
+        }))?;
         let mut device_slice = self.slice(range)?;
         let buffer = device_slice
             .get_mut(..)
@@ -282,12 +282,13 @@ macro_rules! impl_device {
                     // SAFETY: it is checked above that the wanted elements exist
                     Ok(Slice::new(unsafe { <Self as AsRef<[T]>>::as_ref(self).get_unchecked(range) }, addr_start))
                 } else {
-                    Err(Error::Device(DevError::OutOfBounds(
-                        "address",
+                    Err(Error::Device(DevError::OutOfBounds {
+                        structure: "address",
                         // SAFETY: it is assumed that `usize` can always be converted to `i128`
-                        unsafe { addr_range.end.index().try_into().unwrap_unchecked() },
-                        (0, <Self as Device<T, E>>::size(self).0.into()),
-                    )))
+                        value: unsafe { addr_range.end.index().try_into().unwrap_unchecked() },
+                        lower_bound: 0,
+                        upper_bound: <Self as Device<T, E>>::size(self).0.into(),
+                    }))
                 }
             }
 
@@ -301,12 +302,13 @@ macro_rules! impl_device {
 
                 let dest = &mut <Self as AsMut<[T]>>::as_mut(self).get_mut(addr_start..addr_end).ok_or_else(|| {
                     // SAFETY: `usize::MAX <= i128::MAX`
-                    Error::Device(DevError::OutOfBounds(
-                        "address",
+                    Error::Device(DevError::OutOfBounds {
+                        structure: "address",
                         // SAFETY: `usize::MAX <= i128::MAX`
-                        unsafe { addr_end.try_into().unwrap_unchecked() },
-                        (0, self_len),
-                    ))
+                        value: unsafe { addr_end.try_into().unwrap_unchecked() },
+                        lower_bound: 0,
+                        upper_bound: self_len,
+                    })
                 })?;
                 dest.clone_from_slice(&commit.as_ref());
                 Ok(())
@@ -332,12 +334,13 @@ impl<E: core::error::Error, T: Base<IOError = E> + Read + Write + Seek> Device<u
     fn slice(&self, addr_range: Range<Address>) -> Result<Slice<'_, u8>, Error<E>> {
         let starting_addr = addr_range.start;
         let len = TryInto::<usize>::try_into((addr_range.end - addr_range.start).index()).map_err(|_err| {
-            Error::Device(DevError::OutOfBounds(
-                "addr range",
+            Error::Device(DevError::OutOfBounds {
+                structure: "addr range",
                 // SAFETY: `usize::MAX <= i128::MAX`
-                unsafe { i128::try_from((addr_range.end - addr_range.start).index()).unwrap_unchecked() },
-                (0, i128::MAX),
-            ))
+                value: unsafe { i128::try_from((addr_range.end - addr_range.start).index()).unwrap_unchecked() },
+                lower_bound: 0,
+                upper_bound: i128::MAX,
+            })
         })?;
 
         let mut slice = alloc::vec![0; len];
@@ -372,12 +375,13 @@ impl<E: core::error::Error> Device<u8, E> for RefCell<File> {
 
         let starting_addr = addr_range.start;
         let len = TryInto::<usize>::try_into((addr_range.end - addr_range.start).index()).map_err(|_err| {
-            Error::Device(DevError::OutOfBounds(
-                "addr range",
+            Error::Device(DevError::OutOfBounds {
+                structure: "addr range",
                 // SAFETY: `usize::MAX <= i128::MAX`
-                unsafe { i128::try_from((addr_range.end - addr_range.start).index()).unwrap_unchecked() },
-                (0, i128::MAX),
-            ))
+                value: unsafe { i128::try_from((addr_range.end - addr_range.start).index()).unwrap_unchecked() },
+                lower_bound: 0,
+                upper_bound: i128::MAX,
+            })
         })?;
         let mut slice = alloc::vec![0; len];
         let file_size = Device::<u8, E>::size(self);
@@ -389,12 +393,13 @@ impl<E: core::error::Error> Device<u8, E> for RefCell<File> {
             Ok(()) => Ok(Slice::new_owned(slice, starting_addr)),
             Err(err) => {
                 if err.kind() == ErrorKind::UnexpectedEof {
-                    Err(Error::Device(DevError::OutOfBounds(
-                        "address",
+                    Err(Error::Device(DevError::OutOfBounds {
+                        structure: "address",
                         // SAFETY: `usize::MAX <= i128::MAX`
-                        unsafe { i128::try_from(usize::from(starting_addr + len)).unwrap_unchecked() },
-                        (0, file_size.0.into()),
-                    )))
+                        value: unsafe { i128::try_from(usize::from(starting_addr + len)).unwrap_unchecked() },
+                        lower_bound: 0,
+                        upper_bound: file_size.0.into(),
+                    }))
                 } else {
                     Err(Error::IO(err))
                 }

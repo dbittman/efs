@@ -296,10 +296,10 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
         }
 
         if n > self.superblock().base().free_blocks_count {
-            return Err(Error::Fs(FsError::Implementation(Ext2Error::NotEnoughFreeBlocks(
-                n,
-                self.superblock().base().free_blocks_count,
-            ))));
+            return Err(Error::Fs(FsError::Implementation(Ext2Error::NotEnoughFreeBlocks {
+                requested: n,
+                available: self.superblock().base().free_blocks_count,
+            })));
         }
 
         let total_block_group_count = self.superblock().base().block_group_count();
@@ -337,9 +337,10 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
         }
 
         // SAFETY: free_blocks.len() is smaller than n  which is a u32
-        Err(Error::Fs(FsError::Implementation(Ext2Error::NotEnoughFreeBlocks(n, unsafe {
-            free_blocks.len().try_into().unwrap_unchecked()
-        }))))
+        Err(Error::Fs(FsError::Implementation(Ext2Error::NotEnoughFreeBlocks {
+            requested: n,
+            available: unsafe { free_blocks.len().try_into().unwrap_unchecked() },
+        })))
     }
 
     /// Returns a [`Vec`] containing the block numbers of `n` free blocks.
@@ -702,7 +703,10 @@ impl<Dev: Device<u8, Ext2Error>> FileSystem<Directory<Dev>> for Celled<Ext2<Dev>
             | TypeWithFile::Fifo(_)
             | TypeWithFile::CharacterDevice(_)
             | TypeWithFile::BlockDevice(_)
-            | TypeWithFile::Socket(_) => Err(Error::Fs(FsError::WrongFileType(Type::Directory, root.into()))),
+            | TypeWithFile::Socket(_) => Err(Error::Fs(FsError::WrongFileType {
+                expected: Type::Directory,
+                given: root.into(),
+            })),
         })
     }
 
