@@ -651,9 +651,9 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
     pub fn deallocate_inode(&mut self, inode_number: u32) -> Result<(), Error<Ext2Error>> {
         let mut inode = self.inode(inode_number)?;
 
-        inode.links_count -= if inode.file_type()? == Type::Directory { 2 } else { 1 };
+        inode.links_count -= if inode.file_type().map_err(FsError::Implementation)? == Type::Directory { 2 } else { 1 };
         if inode.links_count == 0 {
-            let file_type = inode.file_type()?;
+            let file_type = inode.file_type().map_err(FsError::Implementation)?;
             if file_type == Type::Regular
                 || file_type == Type::Directory
                 || (file_type == Type::SymbolicLink && inode.data_size() >= SYMBOLIC_LINK_INODE_STORE_LIMIT as u64)
@@ -681,7 +681,7 @@ impl<Dev: Device<u8, Ext2Error>> Celled<Ext2<Dev>> {
         let filesystem = self.lock();
         let inode = filesystem.inode(inode_number)?;
         drop(filesystem);
-        match inode.file_type()? {
+        match inode.file_type().map_err(FsError::Implementation)? {
             Type::Regular => Ok(TypeWithFile::Regular(Regular::new(&self.clone(), inode_number)?)),
             Type::Directory => Ok(TypeWithFile::Directory(Directory::new(&self.clone(), inode_number)?)),
             Type::SymbolicLink => Ok(TypeWithFile::SymbolicLink(SymbolicLink::new(&self.clone(), inode_number)?)),
