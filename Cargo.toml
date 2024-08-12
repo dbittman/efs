@@ -12,6 +12,9 @@ license = "GPL-3.0"
 keywords = ["filesystem", "no-std"]
 categories = ["filesystem", "no-std"]
 
+[package.metadata.docs.rs]
+all-features = true
+
 [dependencies]
 bitflags = "2"
 derive_more = "0.99"
