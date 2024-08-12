@@ -2,7 +2,7 @@
 
 use core::fmt::Debug;
 use core::iter::Step;
-use core::ops::{Add, Mul, Sub};
+use core::ops::Mul;
 
 use derive_more::{Add, Deref, DerefMut, LowerHex, Sub};
 
