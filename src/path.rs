@@ -4,42 +4,30 @@ use alloc::borrow::{Cow, ToOwned};
 use alloc::ffi::CString;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
-use core::fmt::Display;
 use core::iter::FusedIterator;
 use core::str::FromStr;
 use core::{error, fmt};
 
+use derive_more::derive::Display;
 use once_cell::sync::Lazy;
 use regex::Regex;
 
 /// Enumeration of possible errors encountered with [`Path`]s' manipulation.
 #[allow(clippy::module_name_repetitions)]
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Display)]
+#[display("Path Error: {_variant}")]
 pub enum PathError {
     /// Indicates that the given path is relative while an absolute one is needed.
+    #[display("Invalid Filename: \"{_0}\" is either empty or contains a \"\0\" character")]
     AbsolutePathRequired(String),
 
     /// Indicates that a given [`CString`] is ill-formed and cannot be converted to a [`UnixStr`].
+    #[display("Invalid CString: \"{_0:?}\" is ill-formed")]
     InvalidCString(CString),
 
     /// Indicates that a given filename is either empty or contains a `\0` character.
+    #[display("Absolute Path Needed: \"{_0}\" is relative while an absolute path is requested")]
     InvalidFilename(String),
-}
-
-impl Display for PathError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::InvalidFilename(filename) => {
-                write!(formatter, "Invalid Filename: `{filename}` is either empty or contains a `\0` character")
-            },
-            Self::AbsolutePathRequired(path) => {
-                write!(formatter, "Absolute Path Needed: `{path}` is relative while an absolute path is requested")
-            },
-            Self::InvalidCString(str) => {
-                write!(formatter, "Invalid CString: `{str:?}` is ill-formed")
-            },
-        }
-    }
 }
 
 impl error::Error for PathError {}
@@ -47,7 +35,7 @@ impl error::Error for PathError {}
 /// A general structure to implement paths.
 ///
 /// A [`UnixStr`] cannot be empty nor contain `<NUL>` character ('\0')! It is guaranteed at creation time.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Display)]
 pub struct UnixStr<'path>(Cow<'path, str>);
 
 impl<'path> UnixStr<'path> {
@@ -100,12 +88,6 @@ impl FromStr for UnixStr<'_> {
     }
 }
 
-impl Display for UnixStr<'_> {
-    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(fmt, "{}", self.0)
-    }
-}
-
 impl TryFrom<CString> for UnixStr<'_> {
     type Error = <Self as FromStr>::Err;
 
@@ -140,7 +122,8 @@ impl<'path> From<Component<'path>> for UnixStr<'path> {
 /// to be the same as one `/`, except for the case of exactly two leading `/`.
 ///
 /// See [the POSIX definition](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap03.html#tag_03_271) for more information.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Display)]
+#[display("{}", self.as_unix_str())]
 #[cfg_attr(not(doc), repr(transparent))]
 pub struct Path<'path> {
     /// Inner representation of a bath by a [`UnixStr`].
@@ -406,12 +389,6 @@ impl FromStr for Path<'_> {
     }
 }
 
-impl Display for Path<'_> {
-    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(fmt, "{}", self.as_unix_str())
-    }
-}
-
 impl<'path> From<UnixStr<'path>> for Path<'path> {
     fn from(value: UnixStr<'path>) -> Self {
         Self { name: value }
@@ -505,27 +482,32 @@ enum State {
 /// A single component of a path.
 ///
 /// A Component roughly corresponds to a substring between path separators (`/`).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Display)]
 pub enum Component<'path> {
     /// The root directory component, appears before anything else.
     ///
     ///It represents a `/` that designates that a path starts from root.
+    #[display("/")]
     RootDir,
 
     /// The root directory component on its two-slashes version, appears before anything else.
     ///
     /// It represents `//` that designates that a path starts from the special root `//`.
+    #[display("//")]
     DoubleSlashRootDir,
 
     /// A reference to the current directory, i.e., `.`.
+    #[display(".")]
     CurDir,
 
     /// A reference to the parent directory, i.e., `..`.
+    #[display("..")]
     ParentDir,
 
     /// A normal component, e.g., `a` and `b` in `a/b`.
     ///
     /// This variant is the most common one, it represents references to files or directories.
+    #[display("{_0}")]
     Normal(UnixStr<'path>),
 }
 
@@ -540,18 +522,6 @@ impl FromStr for Component<'_> {
             "." => Ok(Self::CurDir),
             ".." => Ok(Self::ParentDir),
             _ => Ok(Self::Normal(UnixStr::from_str(str)?)),
-        }
-    }
-}
-
-impl Display for Component<'_> {
-    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Component::RootDir => write!(fmt, "/"),
-            Component::DoubleSlashRootDir => write!(fmt, "//"),
-            Component::CurDir => write!(fmt, "."),
-            Component::ParentDir => write!(fmt, ".."),
-            Component::Normal(filename) => write!(fmt, "{filename}"),
         }
     }
 }
@@ -822,7 +792,7 @@ impl FusedIterator for &mut Components<'_> {}
 
 impl ExactSizeIterator for &mut Components<'_> {}
 
-impl Display for Components<'_> {
+impl core::fmt::Display for Components<'_> {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         // SAFETY: at each step of the iteration over self, self.path remains a valid string
         write!(fmt, "{}", unsafe { String::from_utf8_unchecked(self.path.to_vec()) })

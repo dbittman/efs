@@ -296,10 +296,10 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
         }
 
         if n > self.superblock().base().free_blocks_count {
-            return Err(Error::Fs(FsError::Implementation(Ext2Error::NotEnoughFreeBlocks(
-                n,
-                self.superblock().base().free_blocks_count,
-            ))));
+            return Err(Error::Fs(FsError::Implementation(Ext2Error::NotEnoughFreeBlocks {
+                requested: n,
+                available: self.superblock().base().free_blocks_count,
+            })));
         }
 
         let total_block_group_count = self.superblock().base().block_group_count();
@@ -337,9 +337,10 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
         }
 
         // SAFETY: free_blocks.len() is smaller than n  which is a u32
-        Err(Error::Fs(FsError::Implementation(Ext2Error::NotEnoughFreeBlocks(n, unsafe {
-            free_blocks.len().try_into().unwrap_unchecked()
-        }))))
+        Err(Error::Fs(FsError::Implementation(Ext2Error::NotEnoughFreeBlocks {
+            requested: n,
+            available: unsafe { free_blocks.len().try_into().unwrap_unchecked() },
+        })))
     }
 
     /// Returns a [`Vec`] containing the block numbers of `n` free blocks.
@@ -651,9 +652,9 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
     pub fn deallocate_inode(&mut self, inode_number: u32) -> Result<(), Error<Ext2Error>> {
         let mut inode = self.inode(inode_number)?;
 
-        inode.links_count -= if inode.file_type()? == Type::Directory { 2 } else { 1 };
+        inode.links_count -= if inode.file_type().map_err(FsError::Implementation)? == Type::Directory { 2 } else { 1 };
         if inode.links_count == 0 {
-            let file_type = inode.file_type()?;
+            let file_type = inode.file_type().map_err(FsError::Implementation)?;
             if file_type == Type::Regular
                 || file_type == Type::Directory
                 || (file_type == Type::SymbolicLink && inode.data_size() >= SYMBOLIC_LINK_INODE_STORE_LIMIT as u64)
@@ -681,7 +682,7 @@ impl<Dev: Device<u8, Ext2Error>> Celled<Ext2<Dev>> {
         let filesystem = self.lock();
         let inode = filesystem.inode(inode_number)?;
         drop(filesystem);
-        match inode.file_type()? {
+        match inode.file_type().map_err(FsError::Implementation)? {
             Type::Regular => Ok(TypeWithFile::Regular(Regular::new(&self.clone(), inode_number)?)),
             Type::Directory => Ok(TypeWithFile::Directory(Directory::new(&self.clone(), inode_number)?)),
             Type::SymbolicLink => Ok(TypeWithFile::SymbolicLink(SymbolicLink::new(&self.clone(), inode_number)?)),
@@ -702,7 +703,10 @@ impl<Dev: Device<u8, Ext2Error>> FileSystem<Directory<Dev>> for Celled<Ext2<Dev>
             | TypeWithFile::Fifo(_)
             | TypeWithFile::CharacterDevice(_)
             | TypeWithFile::BlockDevice(_)
-            | TypeWithFile::Socket(_) => Err(Error::Fs(FsError::WrongFileType(Type::Directory, root.into()))),
+            | TypeWithFile::Socket(_) => Err(Error::Fs(FsError::WrongFileType {
+                expected: Type::Directory,
+                given: root.into(),
+            })),
         })
     }
 

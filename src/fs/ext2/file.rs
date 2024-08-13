@@ -303,8 +303,11 @@ impl<Dev: Device<u8, Ext2Error>> Write for File<Dev> {
         }
 
         // Calcul of the number of needed data blocks
-        let bytes_to_write =
-            if self.inode.file_type()? == Type::Regular { (buf_len as u64).max(MINIMAL_FILE_ALLOCATION) } else { buf_len as u64 };
+        let bytes_to_write = if self.inode.file_type().map_err(FsError::Implementation)? == Type::Regular {
+            (buf_len as u64).max(MINIMAL_FILE_ALLOCATION)
+        } else {
+            buf_len as u64
+        };
         let data_blocks_needed =
             // SAFETY: there are at most u32::MAX blocks on the filesystem
             1 + unsafe { u32::try_from((bytes_to_write + self.io_offset - 1) / block_size).unwrap_unchecked() };
@@ -433,7 +436,8 @@ impl<Dev: Device<u8, Ext2Error>> Seek for File<Dev> {
             SeekFrom::Start(offset) => self.io_offset = offset,
             SeekFrom::End(back_offset) => {
                 self.io_offset = TryInto::<u64>::try_into(file_length + back_offset)
-                    .map_err(|_err| Ext2Error::OutOfBounds(i128::from(file_length - back_offset)))?;
+                    .map_err(|_err| Ext2Error::OutOfBounds(i128::from(file_length - back_offset)))
+                    .map_err(FsError::Implementation)?;
             },
             SeekFrom::Current(add_offset) => {
                 // SAFETY: it is safe to assume that the file has a length smaller than 2^64 bytes.
@@ -444,7 +448,8 @@ impl<Dev: Device<u8, Ext2Error>> Seek for File<Dev> {
                             // SAFETY: it is safe to assume that the file has a length smaller than 2^64 bytes.
                             unsafe { TryInto::<i64>::try_into(previous_offset).unwrap_unchecked() } + add_offset,
                         ))
-                    })?;
+                    })
+                    .map_err(FsError::Implementation)?;
             },
         };
 
@@ -595,11 +600,12 @@ impl<Dev: Device<u8, Ext2Error>> Directory<Dev> {
             while accumulated_size < block_size {
                 let starting_addr =
                     Address::from(usize::try_from(u64::from(block) * block_size + accumulated_size).map_err(|_err| {
-                        Error::Device(DevError::OutOfBounds(
-                            "address",
-                            (u64::from(block) * block_size + accumulated_size).into(),
-                            (0_i128, fs.device.lock().size().0.into()),
-                        ))
+                        Error::Device(DevError::OutOfBounds {
+                            structure: "address",
+                            value: (u64::from(block) * block_size + accumulated_size).into(),
+                            lower_bound: 0_i128,
+                            upper_bound: fs.device.lock().size().0.into(),
+                        })
                     })?);
 
                 // SAFETY: `starting_addr` contains the beginning of an entry
@@ -904,7 +910,7 @@ impl<Dev: Device<u8, Ext2Error>> file::Directory for Directory<Dev> {
                                 } else {
                                     let fs = self.file.filesystem.lock();
                                     let sub_entry_inode = fs.inode(sub_entry.inode)?;
-                                    if sub_entry_inode.file_type()? == Type::Directory {
+                                    if sub_entry_inode.file_type().map_err(FsError::Implementation)? == Type::Directory {
                                         new_inode.links_count -= 1;
                                     }
                                     drop(fs);
@@ -964,10 +970,17 @@ impl<Dev: Device<u8, Ext2Error>> SymbolicLink<Dev> {
         } else {
             let _: usize = file.inode.read_data(&filesystem.lock(), &mut buffer, 0)?;
         }
-        let pointed_file = buffer.split(|char| *char == b'\0').next().ok_or(Ext2Error::BadString)?.to_vec();
+        let pointed_file = buffer
+            .split(|char| *char == b'\0')
+            .next()
+            .ok_or(Ext2Error::BadString)
+            .map_err(FsError::Implementation)?
+            .to_vec();
         Ok(Self {
             file,
-            pointed_file: String::from_utf8(pointed_file).map_err(|_err| Ext2Error::BadString)?,
+            pointed_file: String::from_utf8(pointed_file)
+                .map_err(|_err| Ext2Error::BadString)
+                .map_err(FsError::Implementation)?,
         })
     }
 }

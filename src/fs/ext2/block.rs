@@ -189,16 +189,17 @@ impl<Dev: Device<u8, Ext2Error>> Seek for Block<Dev> {
         let previous_offset = self.io_offset;
         match pos {
             SeekFrom::Start(offset) => {
-                self.io_offset = u32::try_from(offset).map_err(|_err| Ext2Error::OutOfBounds(offset.into()))?;
+                self.io_offset =
+                    u32::try_from(offset).map_err(|_err| FsError::Implementation(Ext2Error::OutOfBounds(offset.into())))?;
             },
             SeekFrom::End(back_offset) => {
                 self.io_offset = TryInto::<u32>::try_into(block_size - back_offset)
-                    .map_err(|_err| Ext2Error::OutOfBounds(i128::from(block_size - back_offset)))?;
+                    .map_err(|_err| FsError::Implementation(Ext2Error::OutOfBounds(i128::from(block_size - back_offset))))?;
             },
             SeekFrom::Current(add_offset) => {
-                self.io_offset = (i64::from(previous_offset) + add_offset)
-                    .try_into()
-                    .map_err(|_err| Ext2Error::OutOfBounds(i128::from(i64::from(previous_offset) + add_offset)))?;
+                self.io_offset = (i64::from(previous_offset) + add_offset).try_into().map_err(|_err| {
+                    FsError::Implementation(Ext2Error::OutOfBounds(i128::from(i64::from(previous_offset) + add_offset)))
+                })?;
             },
         };
 
