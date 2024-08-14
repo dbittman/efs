@@ -16,6 +16,7 @@ use super::directory::{self, Entry, FileType};
 use super::error::Ext2Error;
 use super::inode::{Inode, TypePermissions};
 use super::{Celled, Ext2};
+use crate::arch::{u32_to_usize, u64_to_usize, usize_to_u64};
 use crate::dev::error::DevError;
 use crate::dev::sector::Address;
 use crate::dev::Device;
@@ -172,18 +173,8 @@ impl<Dev: Device<u8, Ext2Error>> File<Dev> {
     /// # Errors
     ///
     /// Returns the same errors as [`Inode::read_data`].
-    ///
-    /// # Panics
-    ///
-    /// This function panics if the total size of the file cannot be loaded in RAM.
     pub fn read_all(&mut self) -> Result<Vec<u8>, Error<Ext2Error>> {
-        let mut buffer = vec![
-            0_u8;
-            self.inode
-                .data_size()
-                .try_into()
-                .expect("The size of the file's content is greater than the size representable on this computer.")
-        ];
+        let mut buffer = vec![0_u8; u64_to_usize(self.inode.data_size())];
         let previous_offset = self.seek(SeekFrom::Start(0))?;
         self.read(&mut buffer)?;
         self.seek(SeekFrom::Start(previous_offset))?;
@@ -224,8 +215,9 @@ impl<Dev: Device<u8, Ext2Error>> file::File for File<Dev> {
     }
 
     fn get_type(&self) -> file::Type {
-        // SAFETY: the file type as been checked during the inode's parse
-        unsafe { self.inode.file_type().unwrap_unchecked() }
+        self.inode.file_type().unwrap_or_else(|_| {
+            panic!("The inner inode with number {} is in an incoherent state: its file type is not valid", self.inode_number)
+        })
     }
 
     fn set_mode(&mut self, mode: Mode) -> Result<(), Error<Self::Error>> {
@@ -286,7 +278,7 @@ impl<Dev: Device<u8, Ext2Error>> Read for File<Dev> {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, Error<Self::IOError>> {
         let filesystem = self.filesystem.lock();
         self.inode.read_data(&filesystem, buf, self.io_offset).inspect(|&bytes| {
-            self.io_offset += bytes as u64;
+            self.io_offset += usize_to_u64(bytes);
         })
     }
 }
@@ -297,16 +289,16 @@ impl<Dev: Device<u8, Ext2Error>> Write for File<Dev> {
         let superblock = fs.superblock().clone();
         let block_size = u64::from(fs.superblock().block_size());
 
-        let buf_len = buf.len();
-        if buf_len as u64 > fs.superblock().max_file_size() {
-            return Err(Error::Fs(FsError::Implementation(Ext2Error::OutOfBounds(buf_len as i128))));
+        let buf_len = usize_to_u64(buf.len());
+        if buf_len > fs.superblock().max_file_size() {
+            return Err(Error::Fs(FsError::Implementation(Ext2Error::OutOfBounds(buf_len.into()))));
         }
 
         // Calcul of the number of needed data blocks
         let bytes_to_write = if self.inode.file_type().map_err(FsError::Implementation)? == Type::Regular {
-            (buf_len as u64).max(MINIMAL_FILE_ALLOCATION)
+            (buf_len).max(MINIMAL_FILE_ALLOCATION)
         } else {
-            buf_len as u64
+            buf_len
         };
         let data_blocks_needed =
             // SAFETY: there are at most u32::MAX blocks on the filesystem
@@ -352,7 +344,7 @@ impl<Dev: Device<u8, Ext2Error>> Write for File<Dev> {
         for (starting_index, (indirection_block, blocks)) in changed_blocks.changed_indirected_blocks() {
             let mut block = Block::new(self.filesystem.clone(), indirection_block);
             if starting_index != 0 {
-                block.seek(SeekFrom::Start(starting_index as u64))?;
+                block.seek(SeekFrom::Start(usize_to_u64(starting_index)))?;
             }
 
             // SAFETY: it is always possible to cast a u32 to 4 u8
@@ -372,9 +364,10 @@ impl<Dev: Device<u8, Ext2Error>> Write for File<Dev> {
 
         for block_number in changed_data_blocks_iterator {
             let mut block = Block::new(self.filesystem.clone(), *block_number);
-            let Some(buffer_end) =
-                buf.get(written_bytes..written_bytes + (superblock.base().blocks_per_group as usize).min(buf_len - written_bytes))
-            else {
+            let Some(buffer_end) = buf.get(
+                written_bytes
+                    ..written_bytes + u32_to_usize(superblock.base().blocks_per_group).min(u64_to_usize(buf_len) - written_bytes),
+            ) else {
                 break;
             };
 
@@ -404,7 +397,7 @@ impl<Dev: Device<u8, Ext2Error>> Write for File<Dev> {
         updated_inode.doubly_indirect_block_pointer = doubly_indirected_block_pointer.0;
         updated_inode.triply_indirect_block_pointer = triply_indirected_block_pointer.0;
 
-        let new_size = self.inode.data_size().max(self.io_offset + buf_len as u64);
+        let new_size = self.inode.data_size().max(self.io_offset + buf_len);
 
         // SAFETY: the result cannot be greater than `u32::MAX`
         updated_inode.size = unsafe { u32::try_from(new_size & u64::from(u32::MAX)).unwrap_unchecked() };
@@ -487,10 +480,6 @@ impl<Dev: Device<u8, Ext2Error>> Regular<Dev> {
     /// # Errors
     ///
     /// Returns the same errors as [`Inode::read_data`].
-    ///
-    /// # Panics
-    ///
-    /// This function panics if the total size of the file cannot be loaded in RAM.
     pub fn read_all(&mut self) -> Result<Vec<u8>, Error<Ext2Error>> {
         self.file.read_all()
     }
@@ -640,12 +629,12 @@ impl<Dev: Device<u8, Ext2Error>> Directory<Dev> {
     /// data block. Furthermore, `block_index` must be a valid index of `self.entries`.
     unsafe fn write_block_entry(&mut self, block_index: usize) -> Result<(), Error<Ext2Error>> {
         let block_size = u64::from(self.file.filesystem.lock().superblock().block_size());
-        self.file.seek(SeekFrom::Start((block_index as u64) * block_size))?;
+        self.file.seek(SeekFrom::Start(usize_to_u64(block_index) * block_size))?;
 
         let mut buffer = Vec::new();
         for entry in self.entries.lock().get_unchecked(block_index) {
             buffer.append(&mut entry.as_bytes().clone());
-            buffer.append(&mut vec![0_u8; entry.free_space() as usize]);
+            buffer.append(&mut vec![0_u8; u32_to_usize(entry.free_space().into())]);
         }
         self.file.write(&buffer)?;
 
@@ -744,8 +733,11 @@ impl<Dev: Device<u8, Ext2Error>> file::Directory for Directory<Dev> {
 
         for entry in self.entries.lock().iter().flatten() {
             entries.push(DirectoryEntry {
-                // SAFETY: it is checked at the entry creation that the name is a valid CString
-                filename: unsafe { entry.name.clone().try_into().unwrap_unchecked() },
+                filename: entry
+                    .name
+                    .clone()
+                    .try_into()
+                    .unwrap_or_else(|_| panic!("The entry with name {:?} is not a valid UTF-8 sequence", entry.name)),
                 file: self.file.filesystem.file(entry.inode)?,
             });
         }
@@ -876,7 +868,7 @@ impl<Dev: Device<u8, Ext2Error>> file::Directory for Directory<Dev> {
                     else {
                         self.entries.lock().remove(block_index);
                         let nb_entries = self.entries.lock().len();
-                        self.file.truncate(block_size * nb_entries as u64)?;
+                        self.file.truncate(block_size * usize_to_u64(nb_entries))?;
                     }
 
                     let block_len = block.len();
@@ -898,8 +890,9 @@ impl<Dev: Device<u8, Ext2Error>> file::Directory for Directory<Dev> {
                         let mut new_inode = self.file.inode;
                         let sub_entries = dir.entries.lock().clone().into_iter().flatten().collect_vec();
                         for sub_entry in sub_entries {
-                            // SAFETY: sub entry name has been checked at `dir` creation
-                            let sub_entry_name: UnixStr<'_> = unsafe { sub_entry.name.try_into().unwrap_unchecked() };
+                            let sub_entry_name: UnixStr<'_> = sub_entry.name.clone().try_into().unwrap_or_else(|_| {
+                                panic!("The entry with name {:?} is not a valid UTF-8 sequence", sub_entry.name)
+                            });
                             if sub_entry_name != *CUR_DIR && sub_entry_name != *PARENT_DIR {
                                 dir.remove_entry(sub_entry_name.clone())?;
 
@@ -1028,7 +1021,7 @@ impl<Dev: Device<u8, Ext2Error>> file::SymbolicLink for SymbolicLink<Dev> {
 
             self.file.seek(SeekFrom::Start(0))?;
             self.file.write(bytes)?;
-            self.file.truncate(bytes.len() as u64)?;
+            self.file.truncate(usize_to_u64(bytes.len()))?;
         } else {
             let mut new_inode = self.file.inode;
             // SAFETY: `bytes.len() < PATH_MAX << u32::MAX`
@@ -1103,6 +1096,7 @@ mod test {
 
     use itertools::Itertools;
 
+    use crate::arch::{u32_to_usize, usize_to_u64};
     use crate::dev::sector::Address;
     use crate::file::{Regular, SymbolicLink, Type, TypeWithFile};
     use crate::fs::ext2::directory::Entry;
@@ -1140,13 +1134,19 @@ mod test {
         let root_inode = Inode::parse(&fs, ROOT_DIRECTORY_INODE).unwrap();
 
         let dot = unsafe {
-            Entry::parse(&fs, Address::new((root_inode.direct_block_pointers[0] * fs.superblock().block_size()) as usize))
+            Entry::parse(
+                &fs,
+                Address::new(u32_to_usize(root_inode.direct_block_pointers[0]) * u32_to_usize(fs.superblock().block_size())),
+            )
         }
         .unwrap();
         let two_dots = unsafe {
             Entry::parse(
                 &fs,
-                Address::new((root_inode.direct_block_pointers[0] * fs.superblock().block_size()) as usize + dot.rec_len as usize),
+                Address::new(
+                    u32_to_usize(root_inode.direct_block_pointers[0]) * u32_to_usize(fs.superblock().block_size())
+                        + u32_to_usize(dot.rec_len.into()),
+                ),
             )
         }
         .unwrap();
@@ -1154,8 +1154,8 @@ mod test {
             Entry::parse(
                 &fs,
                 Address::new(
-                    (root_inode.direct_block_pointers[0] * fs.superblock().block_size()) as usize
-                        + (dot.rec_len + two_dots.rec_len) as usize,
+                    (u32_to_usize(root_inode.direct_block_pointers[0]) * u32_to_usize(fs.superblock().block_size()))
+                        + u32_to_usize((dot.rec_len + two_dots.rec_len).into()),
                 ),
             )
         }
@@ -1164,8 +1164,8 @@ mod test {
             Entry::parse(
                 &fs,
                 Address::new(
-                    (root_inode.direct_block_pointers[0] * fs.superblock().block_size()) as usize
-                        + (dot.rec_len + two_dots.rec_len + lost_and_found.rec_len) as usize,
+                    (u32_to_usize(root_inode.direct_block_pointers[0]) * u32_to_usize(fs.superblock().block_size()))
+                        + u32_to_usize((dot.rec_len + two_dots.rec_len + lost_and_found.rec_len).into()),
                 ),
             )
         }
@@ -1174,8 +1174,8 @@ mod test {
             Entry::parse(
                 &fs,
                 Address::new(
-                    (root_inode.direct_block_pointers[0] * fs.superblock().block_size()) as usize
-                        + (dot.rec_len + two_dots.rec_len + lost_and_found.rec_len + big_file.rec_len) as usize,
+                    (u32_to_usize(root_inode.direct_block_pointers[0]) * u32_to_usize(fs.superblock().block_size()))
+                        + u32_to_usize((dot.rec_len + two_dots.rec_len + lost_and_found.rec_len + big_file.rec_len).into()),
                 ),
             )
         }
@@ -1195,13 +1195,19 @@ mod test {
         let root_inode = Inode::parse(&fs, ROOT_DIRECTORY_INODE).unwrap();
 
         let dot = unsafe {
-            Entry::parse(&fs, Address::new((root_inode.direct_block_pointers[0] * fs.superblock().block_size()) as usize))
+            Entry::parse(
+                &fs,
+                Address::new(u32_to_usize(root_inode.direct_block_pointers[0]) * u32_to_usize(fs.superblock().block_size())),
+            )
         }
         .unwrap();
         let two_dots = unsafe {
             Entry::parse(
                 &fs,
-                Address::new((root_inode.direct_block_pointers[0] * fs.superblock().block_size()) as usize + dot.rec_len as usize),
+                Address::new(
+                    u32_to_usize(root_inode.direct_block_pointers[0]) * u32_to_usize(fs.superblock().block_size())
+                        + u32_to_usize(dot.rec_len.into()),
+                ),
             )
         }
         .unwrap();
@@ -1209,8 +1215,8 @@ mod test {
             Entry::parse(
                 &fs,
                 Address::new(
-                    (root_inode.direct_block_pointers[0] * fs.superblock().block_size()) as usize
-                        + (dot.rec_len + two_dots.rec_len) as usize,
+                    u32_to_usize(root_inode.direct_block_pointers[0]) * u32_to_usize(fs.superblock().block_size())
+                        + u32_to_usize((dot.rec_len + two_dots.rec_len).into()),
                 ),
             )
         }
@@ -1219,8 +1225,8 @@ mod test {
             Entry::parse(
                 &fs,
                 Address::new(
-                    (root_inode.direct_block_pointers[0] * fs.superblock().block_size()) as usize
-                        + (dot.rec_len + two_dots.rec_len + lost_and_found.rec_len) as usize,
+                    u32_to_usize(root_inode.direct_block_pointers[0]) * u32_to_usize(fs.superblock().block_size())
+                        + u32_to_usize((dot.rec_len + two_dots.rec_len + lost_and_found.rec_len).into()),
                 ),
             )
         }
@@ -1229,8 +1235,8 @@ mod test {
             Entry::parse(
                 &fs,
                 Address::new(
-                    (root_inode.direct_block_pointers[0] * fs.superblock().block_size()) as usize
-                        + (dot.rec_len + two_dots.rec_len + lost_and_found.rec_len + big_file.rec_len) as usize,
+                    u32_to_usize(root_inode.direct_block_pointers[0]) * u32_to_usize(fs.superblock().block_size())
+                        + u32_to_usize((dot.rec_len + two_dots.rec_len + lost_and_found.rec_len + big_file.rec_len).into()),
                 ),
             )
         }
@@ -1269,7 +1275,7 @@ mod test {
 
         for offset in 0_usize..1_024_usize {
             let mut buffer = [0_u8; 1_024];
-            big_file_inode.read_data(&fs, &mut buffer, (offset * 1_024) as u64).unwrap();
+            big_file_inode.read_data(&fs, &mut buffer, usize_to_u64(offset * 1_024)).unwrap();
 
             assert_eq!(buffer.iter().all_equal_value(), Ok(&1));
         }
@@ -1575,7 +1581,7 @@ mod test {
         foo.write(&replace_text).unwrap();
         foo.flush().unwrap();
 
-        assert_eq!(foo.file.inode.data_size(), BYTES_TO_WRITE as u64);
+        assert_eq!(foo.file.inode.data_size(), usize_to_u64(BYTES_TO_WRITE));
 
         foo.truncate(10000).unwrap();
 

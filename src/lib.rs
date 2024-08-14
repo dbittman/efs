@@ -359,6 +359,7 @@ extern crate core;
 #[cfg(feature = "std")]
 extern crate std;
 
+pub mod arch;
 pub mod cache;
 pub mod celled;
 pub mod dev;

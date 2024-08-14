@@ -10,6 +10,7 @@ use core::mem::size_of;
 
 use super::error::Ext2Error;
 use super::Ext2;
+use crate::arch::u32_to_usize;
 use crate::dev::sector::Address;
 use crate::dev::Device;
 use crate::error::Error;
@@ -159,7 +160,7 @@ impl Entry {
 
         // As after an inode has been removed then added with a different name the previous name is not rewritten entirely, it is
         // needed to add manually the `<NUL>` at the end of the vector.
-        let mut name = String::from_utf8(buffer.get_unchecked(..header.name_len as usize).to_vec())
+        let mut name = String::from_utf8(buffer.get_unchecked(..u32_to_usize(header.name_len.into())).to_vec())
             .map_err(|_err| Error::Fs(FsError::Implementation(Ext2Error::BadString)))?;
         name.push('\0');
         let c_name =

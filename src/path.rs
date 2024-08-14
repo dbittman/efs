@@ -738,7 +738,7 @@ impl<'path> Iterator for &mut Components<'path> {
             extra += 1;
         }
         if canonical_str.ends_with('/') {
-            // SAFETY: `canonical_str` begins with one '/'
+            // SAFETY: `canonical_str` ends with one '/'
             unsafe {
                 canonical_str = canonical_str.strip_suffix('/').unwrap_unchecked();
             };
@@ -810,7 +810,7 @@ impl<'path> From<Components<'path>> for Path<'path> {
         }
         // SAFETY: the rest of the path is a valid UTF-8 sequence
         let path = unsafe { Path::from_ut8_slice(comps.path) };
-        // SAFETY: `path` in not empty nor containing the `<NUL>`` character
+        // SAFETY: `path` in not empty nor containing the `<NUL>` character
         unsafe { path.unwrap_unchecked() }
     }
 }

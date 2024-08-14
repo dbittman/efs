@@ -7,6 +7,7 @@ use core::fmt::Debug;
 use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
 
+use crate::arch::u32_to_usize;
 use crate::celled::Celled;
 use crate::dev::sector::Address;
 use crate::dev::Device;
@@ -122,7 +123,7 @@ impl<E: core::error::Error, Dev: Device<u8, E>> Bitmap<u8, E, Dev> {
             let mut count = byte - ((byte >> 1_u8) & 0x55);
             count = (count & 0x33) + ((count >> 2_u8) & 0x33);
             count = (count + (count >> 4_u8)) & 0x0F;
-            count as usize
+            u32_to_usize(count.into())
         })
     }
 
@@ -134,7 +135,7 @@ impl<E: core::error::Error, Dev: Device<u8, E>> Bitmap<u8, E, Dev> {
             let mut count = byte - ((byte >> 1_u8) & 0x55);
             count = (count & 0x33) + ((count >> 2_u8) & 0x33);
             count = (count + (count >> 4_u8)) & 0x0F;
-            8 - count as usize
+            u32_to_usize(8_u32 - Into::<u32>::into(count))
         })
     }
 }

@@ -6,6 +6,12 @@ use core::ops::Mul;
 
 use derive_more::{Add, Deref, DerefMut, LowerHex, Sub};
 
+#[cfg(target_pointer_width = "32")]
+use crate::arch::usize_to_u32;
+#[cfg(target_pointer_width = "64")]
+use crate::arch::usize_to_u64;
+use crate::arch::{u32_to_usize, u64_to_usize};
+
 /// Address of a physical sector
 #[derive(Debug, Clone, Copy, PartialEq, Eq, LowerHex, PartialOrd, Ord, Deref, DerefMut, Add, Sub)]
 pub struct Address(usize);
@@ -41,19 +47,31 @@ impl From<Address> for usize {
     }
 }
 
-impl TryFrom<u64> for Address {
-    type Error = <usize as TryFrom<u64>>::Error;
-
-    fn try_from(index: u64) -> Result<Self, Self::Error> {
-        Ok(Self::from(TryInto::<usize>::try_into(index)?))
+#[cfg(any(target_pointer_width = "32", target_pointer_width = "64"))]
+impl From<u32> for Address {
+    fn from(value: u32) -> Self {
+        Self(u32_to_usize(value))
     }
 }
 
-impl TryFrom<u32> for Address {
-    type Error = <usize as TryFrom<u32>>::Error;
+#[cfg(target_pointer_width = "32")]
+impl From<Address> for u32 {
+    fn from(value: Address) -> Self {
+        usize_to_u32(value.0)
+    }
+}
 
-    fn try_from(index: u32) -> Result<Self, Self::Error> {
-        Ok(Self::from(TryInto::<usize>::try_into(index)?))
+#[cfg(any(target_pointer_width = "32", target_pointer_width = "64"))]
+impl From<u64> for Address {
+    fn from(value: u64) -> Self {
+        Self(u64_to_usize(value))
+    }
+}
+
+#[cfg(target_pointer_width = "64")]
+impl From<Address> for u64 {
+    fn from(value: Address) -> Self {
+        usize_to_u64(value.0)
     }
 }
 
