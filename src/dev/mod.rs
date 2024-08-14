@@ -435,6 +435,7 @@ mod test {
     use std::fs;
     use std::io::{Read, Seek};
 
+    use crate::arch::usize_to_u64;
     use crate::dev::sector::Address;
     use crate::dev::Device;
     use crate::tests::copy_file;
@@ -453,11 +454,7 @@ mod test {
     #[test]
     fn device_generic_read() {
         let mut device = vec![0_usize; 1024];
-        let mut slice = Device::<usize, std::io::Error>::slice(
-            &device,
-            Address::try_from(256_u64).unwrap()..Address::try_from(512_u64).unwrap(),
-        )
-        .unwrap();
+        let mut slice = Device::<usize, std::io::Error>::slice(&device, Address::from(256_u32)..Address::from(512_u32)).unwrap();
         slice.iter_mut().for_each(|element| *element = 1);
 
         let commit = slice.commit();
@@ -555,12 +552,12 @@ mod test {
 
         let mut device = vec![0_u8; 1024];
         unsafe {
-            Device::<u8, std::io::Error>::write_at(&mut device, Address::try_from(OFFSET).unwrap(), test).unwrap();
+            Device::<u8, std::io::Error>::write_at(&mut device, Address::from(OFFSET), test).unwrap();
         };
 
         let slice = Device::<u8, std::io::Error>::slice(
             &device,
-            Address::try_from(OFFSET).unwrap()..Address::try_from(OFFSET + size_of::<Test>() as u64).unwrap(),
+            Address::from(OFFSET)..Address::from(OFFSET + usize_to_u64(size_of::<Test>())),
         )
         .unwrap();
 

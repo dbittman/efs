@@ -115,6 +115,9 @@ pub mod file;
 pub mod inode;
 pub mod superblock;
 
+#[cfg(not(any(target_pointer_width = "32", target_pointer_width = "64")))]
+compile_error!("The ext2 feature cannot be enabled on architectures with pointer width other than 32 or 64 bits.");
+
 /// Type alias to reduce complexity in functions' types.
 #[allow(clippy::module_name_repetitions)]
 pub type Ext2TypeWithFile<Dev> = TypeWithFile<Directory<Dev>>;

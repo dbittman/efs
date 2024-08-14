@@ -547,13 +547,9 @@ impl Inode {
         let inode_table_starting_block = block_group_descriptor.inode_table;
         let index = Self::group_index(fs.superblock(), n);
 
-        // SAFETY: it is assumed that `u16::MAX <= usize::MAX`
-        Ok(unsafe {
-            Address::try_from(
-                inode_table_starting_block * fs.superblock().block_size() + index * u32::from(fs.superblock().inode_size()),
-            )
-            .unwrap_unchecked()
-        })
+        Ok(Address::from(
+            inode_table_starting_block * fs.superblock().block_size() + index * u32::from(fs.superblock().inode_size()),
+        ))
     }
 
     /// Parses the `n`th inode from the given device (starting at **1**).

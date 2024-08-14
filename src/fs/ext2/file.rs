@@ -16,6 +16,7 @@ use super::directory::{self, Entry, FileType};
 use super::error::Ext2Error;
 use super::inode::{Inode, TypePermissions};
 use super::{Celled, Ext2};
+use crate::arch::u64_to_usize;
 use crate::dev::error::DevError;
 use crate::dev::sector::Address;
 use crate::dev::Device;
@@ -172,18 +173,8 @@ impl<Dev: Device<u8, Ext2Error>> File<Dev> {
     /// # Errors
     ///
     /// Returns the same errors as [`Inode::read_data`].
-    ///
-    /// # Panics
-    ///
-    /// This function panics if the total size of the file cannot be loaded in RAM.
     pub fn read_all(&mut self) -> Result<Vec<u8>, Error<Ext2Error>> {
-        let mut buffer = vec![
-            0_u8;
-            self.inode
-                .data_size()
-                .try_into()
-                .expect("The size of the file's content is greater than the size representable on this computer.")
-        ];
+        let mut buffer = vec![0_u8; u64_to_usize(self.inode.data_size())];
         let previous_offset = self.seek(SeekFrom::Start(0))?;
         self.read(&mut buffer)?;
         self.seek(SeekFrom::Start(previous_offset))?;
@@ -487,10 +478,6 @@ impl<Dev: Device<u8, Ext2Error>> Regular<Dev> {
     /// # Errors
     ///
     /// Returns the same errors as [`Inode::read_data`].
-    ///
-    /// # Panics
-    ///
-    /// This function panics if the total size of the file cannot be loaded in RAM.
     pub fn read_all(&mut self) -> Result<Vec<u8>, Error<Ext2Error>> {
         self.file.read_all()
     }
