@@ -16,6 +16,7 @@ use std::io::ErrorKind;
 
 use self::sector::Address;
 use self::size::Size;
+use crate::arch::usize_to_u64;
 use crate::dev::error::DevError;
 use crate::error::Error;
 use crate::io::{Base, Read, Seek, SeekFrom, Write};
@@ -214,7 +215,7 @@ pub trait Device<T: Copy, E: core::error::Error> {
         let length = size_of::<O>();
         let range = starting_addr..Address::forward_checked(starting_addr, length).ok_or(Error::Device(DevError::OutOfBounds {
             structure: "address",
-            value: i128::try_from(starting_addr.index() + length).unwrap_unchecked(),
+            value: usize_to_u64(starting_addr.index() + length).into(),
             lower_bound: 0,
             upper_bound: self.size().0.into(),
         }))?;
@@ -249,7 +250,7 @@ pub trait Device<T: Copy, E: core::error::Error> {
 
         let range = starting_addr..Address::forward_checked(starting_addr, length).ok_or(Error::Device(DevError::OutOfBounds {
             structure: "address",
-            value: i128::try_from(starting_addr.index() + length).unwrap_unchecked(),
+            value: usize_to_u64(starting_addr.index() + length).into(),
             lower_bound: 0,
             upper_bound: self.size().0.into(),
         }))?;
@@ -269,23 +270,19 @@ macro_rules! impl_device {
     ($volume:ty) => {
         impl<T: Copy, E: core::error::Error> Device<T, E> for $volume {
             fn size(&self) -> Size {
-                Size(self.len() as u64)
+                Size(usize_to_u64(self.len()))
             }
 
             fn slice(&self, addr_range: Range<Address>) -> Result<Slice<'_, T>, Error<E>> {
-                if Device::<T, E>::size(self) >= usize::from(addr_range.end) as u64 {
+                if Device::<T, E>::size(self) >= usize_to_u64(usize::from(addr_range.end)) {
                     let addr_start = addr_range.start;
-                    // SAFETY: it is not possible to manipulate addresses with a higher bit number than the device's
-                    let range = unsafe { usize::try_from(addr_range.start.index()).unwrap_unchecked() }..unsafe {
-                        usize::try_from(addr_range.end.index()).unwrap_unchecked()
-                    };
+                    let range = addr_range.start.index()..addr_range.end.index();
                     // SAFETY: it is checked above that the wanted elements exist
                     Ok(Slice::new(unsafe { <Self as AsRef<[T]>>::as_ref(self).get_unchecked(range) }, addr_start))
                 } else {
                     Err(Error::Device(DevError::OutOfBounds {
                         structure: "address",
-                        // SAFETY: it is assumed that `usize` can always be converted to `i128`
-                        value: unsafe { addr_range.end.index().try_into().unwrap_unchecked() },
+                        value: usize_to_u64(addr_range.end.index()).into(),
                         lower_bound: 0,
                         upper_bound: <Self as Device<T, E>>::size(self).0.into(),
                     }))
@@ -293,19 +290,16 @@ macro_rules! impl_device {
             }
 
             fn commit(&mut self, commit: Commit<T>) -> Result<(), Error<E>> {
-                // SAFETY: it is safe to assume that the given `slice` as a length smaller than `usize::MAX`
-                let addr_start = unsafe { usize::try_from(commit.addr().index()).unwrap_unchecked() };
+                let addr_start = commit.addr().index();
                 let addr_end = addr_start + commit.as_ref().len();
 
-                // SAFETY: it is safe to assume that `usize::MAX < i128::MAX`
-                let self_len = unsafe { self.len().try_into().unwrap_unchecked() };
+                let self_len = usize_to_u64(self.len()).into();
 
                 let dest = &mut <Self as AsMut<[T]>>::as_mut(self).get_mut(addr_start..addr_end).ok_or_else(|| {
                     // SAFETY: `usize::MAX <= i128::MAX`
                     Error::Device(DevError::OutOfBounds {
                         structure: "address",
-                        // SAFETY: `usize::MAX <= i128::MAX`
-                        value: unsafe { addr_end.try_into().unwrap_unchecked() },
+                        value: usize_to_u64(addr_end).into(),
                         lower_bound: 0,
                         upper_bound: self_len,
                     })
@@ -336,8 +330,7 @@ impl<E: core::error::Error, T: Base<IOError = E> + Read + Write + Seek> Device<u
         let len = TryInto::<usize>::try_into((addr_range.end - addr_range.start).index()).map_err(|_err| {
             Error::Device(DevError::OutOfBounds {
                 structure: "addr range",
-                // SAFETY: `usize::MAX <= i128::MAX`
-                value: unsafe { i128::try_from((addr_range.end - addr_range.start).index()).unwrap_unchecked() },
+                value: usize_to_u64((addr_range.end - addr_range.start).index()).into(),
                 lower_bound: 0,
                 upper_bound: i128::MAX,
             })
@@ -378,7 +371,7 @@ impl<E: core::error::Error> Device<u8, E> for RefCell<File> {
             Error::Device(DevError::OutOfBounds {
                 structure: "addr range",
                 // SAFETY: `usize::MAX <= i128::MAX`
-                value: unsafe { i128::try_from((addr_range.end - addr_range.start).index()).unwrap_unchecked() },
+                value: usize_to_u64((addr_range.end - addr_range.start).index()).into(),
                 lower_bound: 0,
                 upper_bound: i128::MAX,
             })
@@ -395,8 +388,7 @@ impl<E: core::error::Error> Device<u8, E> for RefCell<File> {
                 if err.kind() == ErrorKind::UnexpectedEof {
                     Err(Error::Device(DevError::OutOfBounds {
                         structure: "address",
-                        // SAFETY: `usize::MAX <= i128::MAX`
-                        value: unsafe { i128::try_from(usize::from(starting_addr + len)).unwrap_unchecked() },
+                        value: usize_to_u64(usize::from(starting_addr + len)).into(),
                         lower_bound: 0,
                         upper_bound: file_size.0.into(),
                     }))

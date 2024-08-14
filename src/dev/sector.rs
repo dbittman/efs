@@ -8,7 +8,9 @@ use derive_more::{Add, Deref, DerefMut, LowerHex, Sub};
 
 #[cfg(target_pointer_width = "32")]
 use crate::arch::usize_to_u32;
-use crate::arch::{u32_to_usize, u64_to_usize, usize_to_u64};
+#[cfg(target_pointer_width = "64")]
+use crate::arch::usize_to_u64;
+use crate::arch::{u32_to_usize, u64_to_usize};
 
 /// Address of a physical sector
 #[derive(Debug, Clone, Copy, PartialEq, Eq, LowerHex, PartialOrd, Ord, Deref, DerefMut, Add, Sub)]

@@ -6,6 +6,8 @@ use alloc::vec::Vec;
 
 use itertools::Itertools;
 
+use crate::arch::u32_to_usize;
+
 /// Block indirections.
 ///
 /// See [*The Second Extended Filesystem* book](https://www.nongnu.org/ext2-doc/ext2.html#i-block) for more information.
@@ -47,13 +49,13 @@ trait Indirected {
 
 impl Indirected for DirectBlocks {
     fn resolve_indirection(&self, offset: u32, _blocks_per_indirection: u32) -> Option<u32> {
-        self.get(offset as usize).copied()
+        self.get(u32_to_usize(offset)).copied()
     }
 }
 
 impl Indirected for SimpleIndirection {
     fn resolve_indirection(&self, offset: u32, _blocks_per_indirection: u32) -> Option<u32> {
-        self.1.get(offset as usize).copied()
+        self.1.get(u32_to_usize(offset)).copied()
     }
 }
 
@@ -61,7 +63,7 @@ impl Indirected for DoubleIndirection {
     fn resolve_indirection(&self, offset: u32, blocks_per_indirection: u32) -> Option<u32> {
         let double_indirection_index = offset / blocks_per_indirection;
         let simple_indirection_index = offset % blocks_per_indirection;
-        self.1.get(double_indirection_index as usize).and_then(|simple_indirection_block| {
+        self.1.get(u32_to_usize(double_indirection_index)).and_then(|simple_indirection_block| {
             simple_indirection_block
                 .1
                 .resolve_indirection(simple_indirection_index, blocks_per_indirection)
@@ -73,7 +75,7 @@ impl Indirected for TripleIndirection {
     fn resolve_indirection(&self, offset: u32, blocks_per_indirection: u32) -> Option<u32> {
         let triple_indirection_index = offset / (blocks_per_indirection * blocks_per_indirection);
         let double_indirection_index = offset % (blocks_per_indirection * blocks_per_indirection);
-        self.1.get(triple_indirection_index as usize).and_then(|double_indirection_block| {
+        self.1.get(u32_to_usize(triple_indirection_index)).and_then(|double_indirection_block| {
             double_indirection_block.resolve_indirection(double_indirection_index, blocks_per_indirection)
         })
     }
@@ -137,7 +139,7 @@ impl<const DBPC: u32> IndirectedBlocks<DBPC> {
     #[must_use]
     pub fn flatten_data_blocks_with_indirection(&self) -> Vec<(u32, (Indirection, u32))> {
         let block_with_indirection = |indirection| {
-            // SAFETY: the total number of blocks is stocked on a u32
+            // SAFETY: the total number of blocks is stored on a u32
             move |(index, block): (usize, &u32)| (*block, (indirection, unsafe { u32::try_from(index).unwrap_unchecked() }))
         };
 
@@ -173,10 +175,10 @@ impl<const DBPC: u32> IndirectedBlocks<DBPC> {
                                 *block,
                                 (
                                     Indirection::Double,
-                                    // SAFETY: the total number of blocks is stocked on a u32
+                                    // SAFETY: the total number of blocks is stored on a u32
                                     unsafe { u32::try_from(simple_indirection_index).unwrap_unchecked() }
                                         * self.blocks_per_indirection
-                                        // SAFETY: the total number of blocks is stocked on a u32
+                                        // SAFETY: the total number of blocks is stored on a u32
                                         + unsafe { u32::try_from(index).unwrap_unchecked() },
                                 ),
                             )
@@ -205,14 +207,14 @@ impl<const DBPC: u32> IndirectedBlocks<DBPC> {
                                         *block,
                                         (
                                             Indirection::Triple,
-                                            // SAFETY: the total number of blocks is stocked on a u32
+                                            // SAFETY: the total number of blocks is stored on a u32
                                             unsafe { u32::try_from(double_indirection_index).unwrap_unchecked() }
                                                 * self.blocks_per_indirection
                                                 * self.blocks_per_indirection
-                                                // SAFETY: the total number of blocks is stocked on a u32
+                                                // SAFETY: the total number of blocks is stored on a u32
                                                 + unsafe { u32::try_from(simple_indirection_index).unwrap_unchecked() }
                                                     * self.blocks_per_indirection
-                                                    // SAFETY: the total number of blocks is stocked on a u32
+                                                    // SAFETY: the total number of blocks is stored on a u32
                                                     + unsafe { u32::try_from(index).unwrap_unchecked() },
                                         ),
                                     )
@@ -420,13 +422,13 @@ impl<const DBPC: u32> IndirectedBlocks<DBPC> {
     ///
     /// If more blocks than necessary to complete all the structure, only the first one will be used.
     pub fn append_blocks(&mut self, blocks: &[u32]) {
-        let blocks_per_indirection = self.blocks_per_indirection as usize;
+        let blocks_per_indirection = u32_to_usize(self.blocks_per_indirection);
 
         let blocks_iterator = &mut blocks.iter();
 
-        if self.direct_blocks.len() < DBPC as usize {
+        if self.direct_blocks.len() < u32_to_usize(DBPC) {
             self.direct_blocks
-                .append(&mut blocks_iterator.take(DBPC as usize - self.direct_blocks.len()).copied().collect_vec());
+                .append(&mut blocks_iterator.take(u32_to_usize(DBPC) - self.direct_blocks.len()).copied().collect_vec());
         }
 
         if self.singly_indirected_blocks.0 == 0 {
@@ -534,7 +536,7 @@ impl<const DBPC: u32> IndirectedBlocks<DBPC> {
         }
 
         if n <= DBPC {
-            self.direct_blocks.drain(n as usize..);
+            self.direct_blocks.drain(u32_to_usize(n)..);
             self.singly_indirected_blocks = (0, Vec::new());
             self.doubly_indirected_blocks = (0, Vec::new());
             self.triply_indirected_blocks = (0, Vec::new());
@@ -544,7 +546,7 @@ impl<const DBPC: u32> IndirectedBlocks<DBPC> {
         n -= DBPC;
 
         if n <= self.blocks_per_indirection {
-            self.singly_indirected_blocks.1.drain(n as usize..);
+            self.singly_indirected_blocks.1.drain(u32_to_usize(n)..);
             self.doubly_indirected_blocks = (0, Vec::new());
             self.triply_indirected_blocks = (0, Vec::new());
             return;
@@ -553,12 +555,12 @@ impl<const DBPC: u32> IndirectedBlocks<DBPC> {
         n -= self.blocks_per_indirection;
 
         if n <= self.blocks_per_indirection * self.blocks_per_indirection {
-            if let Some((_, blocks)) = self.doubly_indirected_blocks.1.get_mut((n / self.blocks_per_indirection) as usize) {
-                blocks.drain((n % self.blocks_per_indirection) as usize..);
+            if let Some((_, blocks)) = self.doubly_indirected_blocks.1.get_mut(u32_to_usize(n / self.blocks_per_indirection)) {
+                blocks.drain(u32_to_usize(n % self.blocks_per_indirection)..);
             }
             self.doubly_indirected_blocks
                 .1
-                .drain(((n - 1) / self.blocks_per_indirection) as usize + 1..);
+                .drain(u32_to_usize((n - 1) / self.blocks_per_indirection) + 1..);
             self.triply_indirected_blocks = (0, Vec::new());
             return;
         }
@@ -568,16 +570,16 @@ impl<const DBPC: u32> IndirectedBlocks<DBPC> {
         if let Some((_, indirected_blocks)) = self
             .triply_indirected_blocks
             .1
-            .get_mut(((n / self.blocks_per_indirection) / self.blocks_per_indirection) as usize)
+            .get_mut(u32_to_usize((n / self.blocks_per_indirection) / self.blocks_per_indirection))
         {
-            if let Some((_, blocks)) = indirected_blocks.get_mut((n / self.blocks_per_indirection) as usize) {
-                blocks.drain((n % self.blocks_per_indirection) as usize..);
+            if let Some((_, blocks)) = indirected_blocks.get_mut(u32_to_usize(n / self.blocks_per_indirection)) {
+                blocks.drain(u32_to_usize(n % self.blocks_per_indirection)..);
             }
-            indirected_blocks.drain(((n - 1) / self.blocks_per_indirection) as usize + 1..);
+            indirected_blocks.drain(u32_to_usize((n - 1) / self.blocks_per_indirection) + 1..);
         }
         self.triply_indirected_blocks
             .1
-            .drain((((n - 1) / self.blocks_per_indirection) / self.blocks_per_indirection) as usize + 1..);
+            .drain(u32_to_usize(((n - 1) / self.blocks_per_indirection) / self.blocks_per_indirection) + 1..);
     }
 
     /// Truncates the start of the indirected blocks at the `n`th data block (excluded).
@@ -596,8 +598,8 @@ impl<const DBPC: u32> IndirectedBlocks<DBPC> {
         };
 
         if n < DBPC {
-            symmetric_difference.direct_blocks.0 = n as usize;
-            symmetric_difference.direct_blocks.1.drain(..n as usize);
+            symmetric_difference.direct_blocks.0 = u32_to_usize(n);
+            symmetric_difference.direct_blocks.1.drain(..u32_to_usize(n));
             return symmetric_difference;
         }
 
@@ -605,8 +607,8 @@ impl<const DBPC: u32> IndirectedBlocks<DBPC> {
         n -= DBPC;
 
         if n < blocks_per_indirection {
-            symmetric_difference.singly_indirected_blocks.0 = n as usize;
-            symmetric_difference.singly_indirected_blocks.1.1.drain(..n as usize);
+            symmetric_difference.singly_indirected_blocks.0 = u32_to_usize(n);
+            symmetric_difference.singly_indirected_blocks.1.1.drain(..u32_to_usize(n));
             return symmetric_difference;
         }
 
@@ -614,14 +616,14 @@ impl<const DBPC: u32> IndirectedBlocks<DBPC> {
         n -= blocks_per_indirection;
 
         if n < blocks_per_indirection * blocks_per_indirection {
-            symmetric_difference.doubly_indirected_blocks.0 = n as usize;
+            symmetric_difference.doubly_indirected_blocks.0 = u32_to_usize(n);
             symmetric_difference
                 .doubly_indirected_blocks
                 .1
                 .1
-                .drain(..(n / blocks_per_indirection) as usize);
+                .drain(..u32_to_usize(n / blocks_per_indirection));
             if let Some((_, blocks)) = symmetric_difference.doubly_indirected_blocks.1.1.first_mut() {
-                blocks.drain(..(n % blocks_per_indirection) as usize);
+                blocks.drain(..u32_to_usize(n % blocks_per_indirection));
             }
 
             return symmetric_difference;
@@ -631,17 +633,17 @@ impl<const DBPC: u32> IndirectedBlocks<DBPC> {
         n -= blocks_per_indirection * blocks_per_indirection;
 
         if n < blocks_per_indirection * blocks_per_indirection * blocks_per_indirection {
-            symmetric_difference.triply_indirected_blocks.0 = n as usize;
+            symmetric_difference.triply_indirected_blocks.0 = u32_to_usize(n);
             symmetric_difference
                 .triply_indirected_blocks
                 .1
                 .1
-                .drain(..((n / blocks_per_indirection) / blocks_per_indirection) as usize);
+                .drain(..u32_to_usize((n / blocks_per_indirection) / blocks_per_indirection));
             if let Some((_, indirected_blocks)) = symmetric_difference.triply_indirected_blocks.1.1.first_mut() {
                 indirected_blocks
-                    .drain(..((n % (blocks_per_indirection * blocks_per_indirection)) / blocks_per_indirection) as usize);
+                    .drain(..u32_to_usize((n % (blocks_per_indirection * blocks_per_indirection)) / blocks_per_indirection));
                 if let Some((_, blocks)) = indirected_blocks.first_mut() {
-                    blocks.drain(..(n % blocks_per_indirection) as usize);
+                    blocks.drain(..u32_to_usize(n % blocks_per_indirection));
                 }
             }
             return symmetric_difference;
@@ -688,7 +690,7 @@ impl<const DBPC: u32> IndirectedBlocks<DBPC> {
             },
         };
 
-        let index = last_index as usize;
+        let index = u32_to_usize(last_index);
 
         let mut indirection = self.clone();
         indirection.append_blocks(blocks);
@@ -714,14 +716,14 @@ impl<const DBPC: u32> IndirectedBlocks<DBPC> {
                 indirection.doubly_indirected_blocks.1 = indirection
                     .doubly_indirected_blocks
                     .1
-                    .get((last_index / self.blocks_per_indirection) as usize..)
+                    .get(u32_to_usize(last_index / self.blocks_per_indirection)..)
                     .map(<[_]>::to_vec)
                     .unwrap_or_default();
 
                 if let Some(simple_block_indirection) = indirection.doubly_indirected_blocks.1.first_mut() {
                     simple_block_indirection.1 = simple_block_indirection
                         .1
-                        .get((last_index % self.blocks_per_indirection) as usize..)
+                        .get(u32_to_usize(last_index % self.blocks_per_indirection)..)
                         .map(<[_]>::to_vec)
                         .unwrap_or_default();
                     if simple_block_indirection.1.is_empty() {
@@ -739,7 +741,7 @@ impl<const DBPC: u32> IndirectedBlocks<DBPC> {
                 indirection.triply_indirected_blocks.1 = indirection
                     .triply_indirected_blocks
                     .1
-                    .get((last_index / (self.blocks_per_indirection * self.blocks_per_indirection)) as usize..)
+                    .get(u32_to_usize(last_index / (self.blocks_per_indirection * self.blocks_per_indirection))..)
                     .map(<[_]>::to_vec)
                     .unwrap_or_default();
 
@@ -750,8 +752,10 @@ impl<const DBPC: u32> IndirectedBlocks<DBPC> {
                         double_block_indirection.1 = double_block_indirection
                             .1
                             .get(
-                                ((last_index % (self.blocks_per_indirection * self.blocks_per_indirection))
-                                    / self.blocks_per_indirection) as usize..,
+                                u32_to_usize(
+                                    (last_index % (self.blocks_per_indirection * self.blocks_per_indirection))
+                                        / self.blocks_per_indirection,
+                                )..,
                             )
                             .map(<[_]>::to_vec)
                             .unwrap_or_default();
@@ -762,7 +766,7 @@ impl<const DBPC: u32> IndirectedBlocks<DBPC> {
                             } else {
                                 simple_block_indirection.1 = simple_block_indirection
                                     .1
-                                    .get((last_index % self.blocks_per_indirection) as usize..)
+                                    .get(u32_to_usize(last_index % self.blocks_per_indirection)..)
                                     .map(<[_]>::to_vec)
                                     .unwrap_or_default();
                             }
@@ -772,7 +776,7 @@ impl<const DBPC: u32> IndirectedBlocks<DBPC> {
             },
         }
 
-        let starting_index = |indirect| if last_indirection == indirect { last_index as usize } else { 0 };
+        let starting_index = |indirect| if last_indirection == indirect { u32_to_usize(last_index) } else { 0 };
 
         (untouched_indirection, SymmetricDifference {
             blocks_per_indirection: indirection.blocks_per_indirection,
@@ -841,7 +845,7 @@ impl<const DBPC: u32> SymmetricDifference<DBPC> {
     /// All blocks, **starting at the first non-zero block** to the end, should be considered as being changed.
     #[must_use]
     pub fn changed_indirected_blocks(&self) -> Vec<(usize, (u32, Vec<u32>))> {
-        let blocks_per_indirection = self.blocks_per_indirection as usize;
+        let blocks_per_indirection = u32_to_usize(self.blocks_per_indirection);
 
         let mut indirected_blocks = Vec::new();
 

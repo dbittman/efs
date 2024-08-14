@@ -100,6 +100,7 @@ use self::inode::{Flags, Inode, TypePermissions, ROOT_DIRECTORY_INODE};
 use self::superblock::{ReadOnlyFeatures, RequiredFeatures, Superblock, SUPERBLOCK_START_BYTE};
 use super::structures::bitmap::Bitmap;
 use super::FileSystem;
+use crate::arch::{u32_to_usize, usize_to_u64};
 use crate::celled::Celled;
 use crate::dev::sector::Address;
 use crate::dev::Device;
@@ -278,8 +279,8 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
         let superblock = self.superblock();
 
         let block_group_descriptor = BlockGroupDescriptor::parse(self, block_group_number)?;
-        let starting_addr = Address::new((block_group_descriptor.block_bitmap * superblock.block_size()) as usize);
-        let length = (superblock.base().blocks_per_group / 8) as usize;
+        let starting_addr = Address::new(u32_to_usize(block_group_descriptor.block_bitmap) * u32_to_usize(superblock.block_size()));
+        let length = u32_to_usize(superblock.base().blocks_per_group / 8);
 
         Bitmap::new(self.device.clone(), starting_addr, length)
     }
@@ -315,7 +316,7 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
             let block_group_descriptor = BlockGroupDescriptor::parse(self, block_group_count)?;
             if block_group_descriptor.free_blocks_count > 0 {
                 let bitmap = self.get_block_bitmap(block_group_count)?;
-                let group_free_block_index = bitmap.find_n_unset_bits(n as usize);
+                let group_free_block_index = bitmap.find_n_unset_bits(u32_to_usize(n));
 
                 for (index, byte) in group_free_block_index {
                     // SAFETY: a block size is usually at most thousands of bytes, which is smaller than `u32::MAX`
@@ -330,7 +331,7 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
                                     + self.superblock().base().first_data_block,
                             );
 
-                            if free_blocks.len() as u64 == u64::from(n) {
+                            if usize_to_u64(free_blocks.len()) == u64::from(n) {
                                 return Ok(free_blocks);
                             }
                         }
@@ -430,7 +431,7 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
                 let bitmap_index = group_index / 8;
                 let bitmap_offset = group_index % 8;
 
-                let Some(byte) = bitmap.get_mut(bitmap_index as usize) else {
+                let Some(byte) = bitmap.get_mut(u32_to_usize(bitmap_index)) else {
                     return Err(Error::Fs(FsError::Implementation(Ext2Error::NonExistingBlock(*block))));
                 };
 
@@ -495,8 +496,8 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
         let superblock = self.superblock();
 
         let block_group_descriptor = BlockGroupDescriptor::parse(self, block_group_number)?;
-        let starting_addr = Address::new((block_group_descriptor.inode_bitmap * superblock.block_size()) as usize);
-        let length = (superblock.base().inodes_per_group / 8) as usize;
+        let starting_addr = Address::new(u32_to_usize(block_group_descriptor.inode_bitmap) * u32_to_usize(superblock.block_size()));
+        let length = u32_to_usize(superblock.base().inodes_per_group / 8);
 
         Bitmap::new(self.device.clone(), starting_addr, length)
     }
@@ -660,7 +661,7 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
             let file_type = inode.file_type().map_err(FsError::Implementation)?;
             if file_type == Type::Regular
                 || file_type == Type::Directory
-                || (file_type == Type::SymbolicLink && inode.data_size() >= SYMBOLIC_LINK_INODE_STORE_LIMIT as u64)
+                || (file_type == Type::SymbolicLink && inode.data_size() >= usize_to_u64(SYMBOLIC_LINK_INODE_STORE_LIMIT))
             {
                 let indirected_blocks = inode.indirected_blocks(self)?;
                 self.deallocate_blocks(&indirected_blocks.flatten_data_blocks())?;
@@ -728,6 +729,7 @@ mod test {
 
     use super::inode::ROOT_DIRECTORY_INODE;
     use super::Ext2;
+    use crate::arch::u32_to_usize;
     use crate::celled::Celled;
     use crate::file::{Directory, SymbolicLink, Type, TypeWithFile};
     use crate::fs::ext2::block::Block;
@@ -766,7 +768,7 @@ mod test {
         let device = RefCell::new(File::options().read(true).write(true).open("./tests/fs/ext2/base.ext2").unwrap());
         let ext2 = Ext2::new(device, new_device_id(), false).unwrap();
 
-        assert_eq!(ext2.get_block_bitmap(0).unwrap().length() * 8, ext2.superblock().base().blocks_per_group as usize);
+        assert_eq!(ext2.get_block_bitmap(0).unwrap().length() * 8, u32_to_usize(ext2.superblock().base().blocks_per_group));
     }
 
     #[test]
@@ -791,7 +793,7 @@ mod test {
         let ext2 = Ext2::new(device, 0, false).unwrap();
 
         for i in 1_u32..1_024 {
-            assert_eq!(ext2.free_blocks(i).unwrap().len(), i as usize, "{i}");
+            assert_eq!(ext2.free_blocks(i).unwrap().len(), u32_to_usize(i), "{i}");
         }
 
         let superblock_free_block_count = ext2.superblock().base().free_blocks_count;

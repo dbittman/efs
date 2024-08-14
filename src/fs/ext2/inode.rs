@@ -13,6 +13,7 @@ use super::block_group::BlockGroupDescriptor;
 use super::error::Ext2Error;
 use super::superblock::{OperatingSystem, Superblock};
 use super::Ext2;
+use crate::arch::{u32_to_usize, usize_to_u64};
 use crate::cache::Cache;
 use crate::dev::sector::Address;
 use crate::dev::Device;
@@ -631,8 +632,8 @@ impl Inode {
         ) -> Result<Vec<u32>, Error<Ext2Error>> {
             let device = fs.device.lock();
 
-            let block_address = Address::from((block_number * fs.superblock().block_size()) as usize);
-            let slice = device.slice(block_address..block_address + fs.superblock().block_size() as usize)?;
+            let block_address = Address::from(u32_to_usize(block_number) * u32_to_usize(fs.superblock().block_size()));
+            let slice = device.slice(block_address..block_address + u32_to_usize(fs.superblock().block_size()))?;
             let byte_array = slice.as_ref();
             let address_array =
                 // SAFETY: casting n `u8` to `u32` with n a multiple of 4 (as the block size is a power of 2, generally above 512)
@@ -753,16 +754,13 @@ impl Inode {
 
         let mut read_bytes = 0_usize;
         for block_number in blocks {
-            if read_bytes as u64 == self.data_size() || read_bytes == buffer_length {
+            if usize_to_u64(read_bytes) == self.data_size() || read_bytes == buffer_length {
                 break;
             }
 
             if offset == 0 {
-                let count = (fs.superblock().block_size() as usize).min(buffer_length - read_bytes);
-                let block_addr = Address::from(
-                    usize::try_from(u64::from(block_number) * u64::from(fs.superblock().block_size()))
-                        .expect("Could not fit the requested block address on a usize"),
-                );
+                let count = u32_to_usize(fs.superblock().block_size()).min(buffer_length - read_bytes);
+                let block_addr = Address::from(u32_to_usize(block_number) * u32_to_usize(fs.superblock().block_size()));
                 let slice = device.slice(block_addr..block_addr + count)?;
 
                 // SAFETY: buffer contains at least `block_size.min(remaining_bytes_count)` since `remaining_bytes_count <=
@@ -774,14 +772,14 @@ impl Inode {
             } else if offset >= u64::from(fs.superblock().block_size()) {
                 offset -= u64::from(fs.superblock().block_size());
             } else {
-                let data_count = (fs.superblock().block_size() as usize).min(buffer_length - read_bytes);
+                let data_count = u32_to_usize(fs.superblock().block_size()).min(buffer_length - read_bytes);
                 // SAFETY: `offset < superblock.block_size()` and `superblock.block_size()` is generally around few KB, which is
                 // fine when `usize > u8`.
                 let offset_usize = unsafe { usize::try_from(offset).unwrap_unchecked() };
                 match data_count.checked_sub(offset_usize) {
                     None => read_bytes = buffer_length,
                     Some(count) => {
-                        let block_addr = Address::from((block_number * fs.superblock().block_size()) as usize);
+                        let block_addr = Address::from(u32_to_usize(block_number) * u32_to_usize(fs.superblock().block_size()));
                         let slice = device.slice(block_addr + offset_usize..block_addr + offset_usize + count)?;
 
                         // SAFETY: buffer contains at least `block_size.min(remaining_bytes_count)` since `remaining_bytes_count <=
