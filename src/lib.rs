@@ -225,7 +225,9 @@
 //! # std::fs::remove_file("./tests/fs/ext2/example.ext2").unwrap();
 //! ```
 //!
-//! ### How to implement a device?
+//! ## How to implement a device?
+//!
+//! ### In an `no_std` environment
 //!
 //! To implement a device, you need to provide three methods:
 //!
@@ -272,7 +274,72 @@
 //! Moreover, your implementation of a device should only returns [`DevError`](crate::dev::error::DevError)s in case of a read/write
 //! fail.
 //!
-//! ### How to implement a filesystem?
+//! ### In an `std` environment
+//!
+//! You have two options in this case:
+//!
+//! - either doing the same process as in a `no_std` environment (see above)
+//! - either implementing [`Read`](std::io::Read), [`Write`](std::io::Write) and [`Seek`](std::io::Seek) on your device.
+//!
+//! In the second case, you will have to use the [`StdIOWrapper`](io::StdIOWrapper), here is a dummy example:
+//!
+//! ```
+//! use std::error::Error;
+//! use std::fmt::Display;
+//! use std::io::{Read, Seek, SeekFrom, Write};
+//!
+//! use efs::dev::sector::Address;
+//! use efs::dev::Device;
+//! use efs::io::StdIOWrapper;
+//!
+//! #[derive(Debug)]
+//! struct Foo {} // Foo is our device
+//!
+//! #[derive(Debug)]
+//! struct BarError {} // FooError is the error type related to the Bar filesystem
+//!
+//! impl Display for BarError {
+//!     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+//!         write!(f, "BarError")
+//!     }
+//! }
+//!
+//! impl Error for BarError {}
+//!
+//! impl Read for Foo {
+//!     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+//!         buf.fill(1);
+//!         Ok(buf.len())
+//!     }
+//! }
+//!
+//! impl Write for Foo {
+//!     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+//!         Ok(buf.len())
+//!     }
+//!
+//!     fn flush(&mut self) -> std::io::Result<()> {
+//!         Ok(())
+//!     }
+//! }
+//!
+//! impl Seek for Foo {
+//!     fn seek(&mut self, _pos: SeekFrom) -> std::io::Result<u64> {
+//!         Ok(0)
+//!     }
+//! }
+//!
+//! let foo = Foo {};
+//! let mut device = StdIOWrapper::<_, BarError>::new(foo);
+//!
+//! // Now device implements `Device<u8, BarError>`,
+//! // thus we can use all the methods from the `Device` trait.
+//!
+//! assert_eq!(unsafe { device.read_at::<u8>(Address::new(0)) }.unwrap(), 1);
+//! assert_eq!(unsafe { device.read_at::<u32>(Address::new(0)) }.unwrap(), 0x0101_0101);
+//! ```
+//!
+//! ## How to implement a filesystem?
 //!
 //! To implement a filesystem, you will need a lot of structures and methods. You can read the implementation of the `ext2`
 //! filesystem as an example, but here is a general layout of what you need to do:

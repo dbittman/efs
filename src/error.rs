@@ -1,6 +1,8 @@
 //! Interface for `efs` possible errors
 
-use alloc::string::{String, ToString};
+use alloc::string::String;
+#[cfg(feature = "std")]
+use alloc::string::ToString;
 
 use derive_more::derive::{Display, From};
 

@@ -14,7 +14,7 @@ use self::size::Size;
 use crate::arch::usize_to_u64;
 use crate::dev::error::DevError;
 use crate::error::Error;
-use crate::io::{Read, Seek, SeekFrom, Write};
+use crate::io::{Base, Read, Seek, SeekFrom, Write};
 // use crate::io::{Base, Read, Seek, SeekFrom, Write};
 
 pub mod error;
@@ -252,7 +252,7 @@ pub trait Device<T: Copy, FSE: core::error::Error> {
     }
 }
 
-impl<FSE: core::error::Error, T: Read<FsError = FSE> + Write + Seek> Device<u8, FSE> for T {
+impl<FSE: core::error::Error, T: Base<FsError = FSE> + Read + Write + Seek> Device<u8, FSE> for T {
     fn size(&mut self) -> Size {
         let offset = self.seek(SeekFrom::End(0)).expect("Could not seek the device at its end");
         let size = self
@@ -273,14 +273,14 @@ impl<FSE: core::error::Error, T: Read<FsError = FSE> + Write + Seek> Device<u8, 
         })?;
 
         let mut slice = alloc::vec![0; len];
-        self.seek(SeekFrom::Start(starting_addr.index().try_into().expect("Could not convert `usize` to `u64`")))?;
+        self.seek(SeekFrom::Start(usize_to_u64(starting_addr.index())))?;
         self.read_exact(&mut slice)?;
 
         Ok(Slice::new_owned(slice, starting_addr))
     }
 
     fn commit(&mut self, commit: Commit<u8>) -> Result<(), Error<FSE>> {
-        let offset = self.seek(SeekFrom::Start(commit.addr().index().try_into().expect("Could not convert `usize` to `u64`")))?;
+        let offset = self.seek(SeekFrom::Start(usize_to_u64(commit.addr().index())))?;
         self.write_all(commit.as_ref())?;
         self.seek(SeekFrom::Start(offset))?;
 
@@ -350,17 +350,14 @@ impl<FSE: core::error::Error> Device<u8, FSE> for std::fs::File {
         let starting_addr = addr_range.start;
         let len = (addr_range.end - addr_range.start).index();
         let mut slice = alloc::vec![0; len];
-        std::io::Seek::seek(
-            self,
-            std::io::SeekFrom::Start(starting_addr.index().try_into().expect("Could not convert `usize` to `u64`")),
-        )?;
+        std::io::Seek::seek(self, std::io::SeekFrom::Start(usize_to_u64(starting_addr.index())))?;
         std::io::Read::read_exact(self, &mut slice)?;
         Ok(Slice::new_owned(slice, starting_addr))
     }
 
     fn commit(&mut self, commit: Commit<u8>) -> Result<(), Error<FSE>> {
         let offset = std::io::Seek::seek(self, std::io::SeekFrom::Start(usize_to_u64(commit.addr().index())))?;
-        std::io::Write::write_all(self, commit.as_ref()).expect("Could not write on the given file");
+        std::io::Write::write_all(self, commit.as_ref())?;
         std::io::Seek::seek(self, std::io::SeekFrom::Start(offset))?;
         Ok(())
     }
@@ -375,11 +372,14 @@ mod test {
     use core::ptr::addr_of;
     use core::slice;
     use std::fs;
-    use std::io::{Read, Seek};
+    use std::io::{Read, Seek, SeekFrom, Write};
+
+    use derive_more::derive::Display;
 
     use crate::arch::usize_to_u64;
     use crate::dev::sector::Address;
     use crate::dev::Device;
+    use crate::io::{Base, StdIOWrapper};
     use crate::tests::copy_file;
 
     #[derive(Debug)]
@@ -505,5 +505,86 @@ mod test {
         .unwrap();
 
         assert_eq!(test_bytes, slice.as_ref());
+    }
+
+    #[test]
+    fn dummy_device() {
+        #[derive(Debug)]
+        struct Foo {}
+
+        #[derive(Debug, Display)]
+        struct FooError {}
+
+        impl core::error::Error for FooError {}
+
+        impl Base for Foo {
+            type FsError = FooError;
+        }
+
+        impl crate::io::Read for Foo {
+            fn read(&mut self, buf: &mut [u8]) -> Result<usize, crate::error::Error<Self::FsError>> {
+                buf.fill(1);
+                Ok(buf.len())
+            }
+        }
+
+        impl crate::io::Write for Foo {
+            fn write(&mut self, buf: &[u8]) -> Result<usize, crate::error::Error<Self::FsError>> {
+                Ok(buf.len())
+            }
+
+            fn flush(&mut self) -> Result<(), crate::error::Error<Self::FsError>> {
+                Ok(())
+            }
+        }
+
+        impl crate::io::Seek for Foo {
+            fn seek(&mut self, _pos: super::SeekFrom) -> Result<u64, crate::error::Error<Self::FsError>> {
+                Ok(0)
+            }
+        }
+
+        let mut foo = Foo {};
+        assert_eq!(unsafe { foo.read_at::<u8>(Address::new(0)) }.unwrap(), 1);
+        assert_eq!(unsafe { foo.read_at::<u32>(Address::new(0)) }.unwrap(), 0x0101_0101);
+    }
+
+    #[test]
+    fn dummy_std_device() {
+        #[derive(Debug)]
+        struct Foo {}
+
+        #[derive(Debug, Display)]
+        struct FooError {}
+
+        impl core::error::Error for FooError {}
+
+        impl Read for Foo {
+            fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+                buf.fill(1);
+                Ok(buf.len())
+            }
+        }
+
+        impl Write for Foo {
+            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+                Ok(buf.len())
+            }
+
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+
+        impl Seek for Foo {
+            fn seek(&mut self, _pos: SeekFrom) -> std::io::Result<u64> {
+                Ok(0)
+            }
+        }
+
+        let foo = Foo {};
+        let mut device = StdIOWrapper::<_, FooError>::new(foo);
+        assert_eq!(unsafe { device.read_at::<u8>(Address::new(0)) }.unwrap(), 1);
+        assert_eq!(unsafe { device.read_at::<u32>(Address::new(0)) }.unwrap(), 0x0101_0101);
     }
 }

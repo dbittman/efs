@@ -1,9 +1,7 @@
 //! General traits for I/O interfaces.
 
-use alloc::string::ToString;
-
 #[cfg(feature = "std")]
-use derive_more::{Deref, DerefMut};
+use core::marker::PhantomData;
 
 use crate::dev::error::DevError;
 use crate::error::Error;
@@ -40,8 +38,6 @@ pub trait Read: Base {
     /// Returns an [`UnexpectedEof`](DevError::UnexpectedEof) if the buffer could not be entirely filled.
     ///
     /// Otherwise, returns the same errors as [`read`](Read::read).
-    #[allow(clippy::indexing_slicing)]
-
     fn read_exact(&mut self, mut buf: &mut [u8]) -> Result<(), Error<Self::FsError>> {
         while !buf.is_empty() {
             match self.read(buf) {
@@ -170,54 +166,65 @@ pub trait Seek: Base {
 /// [`Read`], [`Write`] and [`Seek`] are implemented for this type if the corresponding [`std::io`] trait is implemented for `T`.
 #[cfg(feature = "std")]
 #[cfg_attr(docsrs, doc(cfg(feature = "std")))]
-#[derive(Deref, DerefMut)]
-pub struct StdIOWrapper<S> {
+pub struct StdIOWrapper<S, FSE: core::error::Error> {
     /// Inner object, supposedly implementing at least one [`std::io`] trait.
     inner: S,
+
+    phantom: PhantomData<FSE>,
 }
 
 #[cfg(feature = "std")]
-impl<S> StdIOWrapper<S> {
+impl<S, FSE: core::error::Error> StdIOWrapper<S, FSE> {
     /// Creates an [`StdIOWrapper`] from the object it wraps.
     #[must_use]
     pub const fn new(inner: S) -> Self {
-        Self { inner }
+        Self {
+            inner,
+            phantom: PhantomData,
+        }
     }
 }
 
 #[cfg(feature = "std")]
-impl<S> Base for StdIOWrapper<S> {
-    type FsError = std::io::Error;
+impl<S, FSE: core::error::Error> Base for StdIOWrapper<S, FSE> {
+    type FsError = FSE;
 }
 
 #[cfg(feature = "std")]
-impl<S: std::io::Read> Read for StdIOWrapper<S> {
+impl<S: std::io::Read, FSE: core::error::Error> Read for StdIOWrapper<S, FSE> {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, Error<Self::FsError>> {
-        self.inner.read(buf).map_err(|err| Error::IO(err.to_string()))
+        let res = self.inner.read(buf)?;
+        Ok(res)
     }
 }
 
 #[cfg(feature = "std")]
-impl<S: std::io::Write> Write for StdIOWrapper<S> {
+impl<S: std::io::Write, FSE: core::error::Error> Write for StdIOWrapper<S, FSE> {
     fn write(&mut self, buf: &[u8]) -> Result<usize, Error<Self::FsError>> {
-        self.inner.write(buf).map_err(|err| Error::IO(err.to_string()))
+        let res = self.inner.write(buf)?;
+        Ok(res)
     }
 
     fn flush(&mut self) -> Result<(), Error<Self::FsError>> {
-        self.inner.flush().map_err(|err| Error::IO(err.to_string()))
+        self.inner.flush()?;
+        Ok(())
     }
 }
 
 #[cfg(feature = "std")]
-impl<S: std::io::Seek> Seek for StdIOWrapper<S> {
+impl<S: std::io::Seek, FSE: core::error::Error> Seek for StdIOWrapper<S, FSE> {
     fn seek(&mut self, pos: SeekFrom) -> Result<u64, Error<Self::FsError>> {
-        self.inner.seek(pos.into()).map_err(|err| Error::IO(err.to_string()))
+        let res = self.inner.seek(pos.into())?;
+        Ok(res)
     }
 }
 
 #[cfg(feature = "std")]
-impl<S> From<S> for StdIOWrapper<S> {
+impl<S, FSE: core::error::Error> From<S> for StdIOWrapper<S, FSE> {
     fn from(value: S) -> Self {
         Self::new(value)
     }
 }
+
+#[cfg(test)]
+mod test {}
