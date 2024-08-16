@@ -699,7 +699,7 @@ impl<Dev: Device<u8, Ext2Error>> Celled<Ext2<Dev>> {
 }
 
 impl<Dev: Device<u8, Ext2Error>> FileSystem<Directory<Dev>> for Celled<Ext2<Dev>> {
-    fn root(&self) -> Result<Directory<Dev>, Error<<Directory<Dev> as crate::file::File>::FsError>> {
+    fn root(&self) -> Result<Directory<Dev>, Error<<Directory<Dev> as crate::io::Base>::FsError>> {
         self.file(ROOT_DIRECTORY_INODE).and_then(|root| match root {
             TypeWithFile::Directory(root_dir) => Ok(root_dir),
             TypeWithFile::Regular(_)
@@ -714,7 +714,7 @@ impl<Dev: Device<u8, Ext2Error>> FileSystem<Directory<Dev>> for Celled<Ext2<Dev>
         })
     }
 
-    fn double_slash_root(&self) -> Result<Directory<Dev>, Error<<Directory<Dev> as crate::file::File>::FsError>> {
+    fn double_slash_root(&self) -> Result<Directory<Dev>, Error<<Directory<Dev> as crate::io::Base>::FsError>> {
         self.root()
     }
 }

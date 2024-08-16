@@ -11,7 +11,7 @@ use crate::error::Error;
 /// Base I/O trait that must be implemented for all types implementing [`Read`], [`Write`] or [`Seek`].
 pub trait Base {
     /// Error type corresponding to the [`FileSystem`](crate::fs::FileSystem) implemented.
-    type IOError: core::error::Error;
+    type FsError: core::error::Error;
 }
 
 /// Allows for reading bytes from a source.
@@ -29,7 +29,7 @@ pub trait Read: Base {
     /// # Errors
     ///
     /// Returns an [`DevError`] if the device on which the directory is located could not be read.
-    fn read(&mut self, buf: &mut [u8]) -> Result<usize, Error<Self::IOError>>;
+    fn read(&mut self, buf: &mut [u8]) -> Result<usize, Error<Self::FsError>>;
 
     /// Read the exact number of bytes required to fill buf.
     ///
@@ -42,7 +42,7 @@ pub trait Read: Base {
     /// Otherwise, returns the same errors as [`read`](Read::read).
     #[allow(clippy::indexing_slicing)]
 
-    fn read_exact(&mut self, mut buf: &mut [u8]) -> Result<(), Error<Self::IOError>> {
+    fn read_exact(&mut self, mut buf: &mut [u8]) -> Result<(), Error<Self::FsError>> {
         while !buf.is_empty() {
             match self.read(buf) {
                 Ok(0) => break,
@@ -72,7 +72,7 @@ pub trait Write: Base {
     /// # Errors
     ///
     /// Returns an [`DevError`] if the device on which the directory is located could not be written.
-    fn write(&mut self, buf: &[u8]) -> Result<usize, Error<Self::IOError>>;
+    fn write(&mut self, buf: &[u8]) -> Result<usize, Error<Self::FsError>>;
 
     /// Flush this output stream, ensuring that all intermediately buffered contents reach their destination.
     ///
@@ -81,7 +81,7 @@ pub trait Write: Base {
     /// # Errors
     ///
     /// Returns an [`DevError`] if the device on which the directory is located could not be read.
-    fn flush(&mut self) -> Result<(), Error<Self::IOError>>;
+    fn flush(&mut self) -> Result<(), Error<Self::FsError>>;
 
     /// Attempts to write an entire buffer into this writer.
     ///
@@ -94,7 +94,7 @@ pub trait Write: Base {
     /// Otherwise, returns the same errors as [`write`](Write::write).
     #[allow(clippy::indexing_slicing)]
 
-    fn write_all(&mut self, mut buf: &[u8]) -> Result<(), Error<Self::IOError>> {
+    fn write_all(&mut self, mut buf: &[u8]) -> Result<(), Error<Self::FsError>> {
         while !buf.is_empty() {
             match self.write(buf) {
                 Ok(0) => {
@@ -160,7 +160,7 @@ pub trait Seek: Base {
     /// # Errors
     ///
     /// Returns an [`DevError`] if the device on which the directory is located could not be read.
-    fn seek(&mut self, pos: SeekFrom) -> Result<u64, Error<Self::IOError>>;
+    fn seek(&mut self, pos: SeekFrom) -> Result<u64, Error<Self::FsError>>;
 }
 
 /// A wrapper struct for types that have implementations for [`std::io`] traits.
@@ -176,7 +176,6 @@ pub struct StdIOWrapper<S> {
 #[cfg(feature = "std")]
 impl<S> StdIOWrapper<S> {
     /// Creates an [`StdIOWrapper`] from the object it wraps.
-
     #[must_use]
     pub const fn new(inner: S) -> Self {
         Self { inner }
@@ -185,30 +184,30 @@ impl<S> StdIOWrapper<S> {
 
 #[cfg(feature = "std")]
 impl<S> Base for StdIOWrapper<S> {
-    type IOError = std::io::Error;
+    type FsError = std::io::Error;
 }
 
 #[cfg(feature = "std")]
 impl<S: std::io::Read> Read for StdIOWrapper<S> {
-    fn read(&mut self, buf: &mut [u8]) -> Result<usize, Error<Self::IOError>> {
+    fn read(&mut self, buf: &mut [u8]) -> Result<usize, Error<Self::FsError>> {
         self.inner.read(buf).map_err(|err| Error::IO(err.to_string()))
     }
 }
 
 #[cfg(feature = "std")]
 impl<S: std::io::Write> Write for StdIOWrapper<S> {
-    fn write(&mut self, buf: &[u8]) -> Result<usize, Error<Self::IOError>> {
+    fn write(&mut self, buf: &[u8]) -> Result<usize, Error<Self::FsError>> {
         self.inner.write(buf).map_err(|err| Error::IO(err.to_string()))
     }
 
-    fn flush(&mut self) -> Result<(), Error<Self::IOError>> {
+    fn flush(&mut self) -> Result<(), Error<Self::FsError>> {
         self.inner.flush().map_err(|err| Error::IO(err.to_string()))
     }
 }
 
 #[cfg(feature = "std")]
 impl<S: std::io::Seek> Seek for StdIOWrapper<S> {
-    fn seek(&mut self, pos: SeekFrom) -> Result<u64, Error<Self::IOError>> {
+    fn seek(&mut self, pos: SeekFrom) -> Result<u64, Error<Self::FsError>> {
         self.inner.seek(pos.into()).map_err(|err| Error::IO(err.to_string()))
     }
 }

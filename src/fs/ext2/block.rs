@@ -138,11 +138,11 @@ impl<Dev: Device<u8, Ext2Error>> From<Block<Dev>> for u32 {
 }
 
 impl<Dev: Device<u8, Ext2Error>> Base for Block<Dev> {
-    type IOError = Ext2Error;
+    type FsError = Ext2Error;
 }
 
 impl<Dev: Device<u8, Ext2Error>> Read for Block<Dev> {
-    fn read(&mut self, buf: &mut [u8]) -> Result<usize, Error<Self::IOError>> {
+    fn read(&mut self, buf: &mut [u8]) -> Result<usize, Error<Self::FsError>> {
         let fs = self.filesystem.lock();
         let mut device = fs.device.lock();
 
@@ -160,7 +160,7 @@ impl<Dev: Device<u8, Ext2Error>> Read for Block<Dev> {
 }
 
 impl<Dev: Device<u8, Ext2Error>> Write for Block<Dev> {
-    fn write(&mut self, buf: &[u8]) -> Result<usize, Error<Self::IOError>> {
+    fn write(&mut self, buf: &[u8]) -> Result<usize, Error<Self::FsError>> {
         let fs = self.filesystem.lock();
         let mut device = fs.device.lock();
 
@@ -179,13 +179,13 @@ impl<Dev: Device<u8, Ext2Error>> Write for Block<Dev> {
         Ok(length)
     }
 
-    fn flush(&mut self) -> Result<(), Error<Self::IOError>> {
+    fn flush(&mut self) -> Result<(), Error<Self::FsError>> {
         Ok(())
     }
 }
 
 impl<Dev: Device<u8, Ext2Error>> Seek for Block<Dev> {
-    fn seek(&mut self, pos: SeekFrom) -> Result<u64, Error<Self::IOError>> {
+    fn seek(&mut self, pos: SeekFrom) -> Result<u64, Error<Self::FsError>> {
         let fs = self.filesystem.lock();
 
         let block_size = i64::from(fs.superblock().block_size());

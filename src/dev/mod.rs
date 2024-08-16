@@ -252,7 +252,7 @@ pub trait Device<T: Copy, FSE: core::error::Error> {
     }
 }
 
-impl<FSE: core::error::Error, T: Read<IOError = FSE> + Write + Seek> Device<u8, FSE> for T {
+impl<FSE: core::error::Error, T: Read<FsError = FSE> + Write + Seek> Device<u8, FSE> for T {
     fn size(&mut self) -> Size {
         let offset = self.seek(SeekFrom::End(0)).expect("Could not seek the device at its end");
         let size = self

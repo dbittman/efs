@@ -7,7 +7,7 @@ use alloc::vec::Vec;
 use itertools::Itertools;
 
 use crate::error::Error;
-use crate::io::{Read, Seek, Write};
+use crate::io::{Base, Read, Seek, Write};
 use crate::path::{UnixStr, PARENT_DIR};
 use crate::permissions::Permissions;
 use crate::types::{Blkcnt, Blksize, Dev, Gid, Ino, Mode, Nlink, Off, Timespec, Uid};
@@ -63,10 +63,7 @@ pub struct Stat {
 /// Main trait for all Unix files.
 ///
 /// Defined in [this POSIX definition](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap03.html#tag_03_164).
-pub trait File {
-    /// Error type associated with the directories of the [`FileSystem`](crate::fs::FileSystem) they belong to.
-    type FsError: core::error::Error;
-
+pub trait File: Base {
     /// Retrieves information about this file.
     fn stat(&self) -> Stat;
 
@@ -106,10 +103,7 @@ pub trait File {
 ///
 /// Defined in [this POSIX definition](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap03.html#tag_03_164).
 #[allow(clippy::module_name_repetitions)]
-pub trait ReadOnlyFile {
-    /// Error type associated with the directories of the [`FileSystem`](crate::fs::FileSystem) they belong to.
-    type FsError: core::error::Error;
-
+pub trait ReadOnlyFile: Base {
     /// Retrieves information about this file.
     fn stat(&self) -> Stat;
 
@@ -123,8 +117,6 @@ pub trait ReadOnlyFile {
 }
 
 impl<F: File> ReadOnlyFile for F {
-    type FsError = <Self as File>::FsError;
-
     fn stat(&self) -> Stat {
         <Self as File>::stat(self)
     }
@@ -145,7 +137,7 @@ pub trait Regular: File + Read + Write + Seek {
     /// # Errors
     ///
     /// Returns an [`DevError`](crate::dev::error::DevError) if the device on which the directory is located could not be read.
-    fn truncate(&mut self, size: u64) -> Result<(), Error<<Self as File>::FsError>>;
+    fn truncate(&mut self, size: u64) -> Result<(), Error<<Self as Base>::FsError>>;
 }
 
 /// A read-only file that is a randomly accessible sequence of bytes, with no further structure imposed by the system.

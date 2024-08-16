@@ -183,8 +183,6 @@ impl<Dev: Device<u8, Ext2Error>> File<Dev> {
 }
 
 impl<Dev: Device<u8, Ext2Error>> file::File for File<Dev> {
-    type FsError = Ext2Error;
-
     fn stat(&self) -> file::Stat {
         let filesystem = self.filesystem.lock();
 
@@ -244,9 +242,11 @@ impl<Dev: Device<u8, Ext2Error>> file::File for File<Dev> {
 
 macro_rules! impl_file {
     ($id:ident) => {
-        impl<Dev: Device<u8, Ext2Error>> crate::file::File for $id<Dev> {
+        impl<Dev: Device<u8, Ext2Error>> crate::io::Base for $id<Dev> {
             type FsError = Ext2Error;
+        }
 
+        impl<Dev: Device<u8, Ext2Error>> crate::file::File for $id<Dev> {
             fn stat(&self) -> Stat {
                 self.file.stat()
             }
@@ -271,11 +271,11 @@ macro_rules! impl_file {
 }
 
 impl<Dev: Device<u8, Ext2Error>> Base for File<Dev> {
-    type IOError = Ext2Error;
+    type FsError = Ext2Error;
 }
 
 impl<Dev: Device<u8, Ext2Error>> Read for File<Dev> {
-    fn read(&mut self, buf: &mut [u8]) -> Result<usize, Error<Self::IOError>> {
+    fn read(&mut self, buf: &mut [u8]) -> Result<usize, Error<Self::FsError>> {
         let filesystem = self.filesystem.lock();
         self.inode.read_data(&filesystem, buf, self.io_offset).inspect(|&bytes| {
             self.io_offset += usize_to_u64(bytes);
@@ -284,7 +284,7 @@ impl<Dev: Device<u8, Ext2Error>> Read for File<Dev> {
 }
 
 impl<Dev: Device<u8, Ext2Error>> Write for File<Dev> {
-    fn write(&mut self, buf: &[u8]) -> Result<usize, Error<Self::IOError>> {
+    fn write(&mut self, buf: &[u8]) -> Result<usize, Error<Self::FsError>> {
         let mut fs = self.filesystem.lock();
         let superblock = fs.superblock().clone();
         let block_size = u64::from(fs.superblock().block_size());
@@ -414,13 +414,13 @@ impl<Dev: Device<u8, Ext2Error>> Write for File<Dev> {
         Ok(written_bytes)
     }
 
-    fn flush(&mut self) -> Result<(), Error<Self::IOError>> {
+    fn flush(&mut self) -> Result<(), Error<Self::FsError>> {
         Ok(())
     }
 }
 
 impl<Dev: Device<u8, Ext2Error>> Seek for File<Dev> {
-    fn seek(&mut self, pos: SeekFrom) -> Result<u64, Error<Self::IOError>> {
+    fn seek(&mut self, pos: SeekFrom) -> Result<u64, Error<Self::FsError>> {
         // SAFETY: it is safe to assume that the file length is smaller than 2^63 bytes long
         let file_length = unsafe { i64::try_from(self.inode.data_size()).unwrap_unchecked() };
 
@@ -495,12 +495,8 @@ impl<Dev: Device<u8, Ext2Error>> Clone for Regular<Dev> {
 
 impl_file!(Regular);
 
-impl<Dev: Device<u8, Ext2Error>> Base for Regular<Dev> {
-    type IOError = Ext2Error;
-}
-
 impl<Dev: Device<u8, Ext2Error>> Read for Regular<Dev> {
-    fn read(&mut self, buf: &mut [u8]) -> Result<usize, Error<Self::IOError>> {
+    fn read(&mut self, buf: &mut [u8]) -> Result<usize, Error<Self::FsError>> {
         self.file.read(buf)
     }
 }
@@ -522,7 +518,7 @@ impl<Dev: Device<u8, Ext2Error>> Seek for Regular<Dev> {
 }
 
 impl<Dev: Device<u8, Ext2Error>> file::Regular for Regular<Dev> {
-    fn truncate(&mut self, size: u64) -> Result<(), Error<<Self as file::File>::FsError>> {
+    fn truncate(&mut self, size: u64) -> Result<(), Error<Self::FsError>> {
         self.file.truncate(size)
     }
 }
