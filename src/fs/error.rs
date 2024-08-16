@@ -54,4 +54,4 @@ pub enum FsError<E: core::error::Error> {
     },
 }
 
-impl<E: core::error::Error> core::error::Error for FsError<E> {}
+impl<FSE: core::error::Error> core::error::Error for FsError<FSE> {}

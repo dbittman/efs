@@ -65,7 +65,7 @@ pub struct Stat {
 /// Defined in [this POSIX definition](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap03.html#tag_03_164).
 pub trait File {
     /// Error type associated with the directories of the [`FileSystem`](crate::fs::FileSystem) they belong to.
-    type Error: core::error::Error;
+    type FsError: core::error::Error;
 
     /// Retrieves information about this file.
     fn stat(&self) -> Stat;
@@ -85,21 +85,21 @@ pub trait File {
     /// # Errors
     ///
     /// Returns an [`DevError`](crate::dev::error::DevError) if the device on which the directory is located could not be read.
-    fn set_mode(&mut self, mode: Mode) -> Result<(), Error<Self::Error>>;
+    fn set_mode(&mut self, mode: Mode) -> Result<(), Error<Self::FsError>>;
 
     /// Sets the [`Uid`] (identifier of the user owner) of this file.
     ///
     /// # Errors
     ///
     /// Returns an [`DevError`](crate::dev::error::DevError) if the device on which the directory is located could not be read.
-    fn set_uid(&mut self, uid: Uid) -> Result<(), Error<Self::Error>>;
+    fn set_uid(&mut self, uid: Uid) -> Result<(), Error<Self::FsError>>;
 
     /// Sets the [`Gid`] (identifier of the group) of this file.
     ///
     /// # Errors
     ///
     /// Returns an [`DevError`](crate::dev::error::DevError) if the device on which the directory is located could not be read.
-    fn set_gid(&mut self, gid: Gid) -> Result<(), Error<Self::Error>>;
+    fn set_gid(&mut self, gid: Gid) -> Result<(), Error<Self::FsError>>;
 }
 
 /// Main trait for all Unix files.
@@ -108,7 +108,7 @@ pub trait File {
 #[allow(clippy::module_name_repetitions)]
 pub trait ReadOnlyFile {
     /// Error type associated with the directories of the [`FileSystem`](crate::fs::FileSystem) they belong to.
-    type Error: core::error::Error;
+    type FsError: core::error::Error;
 
     /// Retrieves information about this file.
     fn stat(&self) -> Stat;
@@ -123,7 +123,7 @@ pub trait ReadOnlyFile {
 }
 
 impl<F: File> ReadOnlyFile for F {
-    type Error = <Self as File>::Error;
+    type FsError = <Self as File>::FsError;
 
     fn stat(&self) -> Stat {
         <Self as File>::stat(self)
@@ -145,7 +145,7 @@ pub trait Regular: File + Read + Write + Seek {
     /// # Errors
     ///
     /// Returns an [`DevError`](crate::dev::error::DevError) if the device on which the directory is located could not be read.
-    fn truncate(&mut self, size: u64) -> Result<(), Error<<Self as File>::Error>>;
+    fn truncate(&mut self, size: u64) -> Result<(), Error<<Self as File>::FsError>>;
 }
 
 /// A read-only file that is a randomly accessible sequence of bytes, with no further structure imposed by the system.
@@ -195,22 +195,22 @@ impl<'path, Dir: Directory> From<DirectoryEntry<'path, Dir>> for ReadOnlyDirecto
 /// Defined in [this POSIX definition](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap03.html#tag_03_129).
 pub trait Directory: Sized + File {
     /// Type of the regular files in the [`FileSystem`](crate::fs::FileSystem) this directory belongs to.
-    type Regular: Regular<Error = Self::Error>;
+    type Regular: Regular<FsError = Self::FsError>;
 
     /// Type of the symbolic links in the [`FileSystem`](crate::fs::FileSystem) this directory belongs to.
-    type SymbolicLink: SymbolicLink<Error = Self::Error>;
+    type SymbolicLink: SymbolicLink<FsError = Self::FsError>;
 
     /// Type of the fifo in the [`FileSystem`](crate::fs::FileSystem) this directory belongs to.
-    type Fifo: Fifo<Error = Self::Error>;
+    type Fifo: Fifo<FsError = Self::FsError>;
 
     /// Type of the character device in the [`FileSystem`](crate::fs::FileSystem) this directory belongs to.
-    type CharDev: CharacterDevice<Error = Self::Error>;
+    type CharDev: CharacterDevice<FsError = Self::FsError>;
 
     /// Type of the character device in the [`FileSystem`](crate::fs::FileSystem) this directory belongs to.
-    type BlockDev: BlockDevice<Error = Self::Error>;
+    type BlockDev: BlockDevice<FsError = Self::FsError>;
 
     /// Type of the UNIX socket in the [`FileSystem`](crate::fs::FileSystem) this directory belongs to.
-    type Socket: Socket<Error = Self::Error>;
+    type Socket: Socket<FsError = Self::FsError>;
 
     /// Returns the directory entries contained.
     ///
@@ -221,7 +221,7 @@ pub trait Directory: Sized + File {
     /// # Errors
     ///
     /// Returns an [`DevError`](crate::dev::error::DevError) if the device on which the directory is located could not be read.
-    fn entries(&self) -> Result<Vec<DirectoryEntry<Self>>, Error<Self::Error>>;
+    fn entries(&self) -> Result<Vec<DirectoryEntry<Self>>, Error<Self::FsError>>;
 
     /// Adds a new empty entry to the directory, meaning that a new file will be created.
     ///
@@ -237,7 +237,7 @@ pub trait Directory: Sized + File {
         permissions: Permissions,
         user_id: Uid,
         group_id: Gid,
-    ) -> Result<TypeWithFile<Self>, Error<Self::Error>>;
+    ) -> Result<TypeWithFile<Self>, Error<Self::FsError>>;
 
     /// Removes an entry from the directory.
     ///
@@ -247,7 +247,7 @@ pub trait Directory: Sized + File {
     /// directory.
     ///
     /// Returns an [`DevError`](crate::dev::error::DevError) if the device on which the directory is located could not be written.
-    fn remove_entry(&mut self, name: UnixStr) -> Result<(), Error<Self::Error>>;
+    fn remove_entry(&mut self, name: UnixStr) -> Result<(), Error<Self::FsError>>;
 
     /// Returns the entry with the given name.
     ///
@@ -256,7 +256,7 @@ pub trait Directory: Sized + File {
     /// Returns an [`DevError`](crate::dev::error::DevError) if the device on which the directory is located could not be read.
     #[allow(clippy::type_complexity)]
 
-    fn entry(&self, name: UnixStr) -> Result<Option<TypeWithFile<Self>>, Error<Self::Error>> {
+    fn entry(&self, name: UnixStr) -> Result<Option<TypeWithFile<Self>>, Error<Self::FsError>> {
         let children = self.entries()?;
         Ok(children.into_iter().find(|entry| entry.filename == name).map(|entry| entry.file))
     }
@@ -269,7 +269,7 @@ pub trait Directory: Sized + File {
     ///
     /// Returns an [`DevError`](crate::dev::error::DevError) if the device on which the directory is located could not be read.
 
-    fn parent(&self) -> Result<Self, Error<Self::Error>> {
+    fn parent(&self) -> Result<Self, Error<Self::FsError>> {
         let Some(TypeWithFile::Directory(parent_entry)) = self.entry(PARENT_DIR.clone())? else {
             unreachable!("`entries` must return `..` that corresponds to the parent directory.")
         };
@@ -282,22 +282,22 @@ pub trait Directory: Sized + File {
 /// This is the read-only version of [`Directory`].
 pub trait ReadOnlyDirectory: Sized + ReadOnlyFile {
     /// Type of the regular files in the [`FileSystem`](crate::fs::FileSystem) this directory belongs to.
-    type Regular: ReadOnlyRegular<Error = Self::Error>;
+    type Regular: ReadOnlyRegular<FsError = Self::FsError>;
 
     /// Type of the symbolic links in the [`FileSystem`](crate::fs::FileSystem) this directory belongs to.
-    type SymbolicLink: ReadOnlySymbolicLink<Error = Self::Error>;
+    type SymbolicLink: ReadOnlySymbolicLink<FsError = Self::FsError>;
 
     /// Type of the fifo in the [`FileSystem`](crate::fs::FileSystem) this directory belongs to.
-    type Fifo: Fifo<Error = Self::Error>;
+    type Fifo: Fifo<FsError = Self::FsError>;
 
     /// Type of the character device in the [`FileSystem`](crate::fs::FileSystem) this directory belongs to.
-    type CharDev: CharacterDevice<Error = Self::Error>;
+    type CharDev: CharacterDevice<FsError = Self::FsError>;
 
     /// Type of the character device in the [`FileSystem`](crate::fs::FileSystem) this directory belongs to.
-    type BlockDev: BlockDevice<Error = Self::Error>;
+    type BlockDev: BlockDevice<FsError = Self::FsError>;
 
     /// Type of the UNIX socket in the [`FileSystem`](crate::fs::FileSystem) this directory belongs to.
-    type Socket: Socket<Error = Self::Error>;
+    type Socket: Socket<FsError = Self::FsError>;
 
     /// Returns the directory entries contained.
     ///
@@ -308,7 +308,7 @@ pub trait ReadOnlyDirectory: Sized + ReadOnlyFile {
     /// # Errors
     ///
     /// Returns an [`DevError`](crate::dev::error::DevError) if the device on which the directory is located could not be read.
-    fn entries(&self) -> Result<Vec<ReadOnlyDirectoryEntry<Self>>, Error<Self::Error>>;
+    fn entries(&self) -> Result<Vec<ReadOnlyDirectoryEntry<Self>>, Error<Self::FsError>>;
 
     /// Returns the entry with the given name.
     ///
@@ -317,7 +317,7 @@ pub trait ReadOnlyDirectory: Sized + ReadOnlyFile {
     /// Returns an [`DevError`](crate::dev::error::DevError) if the device on which the directory is located could not be read.
     #[allow(clippy::type_complexity)]
 
-    fn entry(&self, name: UnixStr) -> Result<Option<ReadOnlyTypeWithFile<Self>>, Error<Self::Error>> {
+    fn entry(&self, name: UnixStr) -> Result<Option<ReadOnlyTypeWithFile<Self>>, Error<Self::FsError>> {
         let children = self.entries()?;
         Ok(children.into_iter().find(|entry| entry.filename == name).map(|entry| entry.file))
     }
@@ -330,7 +330,7 @@ pub trait ReadOnlyDirectory: Sized + ReadOnlyFile {
     ///
     /// Returns an [`DevError`](crate::dev::error::DevError) if the device on which the directory is located could not be read.
 
-    fn parent(&self) -> Result<Self, Error<Self::Error>> {
+    fn parent(&self) -> Result<Self, Error<Self::FsError>> {
         let Some(ReadOnlyTypeWithFile::Directory(parent_entry)) = self.entry(PARENT_DIR.clone())? else {
             unreachable!("`entries` must return `..` that corresponds to the parent directory.")
         };
@@ -346,7 +346,7 @@ impl<Dir: Directory> ReadOnlyDirectory for Dir {
     type Socket = Dir::Socket;
     type SymbolicLink = Dir::SymbolicLink;
 
-    fn entries(&self) -> Result<Vec<ReadOnlyDirectoryEntry<Self>>, Error<Self::Error>> {
+    fn entries(&self) -> Result<Vec<ReadOnlyDirectoryEntry<Self>>, Error<Self::FsError>> {
         <Self as Directory>::entries(self).map(|entries| entries.into_iter().map(Into::into).collect_vec())
     }
 }
@@ -361,14 +361,14 @@ pub trait SymbolicLink: File {
     /// # Errors
     ///
     /// Returns an [`DevError`](crate::dev::error::DevError) if the device on which the directory is located could not be read.
-    fn get_pointed_file(&self) -> Result<&str, Error<Self::Error>>;
+    fn get_pointed_file(&self) -> Result<&str, Error<Self::FsError>>;
 
     /// Sets the pointed file in this symbolic link.
     ///
     /// # Errors
     ///
     /// Returns an [`DevError`](crate::dev::error::DevError) if the device on which the directory is located could not be written.
-    fn set_pointed_file(&mut self, pointed_file: &str) -> Result<(), Error<Self::Error>>;
+    fn set_pointed_file(&mut self, pointed_file: &str) -> Result<(), Error<Self::FsError>>;
 }
 
 /// A read-only type of file with the property that when the file is encountered during pathname resolution, a string stored by the
@@ -381,11 +381,11 @@ pub trait ReadOnlySymbolicLink: ReadOnlyFile {
     /// # Errors
     ///
     /// Returns an [`DevError`](crate::dev::error::DevError) if the device on which the directory is located could not be read.
-    fn get_pointed_file(&self) -> Result<&str, Error<Self::Error>>;
+    fn get_pointed_file(&self) -> Result<&str, Error<Self::FsError>>;
 }
 
 impl<Symlink: SymbolicLink> ReadOnlySymbolicLink for Symlink {
-    fn get_pointed_file(&self) -> Result<&str, Error<Self::Error>> {
+    fn get_pointed_file(&self) -> Result<&str, Error<Self::FsError>> {
         <Self as SymbolicLink>::get_pointed_file(self)
     }
 }

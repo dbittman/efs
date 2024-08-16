@@ -86,7 +86,7 @@ impl BlockGroupDescriptor {
             return Ok(block_group_descriptor);
         }
 
-        let device = fs.device.lock();
+        let mut device = fs.device.lock();
 
         let block_group_descriptor_address = Self::starting_addr(fs.superblock(), n)?;
 
@@ -125,7 +125,6 @@ impl BlockGroupDescriptor {
 
 #[cfg(test)]
 mod test {
-    use core::cell::RefCell;
     use core::mem::size_of;
     use std::fs::File;
     use std::time;
@@ -141,29 +140,29 @@ mod test {
 
     #[test]
     fn parse_first_block_group_descriptor() {
-        let file = RefCell::new(File::options().read(true).write(true).open("./tests/fs/ext2/base.ext2").unwrap());
+        let file = File::options().read(true).write(true).open("./tests/fs/ext2/base.ext2").unwrap();
         let fs = Ext2::new(file, new_device_id(), false).unwrap();
         assert!(BlockGroupDescriptor::parse(&fs, 0).is_ok());
 
-        let file = RefCell::new(File::options().read(true).write(true).open("./tests/fs/ext2/extended.ext2").unwrap());
+        let file = File::options().read(true).write(true).open("./tests/fs/ext2/extended.ext2").unwrap();
         let fs = Ext2::new(file, new_device_id(), false).unwrap();
         assert!(BlockGroupDescriptor::parse(&fs, 0).is_ok());
     }
 
     #[test]
     fn failed_parse() {
-        let file = RefCell::new(File::options().read(true).write(true).open("./tests/fs/ext2/base.ext2").unwrap());
+        let file = File::options().read(true).write(true).open("./tests/fs/ext2/base.ext2").unwrap();
         let fs = Ext2::new(file, new_device_id(), false).unwrap();
         assert!(BlockGroupDescriptor::parse(&fs, fs.superblock().block_group_count()).is_err());
 
-        let file = RefCell::new(File::options().read(true).write(true).open("./tests/fs/ext2/extended.ext2").unwrap());
+        let file = File::options().read(true).write(true).open("./tests/fs/ext2/extended.ext2").unwrap();
         let fs = Ext2::new(file, new_device_id(), false).unwrap();
         assert!(BlockGroupDescriptor::parse(&fs, fs.superblock().block_group_count()).is_err());
     }
 
     #[test]
     fn cache_test() {
-        let file = RefCell::new(File::options().read(true).write(true).open("./tests/fs/ext2/base.ext2").unwrap());
+        let file = File::options().read(true).write(true).open("./tests/fs/ext2/base.ext2").unwrap();
         let fs = Ext2::new(file, new_device_id(), false).unwrap();
 
         let start_time = time::Instant::now();
@@ -172,7 +171,7 @@ mod test {
         }
         let time_cache_disabled = start_time.elapsed();
 
-        let file = RefCell::new(File::options().read(true).write(true).open("./tests/fs/ext2/base.ext2").unwrap());
+        let file = File::options().read(true).write(true).open("./tests/fs/ext2/base.ext2").unwrap();
         let fs = Ext2::new(file, new_device_id(), true).unwrap();
         let start_time = time::Instant::now();
         for _ in 0..100_000 {
@@ -185,7 +184,7 @@ mod test {
 
     #[test]
     fn write_back() {
-        let file = RefCell::new(copy_file("./tests/fs/ext2/io_operations.ext2").unwrap());
+        let file = copy_file("./tests/fs/ext2/io_operations.ext2").unwrap();
         let fs = Ext2::new(file, new_device_id(), false).unwrap();
 
         let mut bgd = BlockGroupDescriptor::parse(&fs, 0).unwrap();

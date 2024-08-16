@@ -142,9 +142,9 @@ impl<Dev: Device<u8, Ext2Error>> Base for Block<Dev> {
 }
 
 impl<Dev: Device<u8, Ext2Error>> Read for Block<Dev> {
-    fn read(&mut self, buf: &mut [u8]) -> Result<usize, Error<Ext2Error>> {
+    fn read(&mut self, buf: &mut [u8]) -> Result<usize, Error<Self::IOError>> {
         let fs = self.filesystem.lock();
-        let device = fs.device.lock();
+        let mut device = fs.device.lock();
 
         let length = u32_to_usize(fs.superblock().block_size() - self.io_offset).min(buf.len());
         let starting_addr =
@@ -160,7 +160,7 @@ impl<Dev: Device<u8, Ext2Error>> Read for Block<Dev> {
 }
 
 impl<Dev: Device<u8, Ext2Error>> Write for Block<Dev> {
-    fn write(&mut self, buf: &[u8]) -> Result<usize, Error<Ext2Error>> {
+    fn write(&mut self, buf: &[u8]) -> Result<usize, Error<Self::IOError>> {
         let fs = self.filesystem.lock();
         let mut device = fs.device.lock();
 
@@ -179,13 +179,13 @@ impl<Dev: Device<u8, Ext2Error>> Write for Block<Dev> {
         Ok(length)
     }
 
-    fn flush(&mut self) -> Result<(), Error<Ext2Error>> {
+    fn flush(&mut self) -> Result<(), Error<Self::IOError>> {
         Ok(())
     }
 }
 
 impl<Dev: Device<u8, Ext2Error>> Seek for Block<Dev> {
-    fn seek(&mut self, pos: SeekFrom) -> Result<u64, Error<Ext2Error>> {
+    fn seek(&mut self, pos: SeekFrom) -> Result<u64, Error<Self::IOError>> {
         let fs = self.filesystem.lock();
 
         let block_size = i64::from(fs.superblock().block_size());
@@ -217,7 +217,6 @@ impl<Dev: Device<u8, Ext2Error>> Seek for Block<Dev> {
 #[cfg(test)]
 mod test {
     use alloc::vec;
-    use core::cell::RefCell;
     use std::fs::File;
 
     use crate::celled::Celled;
@@ -235,13 +234,13 @@ mod test {
     fn block_read() {
         const BLOCK_NUMBER: u32 = 2;
 
-        let file = RefCell::new(File::options().read(true).write(true).open("./tests/fs/ext2/io_operations.ext2").unwrap());
+        let file = File::options().read(true).write(true).open("./tests/fs/ext2/io_operations.ext2").unwrap();
         let celled_file = Celled::new(file);
         let superblock = Superblock::parse(&celled_file).unwrap();
 
         let block_starting_addr = Address::new((BLOCK_NUMBER * superblock.block_size()).try_into().unwrap());
-        let slice = <RefCell<File> as Device<u8, Ext2Error>>::slice(
-            &celled_file.lock(),
+        let slice = <File as Device<u8, Ext2Error>>::slice(
+            &mut celled_file.lock(),
             block_starting_addr + 123..block_starting_addr + 123 + 59,
         )
         .unwrap()
@@ -260,7 +259,7 @@ mod test {
     fn block_write() {
         const BLOCK_NUMBER: u32 = 10_234;
 
-        let file = RefCell::new(copy_file("./tests/fs/ext2/io_operations.ext2").unwrap());
+        let file = copy_file("./tests/fs/ext2/io_operations.ext2").unwrap();
         let ext2 = Celled::new(Ext2::new(file, new_device_id(), false).unwrap());
         let superblock = ext2.lock().superblock().clone();
 
@@ -280,8 +279,8 @@ mod test {
         // This block should not be free
         const BLOCK_NUMBER: u32 = 9;
 
-        let file = RefCell::new(copy_file("./tests/fs/ext2/io_operations.ext2").unwrap());
-        let ext2: Celled<Ext2<RefCell<File>>> = Celled::new(Ext2::new(file, new_device_id(), false).unwrap());
+        let file = copy_file("./tests/fs/ext2/io_operations.ext2").unwrap();
+        let ext2: Celled<Ext2<File>> = Celled::new(Ext2::new(file, new_device_id(), false).unwrap());
         let superblock = ext2.lock().superblock().clone();
 
         let mut block = Block::new(ext2.clone(), BLOCK_NUMBER);
@@ -313,7 +312,7 @@ mod test {
         // This block should not be used
         const BLOCK_NUMBER: u32 = 1920;
 
-        let file = RefCell::new(copy_file("./tests/fs/ext2/io_operations.ext2").unwrap());
+        let file = copy_file("./tests/fs/ext2/io_operations.ext2").unwrap();
         let ext2 = Celled::new(Ext2::new(file, new_device_id(), false).unwrap());
         let superblock = ext2.lock().superblock().clone();
 

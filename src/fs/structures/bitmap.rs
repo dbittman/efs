@@ -18,7 +18,7 @@ use crate::error::Error;
 /// It can handles any [`Copy`] structure directly written onto a [`Device`].
 ///
 /// See [the Wikipedia page](https://en.wikipedia.org/wiki/Bit_array) for more general informations.
-pub struct Bitmap<T: Copy, E: core::error::Error, Dev: Device<T, E>> {
+pub struct Bitmap<T: Copy, FSE: core::error::Error, Dev: Device<T, FSE>> {
     /// Device containing the bitmap.
     device: Celled<Dev>,
 
@@ -32,10 +32,10 @@ pub struct Bitmap<T: Copy, E: core::error::Error, Dev: Device<T, E>> {
     length: usize,
 
     /// Phantom data to use the `E` generic.
-    phantom: PhantomData<E>,
+    phantom: PhantomData<FSE>,
 }
 
-impl<E: core::error::Error, T: Copy + Debug, Dev: Device<T, E>> Debug for Bitmap<T, E, Dev> {
+impl<FSE: core::error::Error, T: Copy + Debug, Dev: Device<T, FSE>> Debug for Bitmap<T, FSE, Dev> {
     fn fmt(&self, fmt: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         fmt.debug_struct("Bitmap")
             .field("inner", &self.inner)
@@ -46,13 +46,13 @@ impl<E: core::error::Error, T: Copy + Debug, Dev: Device<T, E>> Debug for Bitmap
     }
 }
 
-impl<E: core::error::Error, T: Copy, Dev: Device<T, E>> Bitmap<T, E, Dev> {
+impl<FSE: core::error::Error, T: Copy, Dev: Device<T, FSE>> Bitmap<T, FSE, Dev> {
     /// Creates a new [`Bitmap`] instance from the device on which it is located, its starting address on the device and its length.
     ///
     /// # Errors
     ///
     /// Returns an [`Error`] if the device cannot be read.
-    pub fn new(celled_device: Celled<Dev>, starting_addr: Address, length: usize) -> Result<Self, Error<E>> {
+    pub fn new(celled_device: Celled<Dev>, starting_addr: Address, length: usize) -> Result<Self, Error<FSE>> {
         let inner = celled_device.lock().slice(starting_addr..(starting_addr + length))?.to_vec();
         Ok(Self {
             device: celled_device,
@@ -80,7 +80,7 @@ impl<E: core::error::Error, T: Copy, Dev: Device<T, E>> Bitmap<T, E, Dev> {
     /// # Errors
     ///
     /// Returns an [`Error`] if the device cannot be written.
-    pub fn write_back(&mut self) -> Result<(), Error<E>> {
+    pub fn write_back(&mut self) -> Result<(), Error<FSE>> {
         let mut device = self.device.lock();
         let mut slice = device.slice(self.starting_addr..(self.starting_addr + self.length))?;
         slice.clone_from_slice(&self.inner);
@@ -114,7 +114,7 @@ impl<E: core::error::Error, T: Copy, Dev: Device<T, E>> Bitmap<T, E, Dev> {
     }
 }
 
-impl<E: core::error::Error, Dev: Device<u8, E>> Bitmap<u8, E, Dev> {
+impl<FSE: core::error::Error, Dev: Device<u8, FSE>> Bitmap<u8, FSE, Dev> {
     /// Specialization of [`find_to_count`](struct.Bitmap.html#method.find_to_count) to find the first bytes such that the sum of
     /// set bits is at least `n`.
     #[must_use]
@@ -140,7 +140,7 @@ impl<E: core::error::Error, Dev: Device<u8, E>> Bitmap<u8, E, Dev> {
     }
 }
 
-impl<E: core::error::Error, T: Copy, Dev: Device<T, E>> IntoIterator for Bitmap<T, E, Dev> {
+impl<FSE: core::error::Error, T: Copy, Dev: Device<T, FSE>> IntoIterator for Bitmap<T, FSE, Dev> {
     type IntoIter = <Vec<T> as IntoIterator>::IntoIter;
     type Item = T;
 
@@ -149,7 +149,7 @@ impl<E: core::error::Error, T: Copy, Dev: Device<T, E>> IntoIterator for Bitmap<
     }
 }
 
-impl<E: core::error::Error, T: Copy, Dev: Device<T, E>> Deref for Bitmap<T, E, Dev> {
+impl<FSE: core::error::Error, T: Copy, Dev: Device<T, FSE>> Deref for Bitmap<T, FSE, Dev> {
     type Target = [T];
 
     fn deref(&self) -> &Self::Target {
@@ -157,7 +157,7 @@ impl<E: core::error::Error, T: Copy, Dev: Device<T, E>> Deref for Bitmap<T, E, D
     }
 }
 
-impl<E: core::error::Error, T: Copy, Dev: Device<T, E>> DerefMut for Bitmap<T, E, Dev> {
+impl<FSE: core::error::Error, T: Copy, Dev: Device<T, FSE>> DerefMut for Bitmap<T, FSE, Dev> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
     }

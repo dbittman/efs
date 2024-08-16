@@ -84,18 +84,15 @@
 //!   [`File`](std::fs::File) like this:
 //!
 //!     ```
-//!     use core::cell::RefCell;
 //!     use std::fs::File;
 //!
 //!     use efs::dev::Device;
 //!
-//!     let file = RefCell::new(
-//!         File::options()
-//!             .read(true)
-//!             .write(true)
-//!             .open("./tests/fs/ext2/io_operations.ext2")
-//!             .unwrap(),
-//!     );
+//!     let file = File::options()
+//!         .read(true)
+//!         .write(true)
+//!         .open("./tests/fs/ext2/io_operations.ext2")
+//!         .unwrap();
 //!
 //!     // `file` is a `Device`
 //!     ```
@@ -116,7 +113,6 @@
 //! You can find this test file on [efs's codeberg repo](https://codeberg.org/RatCornu/efs).
 //!
 //! ```
-//! use core::cell::RefCell;
 //! use core::str::FromStr;
 //!
 //! use efs::celled::Celled;
@@ -135,13 +131,11 @@
 //! # .unwrap();
 //!
 //! // `device` now contains a `Device`
-//! let device = RefCell::new(
-//!     std::fs::File::options()
-//!         .read(true)
-//!         .write(true)
-//!         .open("./tests/fs/ext2/example.ext2")
-//!         .unwrap(),
-//! );
+//! let device = std::fs::File::options()
+//!     .read(true)
+//!     .write(true)
+//!     .open("./tests/fs/ext2/example.ext2")
+//!     .unwrap();
 //!
 //! let ext2 = Ext2::new(device, 0, false).unwrap();
 //! let fs = Celled::new(ext2);
@@ -257,7 +251,7 @@
 //! // objects between the indices 256 (included) and 512 (not included) of the
 //! // device.
 //! let mut slice = Device::<usize, std::io::Error>::slice(
-//!     &device,
+//!     &mut device,
 //!     Address::try_from(256_u64).unwrap()..Address::try_from(512_u64).unwrap(),
 //! )
 //! .unwrap();

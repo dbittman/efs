@@ -1,5 +1,7 @@
 //! General traits for I/O interfaces.
 
+use std::string::ToString;
+
 #[cfg(feature = "std")]
 use derive_more::{Deref, DerefMut};
 
@@ -189,25 +191,25 @@ impl<S> Base for StdIOWrapper<S> {
 #[cfg(feature = "std")]
 impl<S: std::io::Read> Read for StdIOWrapper<S> {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, Error<Self::IOError>> {
-        self.inner.read(buf).map_err(Error::IO)
+        self.inner.read(buf).map_err(|err| Error::IO(err.to_string()))
     }
 }
 
 #[cfg(feature = "std")]
 impl<S: std::io::Write> Write for StdIOWrapper<S> {
     fn write(&mut self, buf: &[u8]) -> Result<usize, Error<Self::IOError>> {
-        self.inner.write(buf).map_err(Error::IO)
+        self.inner.write(buf).map_err(|err| Error::IO(err.to_string()))
     }
 
     fn flush(&mut self) -> Result<(), Error<Self::IOError>> {
-        self.inner.flush().map_err(Error::IO)
+        self.inner.flush().map_err(|err| Error::IO(err.to_string()))
     }
 }
 
 #[cfg(feature = "std")]
 impl<S: std::io::Seek> Seek for StdIOWrapper<S> {
     fn seek(&mut self, pos: SeekFrom) -> Result<u64, Error<Self::IOError>> {
-        self.inner.seek(pos.into()).map_err(Error::IO)
+        self.inner.seek(pos.into()).map_err(|err| Error::IO(err.to_string()))
     }
 }
 

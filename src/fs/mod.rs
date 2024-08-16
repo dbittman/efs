@@ -35,7 +35,7 @@ pub trait FileSystem<Dir: Directory> {
     /// # Errors
     ///
     /// Returns a [`DevError`](crate::dev::error::DevError) if the device could not be read.
-    fn root(&self) -> Result<Dir, Error<Dir::Error>>;
+    fn root(&self) -> Result<Dir, Error<Dir::FsError>>;
 
     /// Returns the double slash root directory of the filesystem.
     ///
@@ -46,7 +46,7 @@ pub trait FileSystem<Dir: Directory> {
     /// # Errors
     ///
     /// Returns a [`DevError`](crate::dev::error::DevError) if the device could not be read.
-    fn double_slash_root(&self) -> Result<Dir, Error<Dir::Error>>;
+    fn double_slash_root(&self) -> Result<Dir, Error<Dir::FsError>>;
 
     /// Performs a pathname resolution as described in [this POSIX definition](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap04.html#tag_04_13).
     ///
@@ -67,19 +67,19 @@ pub trait FileSystem<Dir: Directory> {
     ///
     /// Returns an [`NoEnt`](FsError::NoEnt) error if an encountered symlink points to a non-existing file.
 
-    fn get_file(&self, path: &Path, current_dir: Dir, symlink_resolution: bool) -> Result<TypeWithFile<Dir>, Error<Dir::Error>>
+    fn get_file(&self, path: &Path, current_dir: Dir, symlink_resolution: bool) -> Result<TypeWithFile<Dir>, Error<Dir::FsError>>
     where
         Self: Sized,
     {
         /// Auxiliary function used to store the visited symlinks during the pathname resolution to detect loops caused bt symbolic
         /// links.
-        fn path_resolution<E: core::error::Error, D: Directory<Error = E>>(
+        fn path_resolution<FSE: core::error::Error, D: Directory<FsError = FSE>>(
             fs: &impl FileSystem<D>,
             path: &Path,
             mut current_dir: D,
             symlink_resolution: bool,
             mut visited_symlinks: Vec<String>,
-        ) -> Result<TypeWithFile<D>, Error<E>> {
+        ) -> Result<TypeWithFile<D>, Error<FSE>> {
             let canonical_path = path.canonical();
 
             if canonical_path.len() > PATH_MAX {
@@ -199,7 +199,7 @@ pub trait FileSystem<Dir: Directory> {
         permissions: Permissions,
         user_id: Uid,
         group_id: Gid,
-    ) -> Result<TypeWithFile<Dir>, Error<Dir::Error>>
+    ) -> Result<TypeWithFile<Dir>, Error<Dir::FsError>>
     where
         Self: Sized,
     {
@@ -239,7 +239,7 @@ pub trait FileSystem<Dir: Directory> {
     /// # Errors
     ///
     /// Returns a [`DevError`](crate::dev::error::DevError) if the device could not be read/written.
-    fn remove_file(&mut self, path: Path<'_>) -> Result<(), Error<Dir::Error>>
+    fn remove_file(&mut self, path: Path<'_>) -> Result<(), Error<Dir::FsError>>
     where
         Self: Sized,
     {
@@ -276,7 +276,7 @@ pub trait ReadOnlyFileSystem<RoDir: ReadOnlyDirectory> {
     /// # Errors
     ///
     /// Returns a [`DevError`](crate::dev::error::DevError) if the device could not be read.
-    fn root(&self) -> Result<RoDir, Error<RoDir::Error>>;
+    fn root(&self) -> Result<RoDir, Error<RoDir::FsError>>;
 
     /// Returns the double slash root directory of the filesystem.
     ///
@@ -287,7 +287,7 @@ pub trait ReadOnlyFileSystem<RoDir: ReadOnlyDirectory> {
     /// # Errors
     ///
     /// Returns a [`DevError`](crate::dev::error::DevError) if the device could not be read.
-    fn double_slash_root(&self) -> Result<RoDir, Error<RoDir::Error>>;
+    fn double_slash_root(&self) -> Result<RoDir, Error<RoDir::FsError>>;
 
     /// Performs a pathname resolution as described in [this POSIX definition](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap04.html#tag_04_13).
     ///
@@ -313,19 +313,19 @@ pub trait ReadOnlyFileSystem<RoDir: ReadOnlyDirectory> {
         path: &Path,
         current_dir: RoDir,
         symlink_resolution: bool,
-    ) -> Result<ReadOnlyTypeWithFile<RoDir>, Error<RoDir::Error>>
+    ) -> Result<ReadOnlyTypeWithFile<RoDir>, Error<RoDir::FsError>>
     where
         Self: Sized,
     {
         /// Auxiliary function used to store the visited symlinks during the pathname resolution to detect loops caused bt symbolic
         /// links.
-        fn path_resolution<E: core::error::Error, D: ReadOnlyDirectory<Error = E>>(
+        fn path_resolution<FSE: core::error::Error, D: ReadOnlyDirectory<FsError = FSE>>(
             fs: &impl ReadOnlyFileSystem<D>,
             path: &Path,
             mut current_dir: D,
             symlink_resolution: bool,
             mut visited_symlinks: Vec<String>,
-        ) -> Result<ReadOnlyTypeWithFile<D>, Error<E>> {
+        ) -> Result<ReadOnlyTypeWithFile<D>, Error<FSE>> {
             let canonical_path = path.canonical();
 
             if canonical_path.len() > PATH_MAX {

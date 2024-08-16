@@ -616,7 +616,7 @@ impl Superblock {
     ///
     /// Returns an [`Error`] if the device could not be read.
     pub fn parse<Dev: Device<u8, Ext2Error>>(celled_device: &Celled<Dev>) -> Result<Self, Error<Ext2Error>> {
-        let device = celled_device.lock();
+        let mut device = celled_device.lock();
 
         // SAFETY: all the possible failures are catched in the resulting error
         let superblock_base = unsafe { device.read_at::<Base>(Address::from(SUPERBLOCK_START_BYTE)) }?;
@@ -793,7 +793,6 @@ impl Superblock {
 #[cfg(test)]
 mod test {
     use alloc::vec;
-    use core::cell::RefCell;
     use core::mem::size_of;
     use std::fs::File;
 
@@ -809,7 +808,7 @@ mod test {
 
     #[test]
     fn basic_superblock() {
-        let file = RefCell::new(File::options().read(true).write(true).open("./tests/fs/ext2/base.ext2").unwrap());
+        let file = File::options().read(true).write(true).open("./tests/fs/ext2/base.ext2").unwrap();
         let celled_file = Celled::new(file);
         let superblock = Superblock::parse(&celled_file).unwrap();
         assert!(!superblock.is_extended());
@@ -820,7 +819,7 @@ mod test {
 
     #[test]
     fn extended_superblock() {
-        let file = RefCell::new(File::options().read(true).write(true).open("./tests/fs/ext2/extended.ext2").unwrap());
+        let file = File::options().read(true).write(true).open("./tests/fs/ext2/extended.ext2").unwrap();
         let celled_file = Celled::new(file);
         let superblock = Superblock::parse(&celled_file).unwrap();
         assert!(superblock.is_extended());
