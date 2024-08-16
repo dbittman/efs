@@ -163,13 +163,16 @@ pub trait Seek: Base {
 
 /// A wrapper struct for types that have implementations for [`std::io`] traits.
 ///
-/// [`Read`], [`Write`] and [`Seek`] are implemented for this type if the corresponding [`std::io`] trait is implemented for `T`.
+/// [`Read`], [`Write`] and [`Seek`] are implemented for this type if the corresponding [`std::io`] trait is implemented for `S`.
+///
+/// Moreover, `FSE` correspond to the filesystem's error type.
 #[cfg(feature = "std")]
 #[cfg_attr(docsrs, doc(cfg(feature = "std")))]
 pub struct StdIOWrapper<S, FSE: core::error::Error> {
     /// Inner object, supposedly implementing at least one [`std::io`] trait.
     inner: S,
 
+    /// Phantom data for the file system error.
     phantom: PhantomData<FSE>,
 }
 
@@ -225,6 +228,3 @@ impl<S, FSE: core::error::Error> From<S> for StdIOWrapper<S, FSE> {
         Self::new(value)
     }
 }
-
-#[cfg(test)]
-mod test {}
