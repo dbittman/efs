@@ -19,6 +19,7 @@ pub mod error;
 pub mod structures;
 
 #[cfg(feature = "ext2")]
+#[cfg_attr(docsrs, doc(cfg(feature = "ext2")))]
 pub mod ext2;
 
 /// Maximal length for a path.

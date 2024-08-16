@@ -302,6 +302,7 @@
 //! Advice: start with the read-only functions and methods. It will be **MUCH** easier that the write methods.
 
 #![no_std]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 #![allow(
     clippy::absolute_paths,
     clippy::arithmetic_side_effects,

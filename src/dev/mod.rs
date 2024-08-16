@@ -339,6 +339,7 @@ impl_device!(Vec<T>);
 impl_device!(Box<[T]>);
 
 #[cfg(feature = "std")]
+#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
 impl<FSE: core::error::Error> Device<u8, FSE> for std::fs::File {
     fn size(&mut self) -> Size {
         let metadata = self.metadata().expect("Could not read the file");

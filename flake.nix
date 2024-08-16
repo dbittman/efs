@@ -42,6 +42,8 @@
           cargo-deny
           git
         ];
+
+        RUSTDOCFLAGS = "--cfg docsrs";
       };
 
       packages.efs = craneLib.buildPackage (commonArgs // {

@@ -128,6 +128,7 @@ pub enum SeekFrom {
 }
 
 #[cfg(feature = "std")]
+#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
 impl From<std::io::SeekFrom> for SeekFrom {
     fn from(value: std::io::SeekFrom) -> Self {
         match value {
@@ -139,6 +140,7 @@ impl From<std::io::SeekFrom> for SeekFrom {
 }
 
 #[cfg(feature = "std")]
+#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
 impl From<SeekFrom> for std::io::SeekFrom {
     fn from(value: SeekFrom) -> Self {
         match value {
@@ -167,6 +169,7 @@ pub trait Seek: Base {
 ///
 /// [`Read`], [`Write`] and [`Seek`] are implemented for this type if the corresponding [`std::io`] trait is implemented for `T`.
 #[cfg(feature = "std")]
+#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
 #[derive(Deref, DerefMut)]
 pub struct StdIOWrapper<S> {
     /// Inner object, supposedly implementing at least one [`std::io`] trait.

@@ -29,6 +29,7 @@ pub enum Error<FSE: core::error::Error> {
 impl<FSE: core::error::Error> core::error::Error for Error<FSE> {}
 
 #[cfg(feature = "std")]
+#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
 impl<FSE: core::error::Error> From<std::io::Error> for Error<FSE> {
     fn from(value: std::io::Error) -> Self {
         match value.kind() {
