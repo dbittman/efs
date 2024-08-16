@@ -1,7 +1,6 @@
 //! Interface for `efs` possible errors
 
-use alloc::string::String;
-use std::string::ToString;
+use alloc::string::{String, ToString};
 
 use derive_more::derive::{Display, From};
 

@@ -1,6 +1,6 @@
 //! General traits for I/O interfaces.
 
-use std::string::ToString;
+use alloc::string::ToString;
 
 #[cfg(feature = "std")]
 use derive_more::{Deref, DerefMut};
