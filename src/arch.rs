@@ -47,7 +47,7 @@ pub fn usize_to_u64(#[allow(unused)] n: usize) -> u64 {
 /// Panics if the target pointer width is strictly smaller than 32-bits.
 #[inline]
 #[must_use]
-pub(crate) fn u32_to_usize(#[allow(unused)] n: u32) -> usize {
+pub fn u32_to_usize(#[allow(unused)] n: u32) -> usize {
     cfg_if::cfg_if! {
         if #[cfg(any(target_pointer_width = "32", target_pointer_width = "64"))] {
             // SAFETY: n is a usize because u32 <= usize

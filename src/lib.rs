@@ -84,18 +84,15 @@
 //!   [`File`](std::fs::File) like this:
 //!
 //!     ```
-//!     use core::cell::RefCell;
 //!     use std::fs::File;
 //!
 //!     use efs::dev::Device;
 //!
-//!     let file = RefCell::new(
-//!         File::options()
-//!             .read(true)
-//!             .write(true)
-//!             .open("./tests/fs/ext2/io_operations.ext2")
-//!             .unwrap(),
-//!     );
+//!     let file = File::options()
+//!         .read(true)
+//!         .write(true)
+//!         .open("./tests/fs/ext2/io_operations.ext2")
+//!         .unwrap();
 //!
 //!     // `file` is a `Device`
 //!     ```
@@ -116,7 +113,6 @@
 //! You can find this test file on [efs's codeberg repo](https://codeberg.org/RatCornu/efs).
 //!
 //! ```
-//! use core::cell::RefCell;
 //! use core::str::FromStr;
 //!
 //! use efs::celled::Celled;
@@ -135,13 +131,11 @@
 //! # .unwrap();
 //!
 //! // `device` now contains a `Device`
-//! let device = RefCell::new(
-//!     std::fs::File::options()
-//!         .read(true)
-//!         .write(true)
-//!         .open("./tests/fs/ext2/example.ext2")
-//!         .unwrap(),
-//! );
+//! let device = std::fs::File::options()
+//!     .read(true)
+//!     .write(true)
+//!     .open("./tests/fs/ext2/example.ext2")
+//!     .unwrap();
 //!
 //! let ext2 = Ext2::new(device, 0, false).unwrap();
 //! let fs = Celled::new(ext2);
@@ -231,7 +225,9 @@
 //! # std::fs::remove_file("./tests/fs/ext2/example.ext2").unwrap();
 //! ```
 //!
-//! ### How to implement a device?
+//! ## How to implement a device?
+//!
+//! ### In an `no_std` environment
 //!
 //! To implement a device, you need to provide three methods:
 //!
@@ -257,7 +253,7 @@
 //! // objects between the indices 256 (included) and 512 (not included) of the
 //! // device.
 //! let mut slice = Device::<usize, std::io::Error>::slice(
-//!     &device,
+//!     &mut device,
 //!     Address::try_from(256_u64).unwrap()..Address::try_from(512_u64).unwrap(),
 //! )
 //! .unwrap();
@@ -278,7 +274,72 @@
 //! Moreover, your implementation of a device should only returns [`DevError`](crate::dev::error::DevError)s in case of a read/write
 //! fail.
 //!
-//! ### How to implement a filesystem?
+//! ### In an `std` environment
+//!
+//! You have two options in this case:
+//!
+//! - either doing the same process as in a `no_std` environment (see above)
+//! - either implementing [`Read`](std::io::Read), [`Write`](std::io::Write) and [`Seek`](std::io::Seek) on your device.
+//!
+//! In the second case, you will have to use the [`StdIOWrapper`](io::StdIOWrapper), here is a dummy example:
+//!
+//! ```
+//! use std::error::Error;
+//! use std::fmt::Display;
+//! use std::io::{Read, Seek, SeekFrom, Write};
+//!
+//! use efs::dev::sector::Address;
+//! use efs::dev::Device;
+//! use efs::io::StdIOWrapper;
+//!
+//! #[derive(Debug)]
+//! struct Foo {} // Foo is our device
+//!
+//! #[derive(Debug)]
+//! struct BarError {} // FooError is the error type related to the Bar filesystem
+//!
+//! impl Display for BarError {
+//!     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+//!         write!(f, "BarError")
+//!     }
+//! }
+//!
+//! impl Error for BarError {}
+//!
+//! impl Read for Foo {
+//!     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+//!         buf.fill(1);
+//!         Ok(buf.len())
+//!     }
+//! }
+//!
+//! impl Write for Foo {
+//!     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+//!         Ok(buf.len())
+//!     }
+//!
+//!     fn flush(&mut self) -> std::io::Result<()> {
+//!         Ok(())
+//!     }
+//! }
+//!
+//! impl Seek for Foo {
+//!     fn seek(&mut self, _pos: SeekFrom) -> std::io::Result<u64> {
+//!         Ok(0)
+//!     }
+//! }
+//!
+//! let foo = Foo {};
+//! let mut device = StdIOWrapper::<_, BarError>::new(foo);
+//!
+//! // Now device implements `Device<u8, BarError>`,
+//! // thus we can use all the methods from the `Device` trait.
+//!
+//! assert_eq!(unsafe { device.read_at::<u8>(Address::new(0)) }.unwrap(), 1);
+//! assert_eq!(unsafe { device.read_at::<u32>(Address::new(0)) }.unwrap(), 0x0101_0101);
+//! ```
+//!
+//! ## How to implement a filesystem?
 //!
 //! To implement a filesystem, you will need a lot of structures and methods. You can read the implementation of the `ext2`
 //! filesystem as an example, but here is a general layout of what you need to do:
@@ -308,6 +369,7 @@
 //! Advice: start with the read-only functions and methods. It will be **MUCH** easier that the write methods.
 
 #![no_std]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 #![allow(
     clippy::absolute_paths,
     clippy::arithmetic_side_effects,

@@ -699,7 +699,7 @@ impl<Dev: Device<u8, Ext2Error>> Celled<Ext2<Dev>> {
 }
 
 impl<Dev: Device<u8, Ext2Error>> FileSystem<Directory<Dev>> for Celled<Ext2<Dev>> {
-    fn root(&self) -> Result<Directory<Dev>, Error<<Directory<Dev> as crate::file::File>::Error>> {
+    fn root(&self) -> Result<Directory<Dev>, Error<<Directory<Dev> as crate::io::Base>::FsError>> {
         self.file(ROOT_DIRECTORY_INODE).and_then(|root| match root {
             TypeWithFile::Directory(root_dir) => Ok(root_dir),
             TypeWithFile::Regular(_)
@@ -714,14 +714,13 @@ impl<Dev: Device<u8, Ext2Error>> FileSystem<Directory<Dev>> for Celled<Ext2<Dev>
         })
     }
 
-    fn double_slash_root(&self) -> Result<Directory<Dev>, Error<<Directory<Dev> as crate::file::File>::Error>> {
+    fn double_slash_root(&self) -> Result<Directory<Dev>, Error<<Directory<Dev> as crate::io::Base>::FsError>> {
         self.root()
     }
 }
 
 #[cfg(test)]
 mod test {
-    use core::cell::RefCell;
     use core::str::FromStr;
     use std::fs::File;
 
@@ -744,7 +743,7 @@ mod test {
 
     #[test]
     fn base_fs() {
-        let device = RefCell::new(File::options().read(true).write(true).open("./tests/fs/ext2/base.ext2").unwrap());
+        let device = File::options().read(true).write(true).open("./tests/fs/ext2/base.ext2").unwrap();
         let ext2 = Ext2::new(device, new_device_id(), false).unwrap();
         let root = ext2.inode(ROOT_DIRECTORY_INODE).unwrap();
         assert_eq!(root.file_type().unwrap(), Type::Directory);
@@ -752,7 +751,7 @@ mod test {
 
     #[test]
     fn fetch_file() {
-        let device = RefCell::new(File::options().read(true).write(true).open("./tests/fs/ext2/extended.ext2").unwrap());
+        let device = File::options().read(true).write(true).open("./tests/fs/ext2/extended.ext2").unwrap();
         let ext2 = Celled::new(Ext2::new(device, new_device_id(), false).unwrap());
 
         let TypeWithFile::Directory(root) = ext2.file(ROOT_DIRECTORY_INODE).unwrap() else { panic!() };
@@ -765,7 +764,7 @@ mod test {
 
     #[test]
     fn get_bitmap() {
-        let device = RefCell::new(File::options().read(true).write(true).open("./tests/fs/ext2/base.ext2").unwrap());
+        let device = File::options().read(true).write(true).open("./tests/fs/ext2/base.ext2").unwrap();
         let ext2 = Ext2::new(device, new_device_id(), false).unwrap();
 
         assert_eq!(ext2.get_block_bitmap(0).unwrap().length() * 8, u32_to_usize(ext2.superblock().base().blocks_per_group));
@@ -773,7 +772,7 @@ mod test {
 
     #[test]
     fn free_block_numbers() {
-        let device = RefCell::new(File::options().read(true).write(true).open("./tests/fs/ext2/base.ext2").unwrap());
+        let device = File::options().read(true).write(true).open("./tests/fs/ext2/base.ext2").unwrap();
         let ext2 = Ext2::new(device, new_device_id(), false).unwrap();
         let free_blocks = ext2.free_blocks(1_024).unwrap();
         let superblock = ext2.superblock().clone();
@@ -789,7 +788,7 @@ mod test {
 
     #[test]
     fn free_block_amount() {
-        let device = RefCell::new(File::options().read(true).write(true).open("./tests/fs/ext2/base.ext2").unwrap());
+        let device = File::options().read(true).write(true).open("./tests/fs/ext2/base.ext2").unwrap();
         let ext2 = Ext2::new(device, 0, false).unwrap();
 
         for i in 1_u32..1_024 {
@@ -807,7 +806,7 @@ mod test {
 
     #[test]
     fn free_block_small_allocation_deallocation() {
-        let file = RefCell::new(copy_file("./tests/fs/ext2/io_operations.ext2").unwrap());
+        let file = copy_file("./tests/fs/ext2/io_operations.ext2").unwrap();
         let mut ext2 = Ext2::new(file, new_device_id(), false).unwrap();
 
         let mut free_blocks = ext2.free_blocks(1_024).unwrap();
@@ -832,7 +831,7 @@ mod test {
 
     #[test]
     fn free_block_big_allocation_deallocation() {
-        let file = RefCell::new(copy_file("./tests/fs/ext2/io_operations.ext2").unwrap());
+        let file = copy_file("./tests/fs/ext2/io_operations.ext2").unwrap();
         let mut ext2 = Ext2::new(file, new_device_id(), false).unwrap();
 
         let superblock_free_block_count = ext2.superblock().base().free_blocks_count;
@@ -886,7 +885,7 @@ mod test {
 
     #[test]
     fn free_inode_allocation_deallocation() {
-        let file = RefCell::new(copy_file("./tests/fs/ext2/io_operations.ext2").unwrap());
+        let file = copy_file("./tests/fs/ext2/io_operations.ext2").unwrap();
         let ext2 = Ext2::new(file, new_device_id(), false).unwrap();
 
         let celled_fs = Celled::new(ext2);
@@ -920,7 +919,7 @@ mod test {
 
     #[test]
     fn fs_interface() {
-        let file = RefCell::new(copy_file("./tests/fs/ext2/io_operations.ext2").unwrap());
+        let file = copy_file("./tests/fs/ext2/io_operations.ext2").unwrap();
         let ext2 = Ext2::new(file, new_device_id(), false).unwrap();
         let fs = Celled::new(ext2);
 
