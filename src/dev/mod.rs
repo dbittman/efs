@@ -387,6 +387,10 @@ impl<FSE: core::error::Error> Device<u8, FSE> for std::fs::File {
         std::io::Seek::seek(self, std::io::SeekFrom::Start(offset))?;
         Ok(())
     }
+
+    fn now(&mut self) -> Option<Timespec> {
+        Some(default_now())
+    }
 }
 
 #[cfg(test)]
