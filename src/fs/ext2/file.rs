@@ -188,27 +188,28 @@ impl<Dev: Device<u8, Ext2Error>> file::File for File<Dev> {
 
         Stat {
             dev: crate::types::Dev(filesystem.device_id),
-            ino: Ino(self.inode_number),
+            ino: Ino(u32_to_usize(self.inode_number)),
             mode: Mode(self.inode.mode),
             nlink: Nlink(u32::from(self.inode.links_count)),
-            uid: Uid(self.inode.uid),
-            gid: Gid(self.inode.gid),
+            uid: Uid(self.inode.uid.into()),
+            gid: Gid(self.inode.gid.into()),
             rdev: crate::types::Dev::default(),
             size: Off(self.inode.data_size().try_into().unwrap_or_default()),
             atim: Timespec {
                 tv_sec: Time(self.inode.atime.into()),
-                tv_nsec: i32::default(),
+                tv_nsec: usize::default(),
             },
             mtim: Timespec {
                 tv_sec: Time(self.inode.mtime.into()),
-                tv_nsec: i32::default(),
+                tv_nsec: usize::default(),
             },
             ctim: Timespec {
                 tv_sec: Time(self.inode.ctime.into()),
-                tv_nsec: i32::default(),
+                tv_nsec: usize::default(),
             },
-            blksize: Blksize(filesystem.superblock.block_size().try_into().unwrap_or_default()),
-            blkcnt: Blkcnt(self.inode.blocks.try_into().unwrap_or_default()),
+            // SAFETY: it is safe to assume that `block_size << isize::MAX` with `isize` at least `i32`
+            blksize: Blksize(unsafe { u32_to_usize(filesystem.superblock.block_size()).try_into().unwrap_unchecked() }),
+            blkcnt: Blkcnt(self.inode.blocks.into()),
         }
     }
 
@@ -227,14 +228,16 @@ impl<Dev: Device<u8, Ext2Error>> file::File for File<Dev> {
 
     fn set_uid(&mut self, uid: Uid) -> Result<(), Error<Self::FsError>> {
         let mut new_inode = self.inode;
-        new_inode.uid = *uid;
+        new_inode.uid =
+            TryInto::<u16>::try_into(uid.0).map_err(|_| Error::Fs(FsError::Implementation(Ext2Error::UidTooLarge(uid.0))))?;
         // SAFETY: only the UID has changed
         unsafe { self.set_inode(&new_inode) }
     }
 
     fn set_gid(&mut self, gid: Gid) -> Result<(), Error<Self::FsError>> {
         let mut new_inode = self.inode;
-        new_inode.gid = *gid;
+        new_inode.gid =
+            TryInto::<u16>::try_into(gid.0).map_err(|_| Error::Fs(FsError::Implementation(Ext2Error::GidTooLarge(gid.0))))?;
         // SAFETY: only the GID has changed
         unsafe { self.set_inode(&new_inode) }
     }
@@ -762,8 +765,14 @@ impl<Dev: Device<u8, Ext2Error>> file::Directory for Directory<Dev> {
         fs.allocate_inode(
             inode_number,
             TypePermissions::from(permissions) | TypePermissions::from(file_type),
-            user_id.0,
-            group_id.0,
+            user_id
+                .0
+                .try_into()
+                .map_err(|_| Error::Fs(FsError::Implementation(Ext2Error::UidTooLarge(user_id.0))))?,
+            group_id
+                .0
+                .try_into()
+                .map_err(|_| Error::Fs(FsError::Implementation(Ext2Error::GidTooLarge(group_id.0))))?,
             Flags::empty(),
             0,
             [0; 12],

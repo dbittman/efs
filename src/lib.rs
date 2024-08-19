@@ -19,6 +19,8 @@
 //!
 //! **Every** structure, trait and function in this crate is documented and contains source if needed. If you find something unclear, do not hesitate to create an issue at <https://codeberg.org/RatCornu/efs/issues>.
 //!
+//! This library sticks as much as possible with the POSIX specification, fully available online on <https://pubs.opengroup.org/onlinepubs/9799919799/>.
+//!
 //! ### File interfaces
 //!
 //! * As defined in POSIX, a file can either be a [`Regular`](crate::file::Regular), a [`Directory`](crate::file::Directory), a

@@ -24,9 +24,9 @@ pub mod ext2;
 
 /// Maximal length for a path.
 ///
-/// This is defined in [this POSIX definition](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap04.html#tag_04_13).
+/// This is defined in [this POSIX definition](https://pubs.opengroup.org/onlinepubs/9799919799/basedefs/V1_chap04.html#tag_04_16).
 ///
-/// This value is the same as the one defined in [the linux's `limits.h` header](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/uapi/linux/limits.h?h=v6.5.8#n13).
+/// This value is the same as the one defined in [the linux's `limits.h` header](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/uapi/linux/limits.h?h=linux-6.9.y#n13).
 pub const PATH_MAX: usize = 4_096;
 
 /// A filesystem.
@@ -49,7 +49,7 @@ pub trait FileSystem<Dir: Directory> {
     /// Returns a [`DevError`](crate::dev::error::DevError) if the device could not be read.
     fn double_slash_root(&self) -> Result<Dir, Error<Dir::FsError>>;
 
-    /// Performs a pathname resolution as described in [this POSIX definition](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap04.html#tag_04_13).
+    /// Performs a pathname resolution as described in [this POSIX definition](https://pubs.opengroup.org/onlinepubs/9799919799/basedefs/V1_chap04.html#tag_04_16).
     ///
     /// Returns the file of this filesystem corresponding to the given `path`, starting at the `current_dir`.
     ///
@@ -290,7 +290,7 @@ pub trait ReadOnlyFileSystem<RoDir: ReadOnlyDirectory> {
     /// Returns a [`DevError`](crate::dev::error::DevError) if the device could not be read.
     fn double_slash_root(&self) -> Result<RoDir, Error<RoDir::FsError>>;
 
-    /// Performs a pathname resolution as described in [this POSIX definition](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap04.html#tag_04_13).
+    /// Performs a pathname resolution as described in [this POSIX definition](https://pubs.opengroup.org/onlinepubs/9799919799/basedefs/V1_chap04.html#tag_04_16).
     ///
     /// Returns the file of this filesystem corresponding to the given `path`, starting at the `current_dir`.
     ///

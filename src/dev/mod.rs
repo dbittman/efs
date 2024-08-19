@@ -15,7 +15,6 @@ use crate::arch::usize_to_u64;
 use crate::dev::error::DevError;
 use crate::error::Error;
 use crate::io::{Base, Read, Seek, SeekFrom, Write};
-// use crate::io::{Base, Read, Seek, SeekFrom, Write};
 
 pub mod error;
 pub mod sector;
