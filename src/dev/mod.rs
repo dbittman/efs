@@ -15,6 +15,9 @@ use crate::arch::usize_to_u64;
 use crate::dev::error::DevError;
 use crate::error::Error;
 use crate::io::{Base, Read, Seek, SeekFrom, Write};
+#[cfg(feature = "std")]
+use crate::types::Time;
+use crate::types::Timespec;
 
 pub mod error;
 pub mod sector;
@@ -248,6 +251,30 @@ pub trait Device<T: Copy, FSE: core::error::Error> {
 
         let commit = device_slice.commit();
         self.commit(commit).map_err(Into::into)
+    }
+
+    /// Returns the current [`Timespec`] if the device is able to.
+    ///
+    /// Otherwise, returns [`None`].
+    fn now(&mut self) -> Option<Timespec> {
+        None
+    }
+}
+
+/// Returns the current time in the [`Timespec`] format.
+///
+/// Gives a direct implementation of [`Device::now`] for `std` devices.
+#[cfg(feature = "std")]
+#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
+#[must_use]
+pub fn default_now() -> Timespec {
+    // SAFETY: UNIX_EPOCH was the 01/01/1970 (midnight UTC/GMT), so "now" will always be after this instant
+    let now = unsafe { std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_unchecked() };
+    Timespec {
+        // SAFETY: the number of seconds from the UNIX_EPOCH will reach i64::MAX in billions of years
+        tv_sec: Time(unsafe { now.as_secs().try_into().unwrap_unchecked() }),
+        // SAFETY: cannot make this conversion only on 16-bits systems, which cannot use `std` in the current version of Rust
+        tv_nsec: unsafe { usize::try_from(now.as_nanos() % 1_000_000_000).unwrap_unchecked() },
     }
 }
 
