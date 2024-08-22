@@ -106,7 +106,7 @@ impl<Dev: Device<u8, Ext2Error>> File<Dev> {
     ///
     /// # Errors
     ///
-    /// Returns an [`Error`] if the device cannot be written.
+    /// Returns an [`Error::Device`] if the device cannot be written.
     ///
     /// # Safety
     ///
@@ -125,7 +125,7 @@ impl<Dev: Device<u8, Ext2Error>> File<Dev> {
     ///
     /// # Errors
     ///
-    /// Same as [`truncate`](file::Regular::truncate).
+    /// Returns the same errors as [`truncate`](file::Regular::truncate).
     pub fn truncate(&mut self, size: u64) -> Result<(), Error<Ext2Error>> {
         if self.inode.data_size() <= size {
             return Ok(());
@@ -653,7 +653,7 @@ impl<Dev: Device<u8, Ext2Error>> Directory<Dev> {
     /// Writes all the entries of the block `block_index`.
     ///
     /// This function does not perform any check: the entries **MUST** be in a coherent state. It is recommanded to perform
-    /// [`defragment`](struct.Directory.html#method.defragment) beforehand.
+    /// [`defragment`](Directory::defragment) beforehand.
     ///
     /// # Safety
     ///
@@ -676,7 +676,7 @@ impl<Dev: Device<u8, Ext2Error>> Directory<Dev> {
     /// Writes all the entries.
     ///
     /// This function does not perform any check: the entries **MUST** be in a coherent state. It is recommanded to perform
-    /// [`defragment`](struct.Directory.html#method.defragment) beforehand.
+    /// [`defragment`](Directory::defragment) beforehand.
     ///
     /// # Safety
     ///

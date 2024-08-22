@@ -126,7 +126,6 @@ impl From<Permissions> for Mode {
 
 impl Permissions {
     /// Returns the permission [`Triad`] for the given [`Class`].
-
     #[must_use]
     pub const fn triad_for(&self, class: Class) -> Triad {
         let (read_class, write_class, execution_class) = match class {

@@ -158,7 +158,10 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
     ///
     /// # Errors
     ///
-    /// Returns an [`Error`] if the device could not be read of if no ext2 filesystem is found on this device.
+    /// Returns an [`Error::Device`] if the device cannot be read.
+    ///
+    /// Returns [`Ext2Error::BadMagic`] if the magic number found in the superblock is not equal to
+    /// [`EXT2_SIGNATURE`](superblock::EXT2_SIGNATURE).
     pub fn new(device: Dev, device_id: u32, cache: bool) -> Result<Self, Error<Ext2Error>> {
         let celled_device = Celled::new(device);
         Self::new_celled(celled_device, device_id, cache)
@@ -168,7 +171,12 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
     ///
     /// # Errors
     ///
-    /// Returns an [`Error`] if the device could not be read of if no ext2 filesystem is found on this device.
+    /// Returns an [`Error::Device`] if the device cannot be read.
+    ///
+    /// Returns [`Ext2Error::UnsupportedFeature`] if the filesystem requires a feature that is unsupported by this implementation.
+    ///
+    /// Returns [`Ext2Error::BadMagic`] if the magic number found in the superblock is not equal to
+    /// [`EXT2_SIGNATURE`](superblock::EXT2_SIGNATURE).
     pub fn new_celled(celled_device: Celled<Dev>, device_id: u32, cache: bool) -> Result<Self, Error<Ext2Error>> {
         let superblock = Superblock::parse(&celled_device)?;
 
@@ -227,7 +235,7 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
     ///
     /// # Errors
     ///
-    /// Returns an [`Error`] if the device cannot be read.
+    /// Returns the same errors as [`Superblock::parse`].
     fn update_inner_superblock(&mut self) -> Result<(), Error<Ext2Error>> {
         self.superblock = Superblock::parse(&self.device)?;
         Ok(())
@@ -237,7 +245,8 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
     ///
     /// # Errors
     ///
-    /// Returns an [`Error`] if the device cannot be written.
+    ///
+    /// Returns an [`Error::Device`] if the device cannot be written.
     ///
     /// # Safety
     ///
@@ -259,7 +268,7 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
     ///
     /// # Errors
     ///
-    /// Returns an [`Error`] if the device cannot be written.
+    /// Returns an [`Error::Device`] if the device cannot be written.
     ///
     /// # Safety
     ///
@@ -275,7 +284,7 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
     ///
     /// # Errors
     ///
-    /// Returns the same errors as [`BlockGroupDescriptor::parse`](block_group/struct.BlockGroupDescriptor.html#method.parse).
+    /// Returns the same errors as [`BlockGroupDescriptor::parse`](BlockGroupDescriptor::parse).
     pub fn get_block_bitmap(&self, block_group_number: u32) -> Result<Bitmap<u8, Ext2Error, Dev>, Error<Ext2Error>> {
         let superblock = self.superblock();
 
@@ -294,7 +303,7 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
     ///
     /// Returns an [`NotEnoughFreeBlocks`](Ext2Error::NotEnoughFreeBlocks) error if requested more free blocks than available.
     ///
-    /// Returns an [`Error`] if the device cannot be read.
+    /// Returns an [`Error::Device`] if the device cannot be read.
     pub fn free_blocks_offset(&self, n: u32, start_block_group: u32) -> Result<Vec<u32>, Error<Ext2Error>> {
         if n == 0 {
             return Ok(vec![]);
@@ -352,7 +361,7 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
     ///
     /// # Errors
     ///
-    /// Returns the same errors as [`free_blocks_offset`](struct.Celled.html#method.free_blocks_offset).
+    /// Returns the same errors as [`free_blocks_offset`](Ext2::free_blocks_offset).
     pub fn free_blocks(&self, n: u32) -> Result<Vec<u32>, Error<Ext2Error>> {
         self.free_blocks_offset(n, 0)
     }
@@ -362,6 +371,8 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
     ///
     /// # Errors
     ///
+    /// Returns an [`Error::Device`] if the device cannot be read/written.
+    ///
     /// Returns an [`BlockAlreadyInUse`](Ext2Error::BlockAlreadyInUse) error if it tries to allocate a block that was already in
     /// use.
     ///
@@ -369,13 +380,13 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
     ///
     /// Returns an [`NonExistingBlock`](Ext2Error::NonExistingBlock) error if a given block does not exist.
     ///
-    /// Otherwise, returns the same errors as [`get_block_bitmap`](struct.Ext2.html#method.get_block_bitmap).
+    /// Otherwise, returns the same errors as [`get_block_bitmap`](Ext2::get_block_bitmap).
     fn locate_blocks(&mut self, blocks: &[u32], usage: bool) -> Result<(), Error<Ext2Error>> {
         /// Updates the block group bitmap and the free block count in the descriptor.
         ///
         /// # Errors
         ///
-        /// Returns an [`Error`] if the device cannot be written.
+        /// Returns an [`Error::Device`] if the device cannot be read.
         ///
         /// # Safety
         ///
@@ -470,9 +481,11 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
     ///
     /// # Errors
     ///
+    /// Returns an [`Error::Device`] if the device cannot be read/written.
+    ///
     /// Returns an [`BlockAlreadyInUse`](Ext2Error::BlockAlreadyInUse) error if the given block was already in use.
     ///
-    /// Otherwise, returns the same errors as [`get_block_bitmap`](struct.Ext2.html#method.get_block_bitmap).
+    /// Otherwise, returns the same errors as [`get_block_bitmap`](Ext2::get_block_bitmap).
     pub fn allocate_blocks(&mut self, blocks: &[u32]) -> Result<(), Error<Ext2Error>> {
         self.locate_blocks(blocks, true)
     }
@@ -481,9 +494,11 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
     ///
     /// # Errors
     ///
+    /// Returns an [`Error::Device`] if the device cannot be read/written.
+    ///
     /// Returns an [`BlockAlreadyFree`](Ext2Error::BlockAlreadyFree) error if the given block was already in use.
     ///
-    /// Otherwise, returns the same errors as [`get_block_bitmap`](struct.Ext2.html#method.get_block_bitmap).
+    /// Otherwise, returns the same errors as [`get_block_bitmap`](Ext2::get_block_bitmap).
     pub fn deallocate_blocks(&mut self, blocks: &[u32]) -> Result<(), Error<Ext2Error>> {
         self.locate_blocks(blocks, false)
     }
@@ -509,7 +524,7 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
     ///
     /// Returns a [`NotEnoughInodes`](Ext2Error::NotEnoughInodes) if no inode is currently available.
     ///
-    /// Returns an [`Error`] if the device cannot be read or written.
+    /// Returns an [`Error::Device`] if the device cannot be read/written.
     pub fn free_inode(&mut self) -> Result<u32, Error<Ext2Error>> {
         if !self.cache {
             self.update_inner_superblock()?;
@@ -545,7 +560,7 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
     ///
     /// Returns a [`NotEnoughInodes`](Ext2Error::NotEnoughInodes) if no inode is currently available.
     ///
-    /// Returns an [`Error`] if the device cannot be read or written.
+    /// Returns an [`Error::Device`] if the device cannot be read/written.
     ///
     /// # Panics
     ///
@@ -616,7 +631,7 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
     ///
     /// Returns a [`InodeAlreadyInUse`](Ext2Error::InodeAlreadyInUse) if the given inode is already in use.
     ///
-    /// Returns an [`Error`] if the device cannot be read or written.
+    /// Returns an [`Error::Device`] if the device cannot be read/written.
     ///
     /// # Panics
     ///
@@ -649,7 +664,7 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
     ///
     /// Returns a [`InodeAlreadyFree`](Ext2Error::InodeAlreadyFree) if the given inode is already free.
     ///
-    /// Returns an [`Error`] if the device cannot be read or written.
+    /// Returns an [`Error::Device`] if the device cannot be read/written.
     ///
     /// # Panics
     ///
@@ -691,7 +706,10 @@ impl<Dev: Device<u8, Ext2Error>> Ext2Fs<Dev> {
     ///
     /// # Errors
     ///
-    /// Returns an [`Error`] if the device could not be read of if no ext2 filesystem is found on this device.
+    /// Returns an [`Error::Device`] if the device cannot be read.
+    ///
+    /// Returns [`Ext2Error::BadMagic`] if the magic number found in the superblock is not equal to
+    /// [`EXT2_SIGNATURE`](superblock::EXT2_SIGNATURE).
     pub fn new(device: Dev, device_id: u32, cache: bool) -> Result<Self, Error<Ext2Error>> {
         Ok(Self(Celled::new(Ext2::new(device, device_id, cache)?)))
     }
@@ -700,7 +718,10 @@ impl<Dev: Device<u8, Ext2Error>> Ext2Fs<Dev> {
     ///
     /// # Errors
     ///
-    /// Returns an [`Error`] if the device could not be read of if no ext2 filesystem is found on this device.
+    /// Returns an [`Error::Device`] if the device cannot be read.
+    ///
+    /// Returns [`Ext2Error::BadMagic`] if the magic number found in the superblock is not equal to
+    /// [`EXT2_SIGNATURE`](superblock::EXT2_SIGNATURE).
     pub fn new_celled(celled_device: Celled<Dev>, device_id: u32, cache: bool) -> Result<Self, Error<Ext2Error>> {
         Ok(Self(Celled::new(Ext2::new_celled(celled_device, device_id, cache)?)))
     }

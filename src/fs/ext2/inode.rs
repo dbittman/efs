@@ -261,7 +261,6 @@ impl From<Permissions> for TypePermissions {
 
 impl TypePermissions {
     /// Returns the type component of the [`TypePermissions`].
-
     #[must_use]
     pub const fn file_type(self) -> Self {
         Self::from_bits_truncate((self.bits() >> 12) << 12)
@@ -378,7 +377,6 @@ pub enum Osd2 {
 
 impl Osd2 {
     /// Get the [`Osd2`] fields from the bytes obtained in the [`Inode`] structure.
-
     #[must_use]
     pub const fn from_bytes(bytes: [u8; 12], os: OperatingSystem) -> Self {
         match os {
@@ -412,7 +410,6 @@ impl Inode {
     /// Returns the block group of the `n`th inode.
     ///
     /// See the [OSdev wiki](https://wiki.osdev.org/Ext2#Determining_which_Block_Group_contains_an_Inode) for more information.
-
     #[must_use]
     pub const fn block_group(superblock: &Superblock, n: u32) -> u32 {
         (n - 1) / superblock.base().inodes_per_group
@@ -421,7 +418,6 @@ impl Inode {
     /// Returns the index of the `n`th inode in its block group.
     ///
     /// See the [OSdev wiki](https://wiki.osdev.org/Ext2#Finding_an_inode_inside_of_a_Block_Group) for more information.
-
     #[must_use]
     pub const fn group_index(superblock: &Superblock, n: u32) -> u32 {
         (n - 1) % superblock.base().inodes_per_group
@@ -430,14 +426,12 @@ impl Inode {
     /// Returns the index of the block containing the `n`th inode.
     ///
     /// See the [OSdev wiki](https://wiki.osdev.org/Ext2#Finding_an_inode_inside_of_a_Block_Group) for more information.
-
     #[must_use]
     pub const fn containing_block(superblock: &Superblock, n: u32) -> u32 {
         n * superblock.inode_size() as u32 / superblock.block_size()
     }
 
     /// Returns the type and the permissions of this inode.
-
     #[must_use]
     pub const fn type_permissions(&self) -> TypePermissions {
         TypePermissions::from_bits_truncate(self.mode)
@@ -448,7 +442,6 @@ impl Inode {
     /// # Errors
     ///
     /// Returns an [`BadFileType`](Ext2Error::BadFileType) if the inode does not contain a valid file type.
-
     pub const fn file_type(&self) -> Result<Type, Ext2Error> {
         let types_permissions = self.type_permissions();
         if types_permissions.contains(TypePermissions::SYMBOLIC_LINK) {
@@ -471,7 +464,6 @@ impl Inode {
     }
 
     /// Returns the complete size of the data pointed by this inode.
-
     #[must_use]
     pub const fn data_size(&self) -> u64 {
         // self.size as u64 + ((self.dir_acl as u64) << 32_u64)
@@ -483,7 +475,6 @@ impl Inode {
     }
 
     /// Returns the [`Osd2`] structure given by the [`Inode`] and the [`Superblock`] structures.
-
     #[must_use]
     pub const fn osd2(&self, superblock: &Superblock) -> Osd2 {
         let os = superblock.creator_operating_system();
@@ -491,7 +482,6 @@ impl Inode {
     }
 
     /// Creates a new inode from all the necessary fields.
-
     #[must_use]
     #[allow(clippy::similar_names)]
     pub const fn create(
@@ -535,7 +525,7 @@ impl Inode {
     /// Returns an [`NonExistingBlockGroup`](Ext2Error::NonExistingBlockGroup) if `n` is greater than the block group count of this
     /// device.
     ///
-    /// Otherwise, returns an [`Error`] if the device cannot be read.
+    /// Otherwise, returns an [`Error::Device`] if the device cannot be read.
     pub fn starting_addr<Dev: Device<u8, Ext2Error>>(fs: &Ext2<Dev>, n: u32) -> Result<Address, Error<Ext2Error>> {
         let base = fs.superblock().base();
         if base.inodes_count < n || n == 0 {
@@ -563,7 +553,7 @@ impl Inode {
     /// Returns an [`BadFileType`](Ext2Error::BadFileType) if the inode with the given inode number does not contains a valid file
     /// type.
     ///
-    /// Returns an [`Error`] if the device could not be read.
+    /// Otherwise, returns an [`Error::Device`] if the device cannot be read.
     pub fn parse<Dev: Device<u8, Ext2Error>>(fs: &Ext2<Dev>, n: u32) -> Result<Self, Error<Ext2Error>> {
         if fs.cache
             && let Some(inode) = INODE_CACHE.get_copy(&(fs.device_id, n))
@@ -594,7 +584,7 @@ impl Inode {
     ///
     /// # Errors
     ///
-    /// Returns a [`Error`] if the device cannot be written.
+    /// Returns an [`Error::Device`] if the device cannot be written.
     ///
     /// # Safety
     ///
@@ -615,7 +605,7 @@ impl Inode {
     ///
     /// # Errors
     ///
-    /// Returns a [`Error`] if the device cannot be read.
+    /// Returns an [`Error::Device`] if the device cannot be read.
     ///
     /// # Panics
     ///
@@ -735,7 +725,7 @@ impl Inode {
     ///
     /// # Errors
     ///
-    /// Returns an [`Error`] if the device could not be read.
+    /// Returns an [`Error::Device`] if the device cannot be read.
     ///
     /// # Panics
     ///
@@ -800,7 +790,6 @@ impl Inode {
     /// Returns whether this inode is currently free or not from the inode bitmap in which the block resides.
     ///
     /// The `bitmap` argument is usually the result of the method [`get_inode_bitmap`](../struct.Ext2.html#method.get_inode_bitmap).
-
     #[must_use]
     #[allow(clippy::indexing_slicing)]
     pub const fn is_free(inode_number: u32, superblock: &Superblock, bitmap: &[u8]) -> bool {
@@ -812,7 +801,6 @@ impl Inode {
     /// Returns whether this inode is currently in use or not from the inode bitmap in which the block resides.
     ///
     /// The `bitmap` argument is usually the result of the method [`get_inode_bitmap`](../struct.Ext2.html#method.get_inode_bitmap).
-
     #[must_use]
     pub const fn is_used(inode_number: u32, superblock: &Superblock, bitmap: &[u8]) -> bool {
         !Self::is_free(inode_number, superblock, bitmap)

@@ -145,7 +145,7 @@ impl Entry {
     ///
     /// Returns an [`Ext2Error::BadString`] if the name of the entry is not a valid C-string (non-null terminated).
     ///
-    /// Returns an [`Error`] if the device could not be read.
+    /// Returns an [`Error::Device`] if the device cannot be read.
     ///
     /// # Safety
     ///

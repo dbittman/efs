@@ -78,7 +78,7 @@ impl BlockGroupDescriptor {
     /// Returns an [`NonExistingBlockGroup`](Ext2Error::NonExistingBlockGroup) if `n` is greater than the block group count of this
     /// device.
     ///
-    /// Returns an [`Error`] if the device could not be read.
+    /// Returns an [`Error::Device`] if the device cannot be read.
     pub fn parse<Dev: Device<u8, Ext2Error>>(fs: &Ext2<Dev>, n: u32) -> Result<Self, Error<Ext2Error>> {
         if fs.cache
             && let Some(block_group_descriptor) = BLOCK_GROUP_DESCRIPTOR_CACHE.get_copy(&(fs.device_id, n))
@@ -105,7 +105,7 @@ impl BlockGroupDescriptor {
     ///
     /// # Errors
     ///
-    /// Returns a [`Error`] if the device cannot be written.
+    /// Returns an [`Error::Device`] if the device cannot be written.
     ///
     /// # Safety
     ///

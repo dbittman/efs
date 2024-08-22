@@ -43,8 +43,7 @@ impl<'path> UnixStr<'path> {
     ///
     /// # Errors
     ///
-    /// Returns an [`InvalidFilename`](enum.PathError.html#variant.InvalidFilename) if the given string is empty or contains a `\0`
-    /// character.
+    /// Returns an [`InvalidFilename`](PathError::InvalidFilename) if the given string is empty or contains a `\0` character.
     ///
     /// # Examples
     ///
@@ -132,7 +131,6 @@ pub struct Path<'path> {
 
 impl<'path> Path<'path> {
     /// Directly wraps a [`UnixStr`] slice as a [`Path`] slice.
-
     #[must_use]
     pub fn new<US: Into<UnixStr<'path>>>(str: US) -> Self {
         Self { name: str.into() }
@@ -162,7 +160,6 @@ impl<'path> Path<'path> {
     /// assert!(!Path::from_str("./foo/bar").unwrap().is_absolute());
     /// assert!(Path::from_str("//home").unwrap().is_absolute());
     /// ```
-
     #[must_use]
     pub fn is_absolute(&self) -> bool {
         self.name.0.starts_with('/')
@@ -183,7 +180,6 @@ impl<'path> Path<'path> {
     /// assert!(!Path::from_str("/home").unwrap().is_relative());
     /// assert!(!Path::from_str("//home").unwrap().is_relative());
     /// ```
-
     #[must_use]
     pub fn is_relative(&self) -> bool {
         !self.name.0.starts_with('/')
@@ -214,7 +210,6 @@ impl<'path> Path<'path> {
     ///     Path::from_str("foo///bar//").unwrap().canonical()
     /// );
     /// ```
-
     #[must_use]
     pub fn canonical(&self) -> Self {
         /// Regex matching one slash or more.
@@ -235,14 +230,12 @@ impl<'path> Path<'path> {
     }
 
     /// Yields the underlying [`UnixStr`] slice.
-
     #[must_use]
     pub const fn as_unix_str(&self) -> &UnixStr<'path> {
         &self.name
     }
 
     /// Yields a mutable reference to the underlying [`UnixStr`] slice.
-
     #[must_use]
     pub const fn as_mut_unix_str(&mut self) -> &mut UnixStr<'path> {
         &mut self.name
@@ -271,7 +264,6 @@ impl<'path> Path<'path> {
     /// let second_path = Path::from_str("/bar/baz").unwrap();
     /// assert_eq!(first_path.join(&second_path).canonical(), Path::from_str("/bar/baz").unwrap());
     /// ```
-
     #[must_use]
     pub fn join(&self, path: &Self) -> Self {
         if path.is_absolute() {
@@ -322,7 +314,6 @@ impl<'path> Path<'path> {
     /// let grand_parent = parent.parent();
     /// assert_eq!(grand_parent, None);
     /// ```
-
     #[must_use]
     pub fn parent(&self) -> Option<Path<'_>> {
         let mut components = self.components();
@@ -364,7 +355,6 @@ impl<'path> Path<'path> {
     /// let path = Path::from_str("/").unwrap();
     /// assert_eq!(path.file_name(), None);
     /// ```
-
     #[must_use]
     pub fn file_name(&self) -> Option<UnixStr<'_>> {
         self.components().into_iter().next_back().and_then(|p| match p {
@@ -416,7 +406,6 @@ impl PartialEq for Path<'_> {
     /// assert_ne!(Path::from_str("/").unwrap(), Path::from_str("//").unwrap());
     /// assert_ne!(Path::from_str("//home").unwrap(), Path::from_str("/home").unwrap());
     /// ```
-
     fn eq(&self, other: &Self) -> bool {
         if (self.name.starts_with_two_slashes() && !other.name.starts_with_two_slashes())
             || (!self.name.starts_with_two_slashes() && other.name.starts_with_two_slashes())
@@ -481,7 +470,7 @@ enum State {
 
 /// A single component of a path.
 ///
-/// A Component roughly corresponds to a substring between path separators (`/`).
+/// A [`Component`] roughly corresponds to a substring between path separators (`/`).
 #[derive(Debug, Clone, PartialEq, Eq, Display)]
 pub enum Component<'path> {
     /// The root directory component, appears before anything else.
@@ -555,8 +544,7 @@ pub struct Components<'path> {
 }
 
 impl<'path> Components<'path> {
-    /// Returns the [`Components`] associated to a [`Path`]
-
+    /// Returns the [`Components`] associated to a [`Path`].
     #[must_use]
     pub fn new(path: &'path Path<'path>) -> Self {
         let bytes = path.name.0.as_bytes();
@@ -591,6 +579,7 @@ impl<'path> Components<'path> {
         }
     }
 
+    /// Trims away repetead separators on the right.
     fn trim_right(&mut self) {
         while self.path.len() > self.len_before_body() {
             let (size, comp) = self.parse_next_component_back();
@@ -601,29 +590,28 @@ impl<'path> Components<'path> {
         }
     }
 
-    /// Does the original path starts with [`RootDir`](enum.Component.html#variant.RootDir) ?
+    /// Does the original path starts with [`RootDir`](Component::RootDir)?
     fn has_root(&self) -> bool {
         self.start_dir == Some(Component::RootDir)
     }
 
-    /// Does the original path starts with [`DoubleSlashRootDir`](enum.Component.html#variant.DoubleSlashRootDir) ?
+    /// Does the original path starts with [`DoubleSlashRootDir`](Component::DoubleSlashRootDir)?
     fn has_double_slash_root(&self) -> bool {
         self.start_dir == Some(Component::DoubleSlashRootDir)
     }
 
-    /// Does the original path starts with [`CurDir`](enum.Component.html#variant.CurDir) ?
+    /// Does the original path starts with [`CurDir`](Component::CurDir)?
     fn include_cur_dir(&self) -> bool {
         self.start_dir == Some(Component::CurDir)
     }
 
-    /// Is the iteration complete ?
-
+    /// Is the iteration complete?
     #[must_use]
     pub fn is_finished(&self) -> bool {
         self.front == State::Done || self.back == State::Done || self.path.is_empty()
     }
 
-    /// Number of bytes before the [`Path`]'s body
+    /// Number of bytes before the [`Path`]'s body.
     fn len_before_body(&self) -> usize {
         if self.front == State::StartDir {
             match self.start_dir {

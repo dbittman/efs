@@ -51,7 +51,7 @@ impl<FSE: core::error::Error, T: Copy, Dev: Device<T, FSE>> Bitmap<T, FSE, Dev> 
     ///
     /// # Errors
     ///
-    /// Returns an [`Error`] if the device cannot be read.
+    /// Returns an [`Error::Device`] if the device cannot be read.
     pub fn new(celled_device: Celled<Dev>, starting_addr: Address, length: usize) -> Result<Self, Error<FSE>> {
         let inner = celled_device.lock().slice(starting_addr..(starting_addr + length))?.to_vec();
         Ok(Self {
@@ -79,7 +79,7 @@ impl<FSE: core::error::Error, T: Copy, Dev: Device<T, FSE>> Bitmap<T, FSE, Dev> 
     ///
     /// # Errors
     ///
-    /// Returns an [`Error`] if the device cannot be written.
+    /// Returns an [`Error::Device`] if the device cannot be written.
     pub fn write_back(&mut self) -> Result<(), Error<FSE>> {
         let mut device = self.device.lock();
         let mut slice = device.slice(self.starting_addr..(self.starting_addr + self.length))?;
@@ -115,8 +115,8 @@ impl<FSE: core::error::Error, T: Copy, Dev: Device<T, FSE>> Bitmap<T, FSE, Dev> 
 }
 
 impl<FSE: core::error::Error, Dev: Device<u8, FSE>> Bitmap<u8, FSE, Dev> {
-    /// Specialization of [`find_to_count`](struct.Bitmap.html#method.find_to_count) to find the first bytes such that the sum of
-    /// set bits is at least `n`.
+    /// Specialization of [`find_to_count`](Bitmap::find_to_count) to find the first bytes such that the sum of set bits is at least
+    /// `n`.
     #[must_use]
     pub fn find_n_set_bits(&self, n: usize) -> Vec<(usize, u8)> {
         self.find_to_count(n, |byte| {
@@ -127,8 +127,8 @@ impl<FSE: core::error::Error, Dev: Device<u8, FSE>> Bitmap<u8, FSE, Dev> {
         })
     }
 
-    /// Specialization of [`find_to_count`](struct.Bitmap.html#method.find_to_count) to find the first bytes such that the sum of
-    /// unset bits is at least `n`.
+    /// Specialization of [`find_to_count`](Bitmap::find_to_count) to find the first bytes such that the sum of unset bits is at
+    /// least `n`.
     #[must_use]
     pub fn find_n_unset_bits(&self, n: usize) -> Vec<(usize, u8)> {
         self.find_to_count(n, |byte| {

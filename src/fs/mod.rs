@@ -74,18 +74,22 @@ pub trait FileSystem<Dir: Directory> {
     ///
     /// # Errors
     ///
-    /// Returns a [`DevError`](crate::dev::error::DevError) if the device could not be read.
+    /// Returns a [`Error::Device`] if the device could not be read.
+    ///
+    /// Otherwise, returns a [`FsError::Implementation`] in any other case.
     fn root(&self) -> Result<Dir, Error<Dir::FsError>>;
 
     /// Returns the double slash root directory of the filesystem.
     ///
-    /// If you do not have any idea of what this is, you are probably looking for [`root`](trait.FileSystem.html#tymethod.root).
+    /// If you do not have any idea of what this is, you are probably looking for [`root`](FileSystem::root).
     ///
     /// See [`DoubleSlashRootDir`](Component::DoubleSlashRootDir) and [`Path`] for more information.
     ///
     /// # Errors
     ///
-    /// Returns a [`DevError`](crate::dev::error::DevError) if the device could not be read.
+    /// Returns a [`Error::Device`] if the device could not be read.
+    ///
+    /// Otherwise, returns a [`FsError::Implementation`] in any other case.
     fn double_slash_root(&self) -> Result<Dir, Error<Dir::FsError>>;
 
     /// Performs a pathname resolution as described in [this POSIX definition](https://pubs.opengroup.org/onlinepubs/9799919799/basedefs/V1_chap04.html#tag_04_16).
@@ -97,6 +101,8 @@ pub trait FileSystem<Dir: Directory> {
     ///
     /// # Errors
     ///
+    /// Returns a [`Error::Device`] if the device could not be read.
+    ///
     /// Returns an [`NotFound`](FsError::NotFound) error if the given path does not leed to an existing path.
     ///
     /// Returns an [`NotDir`](FsError::NotDir) error if one of the components of the file is not a directory.
@@ -106,7 +112,8 @@ pub trait FileSystem<Dir: Directory> {
     /// Returns an [`NameTooLong`](FsError::NameTooLong) error if the complete path contains more than [`PATH_MAX`] characters.
     ///
     /// Returns an [`NoEnt`](FsError::NoEnt) error if an encountered symlink points to a non-existing file.
-
+    ///
+    /// Otherwise, returns a [`FsError::Implementation`] in any other case.
     fn get_file(&self, path: &Path, current_dir: Dir, symlink_resolution: bool) -> Result<TypeWithFile<Dir>, Error<Dir::FsError>>
     where
         Self: Sized,
@@ -165,8 +172,7 @@ pub trait FileSystem<Dir: Directory> {
                             },
 
                             // This case is the symbolic link resolution, which is the one described as **not** being the one
-                            // explained in the following paragraph from the POSIX definition of the
-                            // pathname resolution:
+                            // explained in the following paragraph from the POSIX definition of the pathname resolution:
                             //
                             // If a symbolic link is encountered during pathname resolution, the behavior shall depend on whether
                             // the pathname component is at the end of the pathname and on the function
@@ -231,7 +237,9 @@ pub trait FileSystem<Dir: Directory> {
     ///
     /// # Errors
     ///
-    /// Returns a [`DevError`](crate::dev::error::DevError) if the device could not be read/written.
+    /// Returns a [`Error::Device`] if the device could not be read/written.
+    ///
+    /// Otherwise, returns a [`Error::Fs`] in any other case.
     fn create_file(
         &mut self,
         path: &Path<'_>,
@@ -278,7 +286,9 @@ pub trait FileSystem<Dir: Directory> {
     ///
     /// # Errors
     ///
-    /// Returns a [`DevError`](crate::dev::error::DevError) if the device could not be read/written.
+    /// Returns a [`Error::Device`] if the device could not be read/written.
+    ///
+    /// Otherwise, returns a [`Error::Fs`] in any other case.
     fn remove_file(&mut self, path: Path<'_>) -> Result<(), Error<Dir::FsError>>
     where
         Self: Sized,
@@ -315,18 +325,22 @@ pub trait ReadOnlyFileSystem<RoDir: ReadOnlyDirectory> {
     ///
     /// # Errors
     ///
-    /// Returns a [`DevError`](crate::dev::error::DevError) if the device could not be read.
+    /// Returns a [`Error::Device`] if the device could not be read.
+    ///
+    /// Otherwise, returns a [`FsError::Implementation`] in any other case.
     fn root(&self) -> Result<RoDir, Error<RoDir::FsError>>;
 
     /// Returns the double slash root directory of the filesystem.
     ///
-    /// If you do not have any idea of what this is, you are probably looking for [`root`](trait.FileSystem.html#tymethod.root).
+    /// If you do not have any idea of what this is, you are probably looking for [`root`](ReadOnlyFileSystem::root).
     ///
     /// See [`DoubleSlashRootDir`](Component::DoubleSlashRootDir) and [`Path`] for more information.
     ///
     /// # Errors
     ///
-    /// Returns a [`DevError`](crate::dev::error::DevError) if the device could not be read.
+    /// Returns a [`Error::Device`] if the device could not be read.
+    ///
+    /// Otherwise, returns a [`FsError::Implementation`] in any other case.
     fn double_slash_root(&self) -> Result<RoDir, Error<RoDir::FsError>>;
 
     /// Performs a pathname resolution as described in [this POSIX definition](https://pubs.opengroup.org/onlinepubs/9799919799/basedefs/V1_chap04.html#tag_04_16).
@@ -338,6 +352,8 @@ pub trait ReadOnlyFileSystem<RoDir: ReadOnlyDirectory> {
     ///
     /// # Errors
     ///
+    /// Returns a [`Error::Device`] if the device could not be read.
+    ///
     /// Returns an [`NotFound`](FsError::NotFound) error if the given path does not leed to an existing path.
     ///
     /// Returns an [`NotDir`](FsError::NotDir) error if one of the components of the file is not a directory.
@@ -347,7 +363,8 @@ pub trait ReadOnlyFileSystem<RoDir: ReadOnlyDirectory> {
     /// Returns an [`NameTooLong`](FsError::NameTooLong) error if the complete path contains more than [`PATH_MAX`] characters.
     ///
     /// Returns an [`NoEnt`](FsError::NoEnt) error if an encountered symlink points to a non-existing file.
-
+    ///
+    /// Otherwise, returns a [`FsError::Implementation`] in any other case.
     fn get_file(
         &self,
         path: &Path,
@@ -411,8 +428,7 @@ pub trait ReadOnlyFileSystem<RoDir: ReadOnlyDirectory> {
                             },
 
                             // This case is the symbolic link resolution, which is the one described as **not** being the one
-                            // explained in the following paragraph from the POSIX definition of the
-                            // pathname resolution:
+                            // explained in the following paragraph from the POSIX definition of the pathname resolution:
                             //
                             // If a symbolic link is encountered during pathname resolution, the behavior shall depend on whether
                             // the pathname component is at the end of the pathname and on the function

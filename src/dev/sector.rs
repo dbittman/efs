@@ -21,14 +21,12 @@ impl Address {
     ///
     /// This function is equivalent to the [`From<usize>`](struct.Address.html#impl-From<usize>-for-Address) implementation but
     /// with a `const fn`.
-
     #[must_use]
     pub const fn new(index: usize) -> Self {
         Self(index)
     }
 
     /// Returns the index of this address, which corresponds to its offset from the start of the device.
-
     #[must_use]
     pub const fn index(&self) -> usize {
         self.0

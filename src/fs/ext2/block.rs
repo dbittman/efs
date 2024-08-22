@@ -64,7 +64,7 @@ impl<Dev: Device<u8, Ext2Error>> Block<Dev> {
     ///
     /// # Errors
     ///
-    /// Returns an [`Error`] if the device cannot be read.
+    /// Returns an [`Error::Device`] if the device cannot be read.
     pub fn read_all(&mut self) -> Result<Vec<u8>, Error<Ext2Error>> {
         let block_size = self.filesystem.lock().superblock().block_size();
         let mut buffer = vec![0_u8; u32_to_usize(block_size)];
@@ -102,7 +102,7 @@ impl<Dev: Device<u8, Ext2Error>> Block<Dev> {
     ///
     /// Returns an [`BlockAlreadyFree`](Ext2Error::BlockAlreadyFree) error if the given block was already free.
     ///
-    /// Otherwise, returns an [`Error`] if the device cannot be written.
+    /// Returns an [`Error::Device`] if the device cannot be written.
     fn set_usage(&self, usage: bool) -> Result<(), Error<Ext2Error>> {
         self.filesystem.lock().locate_blocks(&[self.number], usage)
     }
@@ -113,7 +113,7 @@ impl<Dev: Device<u8, Ext2Error>> Block<Dev> {
     ///
     /// Returns an [`BlockAlreadyFree`](Ext2Error::BlockAlreadyFree) error if the given block was already free.
     ///
-    /// Otherwise, returns an [`Error`] if the device cannot be written.
+    /// Returns an [`Error::Device`] if the device cannot be written.
     pub fn set_free(&mut self) -> Result<(), Error<Ext2Error>> {
         self.set_usage(false)
     }
@@ -124,7 +124,7 @@ impl<Dev: Device<u8, Ext2Error>> Block<Dev> {
     ///
     /// Returns an [`BlockAlreadyInUse`](Ext2Error::BlockAlreadyInUse) error if the given block was already in use.
     ///
-    /// Otherwise, returns an [`Error`] if the device cannot be written.
+    /// Returns an [`Error::Device`] if the device cannot be written.
     pub fn set_used(&mut self) -> Result<(), Error<Ext2Error>> {
         self.set_usage(true)
     }

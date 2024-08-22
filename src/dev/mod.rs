@@ -125,6 +125,9 @@
 //! assert_eq!(unsafe { device.read_at::<u8>(Address::new(0)) }.unwrap(), 1);
 //! assert_eq!(unsafe { device.read_at::<u32>(Address::new(0)) }.unwrap(), 0x0101_0101);
 //! ```
+//!
+//! It is to be noted that for the structure [`std::fs::File`], the implementation of [`Device::now`] returns the current time using
+//! [`SystemTime::now`](std::time::SystemTime::now).
 
 use alloc::borrow::{Cow, ToOwned};
 use alloc::boxed::Box;
@@ -237,14 +240,13 @@ impl<'mem> Slice<'mem, u8> {
     /// # Panics
     ///
     /// Panics if the starting address cannot be read.
-
     #[must_use]
     pub unsafe fn cast<T: Copy>(&self) -> T {
         assert!(self.inner.len() >= size_of::<T>(), "The length of the device slice is not great enough to contain an object T");
         transmute_copy(self.inner.as_ptr().as_ref().expect("Could not read the pointer of the slice"))
     }
 
-    /// Creates a [`Slice`] from any [`Copy`] object
+    /// Creates a [`Slice`] from any [`Copy`] object.
     pub fn from<T: Copy>(object: T, starting_addr: Address) -> Self {
         let len = size_of::<T>();
         let ptr = addr_of!(object).cast::<u8>();
@@ -298,31 +300,27 @@ impl<T: Clone> AsMut<[T]> for Commit<T> {
 /// General interface for devices containing a file system.
 pub trait Device<T: Copy, FSE: core::error::Error> {
     /// [`Size`] description of this device.
-    ///
-    /// # Errors
-    ///
-    /// Returns an [`Error`] if the size of the device cannot be determined.
     fn size(&mut self) -> Size;
 
     /// Returns a [`Slice`] with elements of this device.
     ///
     /// # Errors
     ///
-    /// Returns an [`Error`] if the read could not be completed.
+    /// Returns an [`Error::Device`] if the read could not be completed.
     fn slice(&mut self, addr_range: Range<Address>) -> Result<Slice<'_, T>, Error<FSE>>;
 
     /// Writes the [`Commit`] onto the device.
     ///
     /// # Errors
     ///
-    /// Returns an [`Error`] if the write could not be completed.
+    /// Returns an [`Error::Device`] if the write could not be completed.
     fn commit(&mut self, commit: Commit<T>) -> Result<(), Error<FSE>>;
 
     /// Read an element of type `O` on the device starting at the address `starting_addr`.
     ///
     /// # Errors
     ///
-    /// Returns an [`Error`] if the read tries to go out of the device's bounds or if [`Device::slice`] failed.
+    /// Returns an [`DevError::OutOfBounds`] if the read tries to go out of the device's bounds or if [`Device::slice`] failed.
     ///
     /// # Safety
     ///
@@ -347,8 +345,8 @@ pub trait Device<T: Copy, FSE: core::error::Error> {
     ///
     /// # Errors
     ///
-    /// Returns an [`Error`] if the read tries to go out of the device's bounds or if [`Device::slice`] or [`Device::commit`]
-    /// failed.
+    /// Returns an [`DevError::OutOfBounds`] if the read tries to go out of the device's bounds or if [`Device::slice`] or
+    /// [`Device::commit`] failed.
     ///
     /// # Safety
     ///

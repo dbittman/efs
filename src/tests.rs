@@ -20,6 +20,10 @@ pub fn new_device_id() -> u32 {
 }
 
 /// Copies the file at the given path and returns a temporary file with the same content.
+///
+/// # Errors
+///
+/// Returns a [`Error::IO`] error if the given file could not be opened or copied to a temporary file.
 pub fn copy_file<P: AsRef<Path> + ToString>(path: P) -> Result<File, Error<!>> {
     let mut real_file = File::open(path)?;
     let mut temp_file = tempfile()?;

@@ -614,7 +614,7 @@ impl Superblock {
     ///
     /// Returns [`Ext2Error::BadMagic`] if the magic number found in the superblock is not equal to [`EXT2_SIGNATURE`].
     ///
-    /// Returns an [`Error`] if the device could not be read.
+    /// Returns an [`Error::Device`] if the device could not be read.
     pub fn parse<Dev: Device<u8, Ext2Error>>(celled_device: &Celled<Dev>) -> Result<Self, Error<Ext2Error>> {
         let mut device = celled_device.lock();
 
