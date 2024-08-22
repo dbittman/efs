@@ -18,27 +18,24 @@
 //! To implement a filesystem, you will need a lot of structures and methods. You can read the implementation of the `ext2`
 //! filesystem as an example, but here is a general layout of what you need to do:
 //!
-//! * create a structure which will implement [`FileSystem`](crate::fs::FileSystem): it will be the core structure of your
-//!   filesystem
+//! * create a structure which will implement [`FileSystem`]: it will be the core structure of your filesystem
 //!
 //! * create an error structure, which implements [`core::error::Error`]. This will contain **every** error that your filesystem
 //!   will be able to return.
 //!
 //! * create objects for every structure in your filesystem
 //!
-//! * create structures for [`File`](crate::file::File), [`Regular`](crate::file::Regular), [`Directory`](crate::file::Directory)
-//!   and [`SymbolicLink`](crate::file::SymbolicLink). For each of this structure, create functions allowing to be parsed easily.
-//!   For [`Fifo`](crate::file::Fifo), [`CharacterDevice`](crate::file::CharacterDevice), [`BlockDevice`](crate::file::BlockDevice)
-//!   and [`Socket`](crate::file::Socket), you can use a simple struct like `struct Socket(File)` as you will likely never use them
+//! * create structures for [`File`](crate::file::File), [`Regular`](crate::file::Regular), [`Directory`] and [`SymbolicLink`]. For
+//!   each of this structure, create functions allowing to be parsed easily. For [`Fifo`](crate::file::Fifo),
+//!   [`CharacterDevice`](crate::file::CharacterDevice), [`BlockDevice`](crate::file::BlockDevice) and
+//!   [`Socket`](crate::file::Socket), you can use a simple struct like `struct Socket(File)` as you will likely never use them
 //!   directly with this crate
 //!
-//! * implement the functions allowing to retrieve the [`Regular`](crate::file::Regular), [`Directory`](crate::file::Directory) and
-//!   [`SymbolicLink`](crate::file::SymbolicLink), and the [`root`](crate::fs::FileSystem::root) particularily. For the
-//!   [`double_slash_root`](crate::fs::FileSystem::double_slash_root), if you don't know what it means, you can just implement it as
-//!   `self.root()` (and it will very probably be the right thing to do)
+//! * implement the functions allowing to retrieve the [`Regular`](crate::file::Regular), [`Directory`] and [`SymbolicLink`], and
+//!   the [`root`](FileSystem::root) particularily. For the [`double_slash_root`](FileSystem::double_slash_root), if you don't know
+//!   what it means, you can just implement it as `self.root()` (and it will very probably be the right thing to do)
 //!
-//! * implements all the other functions for the [`Regular`](crate::file::Regular), [`Directory`](crate::file::Directory) and
-//!   [`SymbolicLink`](crate::file::SymbolicLink) structures.
+//! * implements all the other functions for the [`Regular`](crate::file::Regular), [`Directory`] and [`SymbolicLink`] structures.
 //!
 //! Advice: start with the read-only functions and methods. It will be **MUCH** easier that the write methods.
 

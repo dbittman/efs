@@ -70,8 +70,8 @@
 //!
 //! ## Concurrency
 //!
-//! When instancing a new instance of [`Ext2`], the principal structure to manipulate an ext2 filesystem, you can choose whether to
-//! enable caches or not.
+//! When instancing a new instance of [`Ext2Fs`], the principal structure to manipulate an ext2 filesystem, you can choose whether
+//! to enable caches or not.
 //!
 //! - When the cache is not enabled, all the structures will be read whenever needed to make sure no change has been made by an
 //!   external program. Only the [superblock](Superblock) will be kept in memory because of its high usage: it will only be updated
@@ -91,6 +91,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::mem::size_of;
 
+use derive_more::derive::{Deref, DerefMut};
 use file::{BlockDevice, CharacterDevice, Fifo, Socket};
 
 use self::block_group::BlockGroupDescriptor;
@@ -133,7 +134,7 @@ struct Options {
     file_type: bool,
 }
 
-/// Main interface for devices containing an ext2 filesystem.
+/// Interface to manipulate devices containing an ext2 filesystem.
 #[derive(Debug, Clone)]
 pub struct Ext2<Dev: Device<u8, Ext2Error>> {
     /// Device number of the device containing the ext2 filesystem.
@@ -674,7 +675,42 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
     }
 }
 
-impl<Dev: Device<u8, Ext2Error>> Celled<Ext2<Dev>> {
+/// Main interface to manipulate an ext2 filesystem.
+#[allow(clippy::module_name_repetitions)]
+#[derive(Debug, Deref, DerefMut)]
+pub struct Ext2Fs<Dev: Device<u8, Ext2Error>>(Celled<Ext2<Dev>>);
+
+impl<Dev: Device<u8, Ext2Error>> Clone for Ext2Fs<Dev> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
+
+impl<Dev: Device<u8, Ext2Error>> Ext2Fs<Dev> {
+    /// Creates a new [`Ext2Fs`] object from the given device that should contain an ext2 filesystem and a given device ID.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`Error`] if the device could not be read of if no ext2 filesystem is found on this device.
+    pub fn new(device: Dev, device_id: u32, cache: bool) -> Result<Self, Error<Ext2Error>> {
+        Ok(Self(Celled::new(Ext2::new(device, device_id, cache)?)))
+    }
+
+    /// Creates a new [`Ext2Fs`] object from the given celled device that should contain an ext2 filesystem and a given device ID.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`Error`] if the device could not be read of if no ext2 filesystem is found on this device.
+    pub fn new_celled(celled_device: Celled<Dev>, device_id: u32, cache: bool) -> Result<Self, Error<Ext2Error>> {
+        Ok(Self(Celled::new(Ext2::new_celled(celled_device, device_id, cache)?)))
+    }
+
+    /// Returns a reference to the inner [`Ext2`] object.
+    #[must_use]
+    pub const fn ext2_interface(&self) -> &Celled<Ext2<Dev>> {
+        &self.0
+    }
+
     /// Returns a [`File`](crate::file::File) directly read on this filesystem.
     ///
     /// # Errors
@@ -698,7 +734,7 @@ impl<Dev: Device<u8, Ext2Error>> Celled<Ext2<Dev>> {
     }
 }
 
-impl<Dev: Device<u8, Ext2Error>> FileSystem<Directory<Dev>> for Celled<Ext2<Dev>> {
+impl<Dev: Device<u8, Ext2Error>> FileSystem<Directory<Dev>> for Ext2Fs<Dev> {
     fn root(&self) -> Result<Directory<Dev>, Error<<Directory<Dev> as crate::io::Base>::FsError>> {
         self.file(ROOT_DIRECTORY_INODE).and_then(|root| match root {
             TypeWithFile::Directory(root_dir) => Ok(root_dir),
@@ -728,11 +764,11 @@ mod test {
     use super::inode::ROOT_DIRECTORY_INODE;
     use super::Ext2;
     use crate::arch::u32_to_usize;
-    use crate::celled::Celled;
     use crate::file::{Directory, SymbolicLink, Type, TypeWithFile};
     use crate::fs::ext2::block::Block;
     use crate::fs::ext2::block_group::BlockGroupDescriptor;
     use crate::fs::ext2::inode::{Flags, Inode, TypePermissions};
+    use crate::fs::ext2::Ext2Fs;
     use crate::fs::FileSystem;
     use crate::io::{Read, Write};
     use crate::path::{Path, UnixStr};
@@ -751,7 +787,7 @@ mod test {
     #[test]
     fn fetch_file() {
         let device = copy_file("./tests/fs/ext2/extended.ext2").unwrap();
-        let ext2 = Celled::new(Ext2::new(device, new_device_id(), false).unwrap());
+        let ext2 = Ext2Fs::new(device, new_device_id(), false).unwrap();
 
         let TypeWithFile::Directory(root) = ext2.file(ROOT_DIRECTORY_INODE).unwrap() else { panic!() };
         let Some(TypeWithFile::Regular(mut big_file)) = root.entry(UnixStr::new("big_file").unwrap()).unwrap() else { panic!() };
@@ -772,11 +808,11 @@ mod test {
     #[test]
     fn free_block_numbers() {
         let device = copy_file("./tests/fs/ext2/base.ext2").unwrap();
-        let ext2 = Ext2::new(device, new_device_id(), false).unwrap();
+        let fs = Ext2Fs::new(device, new_device_id(), false).unwrap();
+        let ext2 = fs.ext2_interface().lock();
         let free_blocks = ext2.free_blocks(1_024).unwrap();
         let superblock = ext2.superblock().clone();
         let bitmap = ext2.get_block_bitmap(0).unwrap();
-        let fs = Celled::new(ext2);
 
         assert!(free_blocks.iter().all_unique());
 
@@ -806,13 +842,13 @@ mod test {
     #[test]
     fn free_block_small_allocation_deallocation() {
         let file = copy_file("./tests/fs/ext2/io_operations.ext2").unwrap();
-        let mut ext2 = Ext2::new(file, new_device_id(), false).unwrap();
+        let fs = Ext2Fs::new(file, new_device_id(), false).unwrap();
+        let mut ext2 = fs.ext2_interface().lock();
 
         let mut free_blocks = ext2.free_blocks(1_024).unwrap();
         ext2.allocate_blocks(&free_blocks).unwrap();
         free_blocks.push(14849);
-
-        let fs = Celled::new(ext2);
+        drop(ext2);
 
         let superblock = fs.lock().superblock().clone();
         for block in &free_blocks {
@@ -831,7 +867,8 @@ mod test {
     #[test]
     fn free_block_big_allocation_deallocation() {
         let file = copy_file("./tests/fs/ext2/io_operations.ext2").unwrap();
-        let mut ext2 = Ext2::new(file, new_device_id(), false).unwrap();
+        let fs = Ext2Fs::new(file, new_device_id(), false).unwrap();
+        let mut ext2 = fs.ext2_interface().lock();
 
         let superblock_free_block_count = ext2.superblock().base().free_blocks_count;
         let mut block_group_descriptors_free_block_count = 0;
@@ -843,8 +880,8 @@ mod test {
 
         let free_blocks = ext2.free_blocks(20_000).unwrap();
         ext2.allocate_blocks(&free_blocks).unwrap();
+        drop(ext2);
 
-        let fs = Celled::new(ext2);
         let superblock = fs.lock().superblock().clone();
 
         let superblock_free_block_count = superblock.base().free_blocks_count;
@@ -885,42 +922,39 @@ mod test {
     #[test]
     fn free_inode_allocation_deallocation() {
         let file = copy_file("./tests/fs/ext2/io_operations.ext2").unwrap();
-        let ext2 = Ext2::new(file, new_device_id(), false).unwrap();
+        let fs = Ext2Fs::new(file, new_device_id(), false).unwrap();
+        let mut ext2 = fs.ext2_interface().lock();
 
-        let celled_fs = Celled::new(ext2);
-        let mut fs = celled_fs.lock();
-
-        let free_inode = fs.free_inode().unwrap();
-        let superblock = fs.superblock();
+        let free_inode = ext2.free_inode().unwrap();
+        let superblock = ext2.superblock();
         assert!(
-            Block::new(celled_fs.clone(), Inode::containing_block(superblock, free_inode))
-                .is_used(superblock, &fs.get_block_bitmap(Inode::block_group(superblock, free_inode)).unwrap())
+            Block::new(fs.clone(), Inode::containing_block(superblock, free_inode))
+                .is_used(superblock, &ext2.get_block_bitmap(Inode::block_group(superblock, free_inode)).unwrap())
         );
-        let bitmap = fs.get_inode_bitmap(Inode::block_group(superblock, free_inode)).unwrap();
+        let bitmap = ext2.get_inode_bitmap(Inode::block_group(superblock, free_inode)).unwrap();
         assert!(Inode::is_free(free_inode, superblock, &bitmap));
 
-        fs.allocate_inode(free_inode, TypePermissions::REGULAR_FILE, 0, 0, Flags::empty(), 0, [0; 12])
+        ext2.allocate_inode(free_inode, TypePermissions::REGULAR_FILE, 0, 0, Flags::empty(), 0, [0; 12])
             .unwrap();
-        let superblock = fs.superblock();
-        let bitmap = fs.get_inode_bitmap(Inode::block_group(superblock, free_inode)).unwrap();
+        let superblock = ext2.superblock();
+        let bitmap = ext2.get_inode_bitmap(Inode::block_group(superblock, free_inode)).unwrap();
         assert!(Inode::is_used(free_inode, superblock, &bitmap));
 
         assert_eq!(
             Inode::create(superblock, TypePermissions::REGULAR_FILE, 0, 0, Flags::empty(), 0, [0; 12]),
-            Inode::parse(&fs, free_inode).unwrap()
+            Inode::parse(&ext2, free_inode).unwrap()
         );
 
-        fs.deallocate_inode(free_inode).unwrap();
-        let superblock = fs.superblock();
-        let bitmap = fs.get_inode_bitmap(Inode::block_group(superblock, free_inode)).unwrap();
+        ext2.deallocate_inode(free_inode).unwrap();
+        let superblock = ext2.superblock();
+        let bitmap = ext2.get_inode_bitmap(Inode::block_group(superblock, free_inode)).unwrap();
         assert!(Inode::is_free(free_inode, superblock, &bitmap));
     }
 
     #[test]
     fn fs_interface() {
         let file = copy_file("./tests/fs/ext2/io_operations.ext2").unwrap();
-        let ext2 = Ext2::new(file, new_device_id(), false).unwrap();
-        let fs = Celled::new(ext2);
+        let fs = Ext2Fs::new(file, new_device_id(), false).unwrap();
 
         let root = fs.root().unwrap();
 

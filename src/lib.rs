@@ -119,9 +119,8 @@
 //! ```
 //! use core::str::FromStr;
 //!
-//! use efs::celled::Celled;
 //! use efs::file::{Directory, SymbolicLink, Type, TypeWithFile};
-//! use efs::fs::ext2::Ext2;
+//! use efs::fs::ext2::Ext2Fs;
 //! use efs::fs::FileSystem;
 //! use efs::io::{Read, Write};
 //! use efs::path::{Path, UnixStr};
@@ -141,8 +140,7 @@
 //!     .open("./tests/fs/ext2/example.ext2")
 //!     .unwrap();
 //!
-//! let ext2 = Ext2::new(device, 0, false).unwrap();
-//! let fs = Celled::new(ext2);
+//! let fs = Ext2Fs::new(device, 0, false).unwrap();
 //!
 //! // `fs` now contains a `FileSystem` with the following structure:
 //! // /

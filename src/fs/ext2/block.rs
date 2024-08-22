@@ -10,9 +10,8 @@ use alloc::vec::Vec;
 
 use super::error::Ext2Error;
 use super::superblock::Superblock;
-use super::Ext2;
+use super::Ext2Fs;
 use crate::arch::u32_to_usize;
-use crate::celled::Celled;
 use crate::dev::sector::Address;
 use crate::dev::Device;
 use crate::error::Error;
@@ -30,16 +29,16 @@ pub struct Block<Dev: Device<u8, Ext2Error>> {
     number: u32,
 
     /// Ext2 object associated with the device containing this block.
-    filesystem: Celled<Ext2<Dev>>,
+    filesystem: Ext2Fs<Dev>,
 
     /// Offset for the I/O operations.
     io_offset: u32,
 }
 
 impl<Dev: Device<u8, Ext2Error>> Block<Dev> {
-    /// Returns a [`Block`] from its number and an [`Ext2`] instance.
+    /// Returns a [`Block`] from its number and an [`Ext2Fs`] instance.
     #[must_use]
-    pub const fn new(filesystem: Celled<Ext2<Dev>>, number: u32) -> Self {
+    pub const fn new(filesystem: Ext2Fs<Dev>, number: u32) -> Self {
         Self {
             number,
             filesystem,
@@ -226,7 +225,7 @@ mod test {
     use crate::fs::ext2::block_group::BlockGroupDescriptor;
     use crate::fs::ext2::error::Ext2Error;
     use crate::fs::ext2::superblock::Superblock;
-    use crate::fs::ext2::Ext2;
+    use crate::fs::ext2::Ext2Fs;
     use crate::io::{Read, Seek, SeekFrom, Write};
     use crate::tests::{copy_file, new_device_id};
 
@@ -246,7 +245,7 @@ mod test {
         .unwrap()
         .commit();
 
-        let ext2 = Celled::new(Ext2::new_celled(celled_file, 0, false).unwrap());
+        let ext2 = Ext2Fs::new_celled(celled_file, 0, false).unwrap();
         let mut block = Block::new(ext2, BLOCK_NUMBER);
         block.seek(SeekFrom::Start(123)).unwrap();
         let mut buffer_auto = [0_u8; 59];
@@ -260,7 +259,7 @@ mod test {
         const BLOCK_NUMBER: u32 = 10_234;
 
         let file = copy_file("./tests/fs/ext2/io_operations.ext2").unwrap();
-        let ext2 = Celled::new(Ext2::new(file, new_device_id(), false).unwrap());
+        let ext2 = Ext2Fs::new(file, new_device_id(), false).unwrap();
         let superblock = ext2.lock().superblock().clone();
 
         let mut block = Block::new(ext2, BLOCK_NUMBER);
@@ -280,7 +279,7 @@ mod test {
         const BLOCK_NUMBER: u32 = 9;
 
         let file = copy_file("./tests/fs/ext2/io_operations.ext2").unwrap();
-        let ext2: Celled<Ext2<File>> = Celled::new(Ext2::new(file, new_device_id(), false).unwrap());
+        let ext2 = Ext2Fs::new(file, new_device_id(), false).unwrap();
         let superblock = ext2.lock().superblock().clone();
 
         let mut block = Block::new(ext2.clone(), BLOCK_NUMBER);
@@ -313,7 +312,7 @@ mod test {
         const BLOCK_NUMBER: u32 = 1920;
 
         let file = copy_file("./tests/fs/ext2/io_operations.ext2").unwrap();
-        let ext2 = Celled::new(Ext2::new(file, new_device_id(), false).unwrap());
+        let ext2 = Ext2Fs::new(file, new_device_id(), false).unwrap();
         let superblock = ext2.lock().superblock().clone();
 
         let mut block = Block::new(ext2.clone(), BLOCK_NUMBER);
