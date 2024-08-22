@@ -234,7 +234,7 @@ mod test {
     fn block_read() {
         const BLOCK_NUMBER: u32 = 2;
 
-        let file = File::options().read(true).write(true).open("./tests/fs/ext2/io_operations.ext2").unwrap();
+        let file = copy_file("./tests/fs/ext2/io_operations.ext2").unwrap();
         let celled_file = Celled::new(file);
         let superblock = Superblock::parse(&celled_file).unwrap();
 

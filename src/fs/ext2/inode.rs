@@ -829,7 +829,7 @@ mod test {
     use crate::fs::ext2::error::Ext2Error;
     use crate::fs::ext2::inode::{Inode, ROOT_DIRECTORY_INODE};
     use crate::fs::ext2::Ext2;
-    use crate::tests::new_device_id;
+    use crate::tests::{copy_file, new_device_id};
 
     #[test]
     fn struct_size() {
@@ -838,29 +838,29 @@ mod test {
 
     #[test]
     fn parse_root() {
-        let file = File::options().read(true).write(true).open("./tests/fs/ext2/base.ext2").unwrap();
+        let file = copy_file("./tests/fs/ext2/base.ext2").unwrap();
         let fs = Ext2::new(file, new_device_id(), false).unwrap();
         assert!(Inode::parse(&fs, ROOT_DIRECTORY_INODE).is_ok());
 
-        let file = File::options().read(true).write(true).open("./tests/fs/ext2/extended.ext2").unwrap();
+        let file = copy_file("./tests/fs/ext2/extended.ext2").unwrap();
         let fs = Ext2::new(file, new_device_id(), false).unwrap();
         assert!(Inode::parse(&fs, ROOT_DIRECTORY_INODE).is_ok());
     }
 
     #[test]
     fn failed_parse() {
-        let file = File::options().read(true).write(true).open("./tests/fs/ext2/base.ext2").unwrap();
+        let file = copy_file("./tests/fs/ext2/base.ext2").unwrap();
         let fs = Ext2::new(file, new_device_id(), false).unwrap();
         assert!(Inode::parse(&fs, 0).is_err());
 
-        let file = File::options().read(true).write(true).open("./tests/fs/ext2/extended.ext2").unwrap();
+        let file = copy_file("./tests/fs/ext2/extended.ext2").unwrap();
         let fs = Ext2::new(file, new_device_id(), false).unwrap();
         assert!(Inode::parse(&fs, 0).is_err());
     }
 
     #[test]
     fn starting_addr() {
-        let file = File::options().read(true).write(true).open("./tests/fs/ext2/base.ext2").unwrap();
+        let file = copy_file("./tests/fs/ext2/base.ext2").unwrap();
         let fs = Ext2::new(file, new_device_id(), false).unwrap();
 
         let root_auto = Inode::parse(&fs, ROOT_DIRECTORY_INODE).unwrap();
@@ -875,7 +875,7 @@ mod test {
 
     #[test]
     fn cache_test() {
-        let file = File::options().read(true).write(true).open("./tests/fs/ext2/base.ext2").unwrap();
+        let file = copy_file("./tests/fs/ext2/base.ext2").unwrap();
         let fs = Ext2::new(file, new_device_id(), false).unwrap();
 
         let start_time = time::Instant::now();
@@ -884,7 +884,7 @@ mod test {
         }
         let time_cache_disabled = start_time.elapsed();
 
-        let file = File::options().read(true).write(true).open("./tests/fs/ext2/base.ext2").unwrap();
+        let file = copy_file("./tests/fs/ext2/base.ext2").unwrap();
         let fs = Ext2::new(file, new_device_id(), true).unwrap();
         let start_time = time::Instant::now();
         for _ in 0..100_000 {

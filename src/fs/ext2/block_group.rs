@@ -126,7 +126,6 @@ impl BlockGroupDescriptor {
 #[cfg(test)]
 mod test {
     use core::mem::size_of;
-    use std::fs::File;
     use std::time;
 
     use super::{BlockGroupDescriptor, BLOCK_GROUP_DESCRIPTOR_SIZE};
@@ -140,29 +139,29 @@ mod test {
 
     #[test]
     fn parse_first_block_group_descriptor() {
-        let file = File::options().read(true).write(true).open("./tests/fs/ext2/base.ext2").unwrap();
+        let file = copy_file("./tests/fs/ext2/base.ext2").unwrap();
         let fs = Ext2::new(file, new_device_id(), false).unwrap();
         assert!(BlockGroupDescriptor::parse(&fs, 0).is_ok());
 
-        let file = File::options().read(true).write(true).open("./tests/fs/ext2/extended.ext2").unwrap();
+        let file = copy_file("./tests/fs/ext2/extended.ext2").unwrap();
         let fs = Ext2::new(file, new_device_id(), false).unwrap();
         assert!(BlockGroupDescriptor::parse(&fs, 0).is_ok());
     }
 
     #[test]
     fn failed_parse() {
-        let file = File::options().read(true).write(true).open("./tests/fs/ext2/base.ext2").unwrap();
+        let file = copy_file("./tests/fs/ext2/base.ext2").unwrap();
         let fs = Ext2::new(file, new_device_id(), false).unwrap();
         assert!(BlockGroupDescriptor::parse(&fs, fs.superblock().block_group_count()).is_err());
 
-        let file = File::options().read(true).write(true).open("./tests/fs/ext2/extended.ext2").unwrap();
+        let file = copy_file("./tests/fs/ext2/extended.ext2").unwrap();
         let fs = Ext2::new(file, new_device_id(), false).unwrap();
         assert!(BlockGroupDescriptor::parse(&fs, fs.superblock().block_group_count()).is_err());
     }
 
     #[test]
     fn cache_test() {
-        let file = File::options().read(true).write(true).open("./tests/fs/ext2/base.ext2").unwrap();
+        let file = copy_file("./tests/fs/ext2/base.ext2").unwrap();
         let fs = Ext2::new(file, new_device_id(), false).unwrap();
 
         let start_time = time::Instant::now();
@@ -171,7 +170,7 @@ mod test {
         }
         let time_cache_disabled = start_time.elapsed();
 
-        let file = File::options().read(true).write(true).open("./tests/fs/ext2/base.ext2").unwrap();
+        let file = copy_file("./tests/fs/ext2/base.ext2").unwrap();
         let fs = Ext2::new(file, new_device_id(), true).unwrap();
         let start_time = time::Instant::now();
         for _ in 0..100_000 {

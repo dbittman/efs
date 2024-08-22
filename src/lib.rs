@@ -19,6 +19,8 @@
 //!
 //! **Every** structure, trait and function in this crate is documented and contains source if needed. If you find something unclear, do not hesitate to create an issue at <https://codeberg.org/RatCornu/efs/issues>.
 //!
+//! This library sticks as much as possible with the POSIX specification, fully available online on <https://pubs.opengroup.org/onlinepubs/9799919799/>.
+//!
 //! ### File interfaces
 //!
 //! * As defined in POSIX, a file can either be a [`Regular`](crate::file::Regular), a [`Directory`](crate::file::Directory), a
@@ -50,6 +52,9 @@
 //! here to provide two things : an entry point to the filesystem with the [`root`](crate::fs::FileSystem::root) method, and
 //! high-level functions to make the file manipulations easier.
 //!
+//! You can read the documentation in the [`fs`] module for more information on [`FileSystem`](crate::fs::FileSystem)s and on how to
+//! implement them.
+//!
 //! ### Paths
 //!
 //! As the Rust's native [`Path`](std::path::Path) implementation is in [`std::path`], this crates provides an other
@@ -60,9 +65,8 @@
 //!
 //! In this crate, a [`Device`](crate::dev::Device) is a sized structure that can be read, written directly at any point.
 //!
-//! To ensure that a read-only filesystem is never actually written, the [`Device`](crate::dev::Device) trait has a stronger
-//! constraint that being `Read + Write + Seek`: it should be readable with a read-only borrow of the device (which is not the case
-//! for [`std::io::Read`]).
+//! You can read the documentation in the [`dev`] module for more information on [`Device`](dev::Device)s and on how to implement
+//! them.
 //!
 //! ## Usage
 //!
@@ -224,149 +228,6 @@
 //!
 //! # std::fs::remove_file("./tests/fs/ext2/example.ext2").unwrap();
 //! ```
-//!
-//! ## How to implement a device?
-//!
-//! ### In an `no_std` environment
-//!
-//! To implement a device, you need to provide three methods:
-//!
-//! * [`size`](crate::dev::Device::size) which returns the size of the device in bytes
-//!
-//! * [`slice`](crate::dev::Device::slice) which creates a [`Slice`](crate::dev::Slice) of the device
-//!
-//! * [`commit`](crate::dev::Device::commit) which commits a [`Commit`](crate::dev::Commit) created from a
-//!   [`Slice`](crate::dev::Slice) of the device
-//!
-//! To help you, here is an example of how those methods can be used:
-//!
-//! ```
-//! use std::vec;
-//!
-//! use efs::dev::sector::Address;
-//! use efs::dev::Device;
-//!
-//! // Here, our device is a `Vec<usize>`
-//! let mut device = vec![0_usize; 1024];
-//!
-//! // We take a slice of the device: `slice` now contains a reference to the
-//! // objects between the indices 256 (included) and 512 (not included) of the
-//! // device.
-//! let mut slice = Device::<usize, std::io::Error>::slice(
-//!     &mut device,
-//!     Address::try_from(256_u64).unwrap()..Address::try_from(512_u64).unwrap(),
-//! )
-//! .unwrap();
-//!
-//! // We modify change each elements `0` to a `1` in the slice.
-//! slice.iter_mut().for_each(|element| *element = 1);
-//!
-//! // We commit the changes of slice: now this slice cannot be changed anymore.
-//! let commit = slice.commit();
-//!
-//! assert!(Device::<usize, std::io::Error>::commit(&mut device, commit).is_ok());
-//!
-//! for (idx, &x) in device.iter().enumerate() {
-//!     assert_eq!(x, usize::from((256..512).contains(&idx)));
-//! }
-//! ```
-//!
-//! Moreover, your implementation of a device should only returns [`DevError`](crate::dev::error::DevError)s in case of a read/write
-//! fail.
-//!
-//! ### In an `std` environment
-//!
-//! You have two options in this case:
-//!
-//! - either doing the same process as in a `no_std` environment (see above)
-//! - either implementing [`Read`](std::io::Read), [`Write`](std::io::Write) and [`Seek`](std::io::Seek) on your device.
-//!
-//! In the second case, you will have to use the [`StdIOWrapper`](io::StdIOWrapper), here is a dummy example:
-//!
-//! ```
-//! use std::error::Error;
-//! use std::fmt::Display;
-//! use std::io::{Read, Seek, SeekFrom, Write};
-//!
-//! use efs::dev::sector::Address;
-//! use efs::dev::Device;
-//! use efs::io::StdIOWrapper;
-//!
-//! #[derive(Debug)]
-//! struct Foo {} // Foo is our device
-//!
-//! #[derive(Debug)]
-//! struct BarError {} // FooError is the error type related to the Bar filesystem
-//!
-//! impl Display for BarError {
-//!     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-//!         write!(f, "BarError")
-//!     }
-//! }
-//!
-//! impl Error for BarError {}
-//!
-//! impl Read for Foo {
-//!     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-//!         buf.fill(1);
-//!         Ok(buf.len())
-//!     }
-//! }
-//!
-//! impl Write for Foo {
-//!     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-//!         Ok(buf.len())
-//!     }
-//!
-//!     fn flush(&mut self) -> std::io::Result<()> {
-//!         Ok(())
-//!     }
-//! }
-//!
-//! impl Seek for Foo {
-//!     fn seek(&mut self, _pos: SeekFrom) -> std::io::Result<u64> {
-//!         Ok(0)
-//!     }
-//! }
-//!
-//! let foo = Foo {};
-//! let mut device = StdIOWrapper::<_, BarError>::new(foo);
-//!
-//! // Now device implements `Device<u8, BarError>`,
-//! // thus we can use all the methods from the `Device` trait.
-//!
-//! assert_eq!(unsafe { device.read_at::<u8>(Address::new(0)) }.unwrap(), 1);
-//! assert_eq!(unsafe { device.read_at::<u32>(Address::new(0)) }.unwrap(), 0x0101_0101);
-//! ```
-//!
-//! ## How to implement a filesystem?
-//!
-//! To implement a filesystem, you will need a lot of structures and methods. You can read the implementation of the `ext2`
-//! filesystem as an example, but here is a general layout of what you need to do:
-//!
-//! * create a structure which will implement [`FileSystem`](crate::fs::FileSystem): it will be the core structure of your
-//!   filesystem
-//!
-//! * create an error structure, which implements [`core::error::Error`]. This will contain **every** error that your filesystem
-//!   will be able to return.
-//!
-//! * create objects for every structure in your filesystem
-//!
-//! * create structures for [`File`](crate::file::File), [`Regular`](crate::file::Regular), [`Directory`](crate::file::Directory)
-//!   and [`SymbolicLink`](crate::file::SymbolicLink). For each of this structure, create functions allowing to be parsed easily.
-//!   For [`Fifo`](crate::file::Fifo), [`CharacterDevice`](crate::file::CharacterDevice), [`BlockDevice`](crate::file::BlockDevice)
-//!   and [`Socket`](crate::file::Socket), you can use a simple struct like `struct Socket(File)` as you will likely never use them
-//!   with this crate
-//!
-//! * implement the functions allowing to retrieve the [`Regular`](crate::file::Regular), [`Directory`](crate::file::Directory) and
-//!   [`SymbolicLink`](crate::file::SymbolicLink), and the [`root`](crate::fs::FileSystem::root) particularily. For the
-//!   [`double_slash_root`](crate::fs::FileSystem::double_slash_root), if you don't know what it means, you can just implement it as
-//!   `self.root()` (and it will very probably be the right thing to do)
-//!
-//! * implements all the other functions for the [`Regular`](crate::file::Regular), [`Directory`](crate::file::Directory) and
-//!   [`SymbolicLink`](crate::file::SymbolicLink) structures
-//!
-//! Advice: start with the read-only functions and methods. It will be **MUCH** easier that the write methods.
 
 #![no_std]
 #![cfg_attr(docsrs, feature(doc_cfg))]

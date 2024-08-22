@@ -38,6 +38,10 @@ pub enum Ext2Error {
     #[display("File Too Large: Tried to write a large file while the filesystem does not have the LARGE_FILE feature set")]
     FileTooLarge,
 
+    /// Tried to write a [`Gid`](crate::types::Gid) containing a value bigger than [`u16::MAX`] in an inode.
+    #[display("GID Too Large: tried to write a GID containing the value {_0}, which cannot be contained on a u16")]
+    GidTooLarge(u32),
+
     /// Tried to set as free an inode already free.
     #[display("Inode Already Free: tried to set the inode {_0} as free but is already")]
     InodeAlreadyFree(u32),
@@ -101,6 +105,10 @@ pub enum Ext2Error {
     /// Tried to access a byte which is out of bounds.
     #[display("Out of Bounds: tried to access the {_0}th byte which is out of bounds")]
     OutOfBounds(i128),
+
+    /// Tried to write a [`Uid`](crate::types::Uid) containing a value bigger than [`u16::MAX`] in an inode.
+    #[display("UID Too Large: tried to write a UID containing the value {_0}, which cannot be contained on a u16")]
+    UidTooLarge(u32),
 
     /// An unknown file type has been obtained while parsing a directory entry.
     #[display("Unknown Entry File Type: an unknown file type has been obtained while parsing a directory entry")]

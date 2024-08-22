@@ -1,6 +1,6 @@
 //! Interface for UNIX permissions.
 //!
-//! See [this Wikipedia page](https://en.wikipedia.org/wiki/File-system_permissions#Notation_of_traditional_Unix_permissions) and [this POSIX definition](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap04.html#tag_04_05).
+//! See [this Wikipedia page](https://en.wikipedia.org/wiki/File-system_permissions#Notation_of_traditional_Unix_permissions) and [this POSIX definition](https://pubs.opengroup.org/onlinepubs/9799919799/basedefs/V1_chap04.html#tag_04_07).
 
 use core::fmt::Display;
 

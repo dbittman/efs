@@ -1,4 +1,46 @@
-//! General interface for filesystems
+//! General interface for filesystems.
+//!
+//! # Filesystems
+//!
+//! In this crate, a [`FileSystem`] is a structure capable of managing a complete filesystem on a given
+//! [`Device`](crate::dev::Device). A [`FileSystem`] is the entry point to the [`File`](crate::file::File)s ([regular
+//! files](crate::file::Regular), [directories](crate::file::Directory), ...) of your filesystem through the method
+//! [`root`](FileSystem::root).
+//!
+//! The other provided methods, such as [`get_file`](FileSystem::get_file), are here to help you read and manipulate easily the
+//! content of your filesystem.
+//!
+//! All the needed methods for [`File`](crate::file::File) manipulation are implemented by other structures linked to a
+//! [`FileSystem`]. You can read the module [`file`](crate::file)'s documentation for more information.
+//!
+//! ## How to implement a filesystem?
+//!
+//! To implement a filesystem, you will need a lot of structures and methods. You can read the implementation of the `ext2`
+//! filesystem as an example, but here is a general layout of what you need to do:
+//!
+//! * create a structure which will implement [`FileSystem`](crate::fs::FileSystem): it will be the core structure of your
+//!   filesystem
+//!
+//! * create an error structure, which implements [`core::error::Error`]. This will contain **every** error that your filesystem
+//!   will be able to return.
+//!
+//! * create objects for every structure in your filesystem
+//!
+//! * create structures for [`File`](crate::file::File), [`Regular`](crate::file::Regular), [`Directory`](crate::file::Directory)
+//!   and [`SymbolicLink`](crate::file::SymbolicLink). For each of this structure, create functions allowing to be parsed easily.
+//!   For [`Fifo`](crate::file::Fifo), [`CharacterDevice`](crate::file::CharacterDevice), [`BlockDevice`](crate::file::BlockDevice)
+//!   and [`Socket`](crate::file::Socket), you can use a simple struct like `struct Socket(File)` as you will likely never use them
+//!   directly with this crate
+//!
+//! * implement the functions allowing to retrieve the [`Regular`](crate::file::Regular), [`Directory`](crate::file::Directory) and
+//!   [`SymbolicLink`](crate::file::SymbolicLink), and the [`root`](crate::fs::FileSystem::root) particularily. For the
+//!   [`double_slash_root`](crate::fs::FileSystem::double_slash_root), if you don't know what it means, you can just implement it as
+//!   `self.root()` (and it will very probably be the right thing to do)
+//!
+//! * implements all the other functions for the [`Regular`](crate::file::Regular), [`Directory`](crate::file::Directory) and
+//!   [`SymbolicLink`](crate::file::SymbolicLink) structures.
+//!
+//! Advice: start with the read-only functions and methods. It will be **MUCH** easier that the write methods.
 
 use alloc::borrow::ToOwned;
 use alloc::string::{String, ToString};
@@ -24,9 +66,9 @@ pub mod ext2;
 
 /// Maximal length for a path.
 ///
-/// This is defined in [this POSIX definition](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap04.html#tag_04_13).
+/// This is defined in [this POSIX definition](https://pubs.opengroup.org/onlinepubs/9799919799/basedefs/V1_chap04.html#tag_04_16).
 ///
-/// This value is the same as the one defined in [the linux's `limits.h` header](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/uapi/linux/limits.h?h=v6.5.8#n13).
+/// This value is the same as the one defined in [the linux's `limits.h` header](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/include/uapi/linux/limits.h?h=linux-6.9.y#n13).
 pub const PATH_MAX: usize = 4_096;
 
 /// A filesystem.
@@ -49,7 +91,7 @@ pub trait FileSystem<Dir: Directory> {
     /// Returns a [`DevError`](crate::dev::error::DevError) if the device could not be read.
     fn double_slash_root(&self) -> Result<Dir, Error<Dir::FsError>>;
 
-    /// Performs a pathname resolution as described in [this POSIX definition](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap04.html#tag_04_13).
+    /// Performs a pathname resolution as described in [this POSIX definition](https://pubs.opengroup.org/onlinepubs/9799919799/basedefs/V1_chap04.html#tag_04_16).
     ///
     /// Returns the file of this filesystem corresponding to the given `path`, starting at the `current_dir`.
     ///
@@ -290,7 +332,7 @@ pub trait ReadOnlyFileSystem<RoDir: ReadOnlyDirectory> {
     /// Returns a [`DevError`](crate::dev::error::DevError) if the device could not be read.
     fn double_slash_root(&self) -> Result<RoDir, Error<RoDir::FsError>>;
 
-    /// Performs a pathname resolution as described in [this POSIX definition](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap04.html#tag_04_13).
+    /// Performs a pathname resolution as described in [this POSIX definition](https://pubs.opengroup.org/onlinepubs/9799919799/basedefs/V1_chap04.html#tag_04_16).
     ///
     /// Returns the file of this filesystem corresponding to the given `path`, starting at the `current_dir`.
     ///

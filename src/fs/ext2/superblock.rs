@@ -794,11 +794,11 @@ impl Superblock {
 mod test {
     use alloc::vec;
     use core::mem::size_of;
-    use std::fs::File;
 
     use super::Superblock;
     use crate::celled::Celled;
     use crate::fs::ext2::superblock::{Base, ExtendedFields};
+    use crate::tests::copy_file;
 
     #[test]
     fn struct_size() {
@@ -808,7 +808,7 @@ mod test {
 
     #[test]
     fn basic_superblock() {
-        let file = File::options().read(true).write(true).open("./tests/fs/ext2/base.ext2").unwrap();
+        let file = copy_file("./tests/fs/ext2/base.ext2").unwrap();
         let celled_file = Celled::new(file);
         let superblock = Superblock::parse(&celled_file).unwrap();
         assert!(!superblock.is_extended());
@@ -819,7 +819,7 @@ mod test {
 
     #[test]
     fn extended_superblock() {
-        let file = File::options().read(true).write(true).open("./tests/fs/ext2/extended.ext2").unwrap();
+        let file = copy_file("./tests/fs/ext2/extended.ext2").unwrap();
         let celled_file = Celled::new(file);
         let superblock = Superblock::parse(&celled_file).unwrap();
         assert!(superblock.is_extended());

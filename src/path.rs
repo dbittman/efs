@@ -121,7 +121,7 @@ impl<'path> From<Component<'path>> for UnixStr<'path> {
 /// separated by `/`. A pathname can optionally contain one or more trailing `/`. Multiple successive `/` characters are considered
 /// to be the same as one `/`, except for the case of exactly two leading `/`.
 ///
-/// See [the POSIX definition](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap03.html#tag_03_271) for more information.
+/// See [the POSIX definition](https://pubs.opengroup.org/onlinepubs/9799919799/basedefs/V1_chap03.html#tag_03_254) for more information.
 #[derive(Debug, Clone, Display)]
 #[display("{}", self.as_unix_str())]
 #[cfg_attr(not(doc), repr(transparent))]
@@ -149,7 +149,7 @@ impl<'path> Path<'path> {
 
     /// Checks if the path is absolute.
     ///
-    /// Defined in [this POSIX definition](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap03.html#tag_03_02).
+    /// Defined in [this POSIX definition](https://pubs.opengroup.org/onlinepubs/9799919799/basedefs/V1_chap03.html#tag_03_02).
     ///
     /// Examples
     ///
@@ -170,7 +170,7 @@ impl<'path> Path<'path> {
 
     /// Checks if the path is relative.
     ///
-    /// Defined in [this POSIX definition](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap03.html#tag_03_324).
+    /// Defined in [this POSIX definition](https://pubs.opengroup.org/onlinepubs/9799919799/basedefs/V1_chap03.html#tag_03_311).
     ///
     /// # Examples
     ///

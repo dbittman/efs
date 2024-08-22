@@ -1,6 +1,6 @@
 //! General interface for Unix files.
 //!
-//! See [this Wikipedia page](https://en.wikipedia.org/wiki/Unix_file_types) and [the POSIX header of `<sys/stat.h>`](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/sys_stat.h.html) for more information.
+//! See [this Wikipedia page](https://en.wikipedia.org/wiki/Unix_file_types) and [the POSIX header of `<sys/stat.h>`](https://pubs.opengroup.org/onlinepubs/9799919799/basedefs/sys_stat.h.html) for more information.
 
 use alloc::vec::Vec;
 
@@ -14,7 +14,7 @@ use crate::types::{Blkcnt, Blksize, Dev, Gid, Ino, Mode, Nlink, Off, Timespec, U
 
 /// Minimal stat structure.
 ///
-/// More information on [the POSIX definition](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/sys_stat.h.html#tag_13_62).
+/// More information on [the POSIX definition](https://pubs.opengroup.org/onlinepubs/9799919799/basedefs/sys_stat.h.html).
 #[derive(Debug, Clone)]
 pub struct Stat {
     /// Device ID of device containing file.
@@ -62,7 +62,7 @@ pub struct Stat {
 
 /// Main trait for all Unix files.
 ///
-/// Defined in [this POSIX definition](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap03.html#tag_03_164).
+/// Defined in [this POSIX definition](https://pubs.opengroup.org/onlinepubs/9799919799/basedefs/V1_chap03.html#tag_03_164).
 pub trait File: Base {
     /// Retrieves information about this file.
     fn stat(&self) -> Stat;
@@ -101,7 +101,7 @@ pub trait File: Base {
 
 /// Main trait for all Unix files.
 ///
-/// Defined in [this POSIX definition](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap03.html#tag_03_164).
+/// Defined in [this POSIX definition](https://pubs.opengroup.org/onlinepubs/9799919799/basedefs/V1_chap03.html#tag_03_164).
 #[allow(clippy::module_name_repetitions)]
 pub trait ReadOnlyFile: Base {
     /// Retrieves information about this file.
@@ -128,7 +128,7 @@ impl<F: File> ReadOnlyFile for F {
 
 /// A file that is a randomly accessible sequence of bytes, with no further structure imposed by the system.
 ///
-/// Defined in [this POSIX definition](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap03.html#tag_03_323).
+/// Defined in [this POSIX definition](https://pubs.opengroup.org/onlinepubs/9799919799/basedefs/V1_chap03.html#tag_03_323).
 pub trait Regular: File + Read + Write + Seek {
     /// Trunctates the file size to the given `size` (in bytes).
     ///
@@ -149,11 +149,11 @@ impl<R: Regular> ReadOnlyRegular for R {}
 
 /// An object that associates a filename with a file. Several directory entries can associate names with the same file.
 ///
-/// Defined in [this POSIX definition](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap03.html#tag_03_130).
+/// Defined in [this POSIX definition](https://pubs.opengroup.org/onlinepubs/9799919799/basedefs/V1_chap03.html#tag_03_130).
 pub struct DirectoryEntry<'path, Dir: Directory> {
     /// Name of the file pointed by this directory entry.
     ///
-    /// See more information on valid filenames in [this POSIX definition](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap03.html#tag_03_170).
+    /// See more information on valid filenames in [this POSIX definition](https://pubs.opengroup.org/onlinepubs/9799919799/basedefs/V1_chap03.html#tag_03_170).
     pub filename: UnixStr<'path>,
 
     /// File pointed by this directory entry.
@@ -166,7 +166,7 @@ pub struct DirectoryEntry<'path, Dir: Directory> {
 pub struct ReadOnlyDirectoryEntry<'path, RoDir: ReadOnlyDirectory> {
     /// Name of the file pointed by this directory entry.
     ///
-    /// See more information on valid filenames in [this POSIX definition](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap03.html#tag_03_170).
+    /// See more information on valid filenames in [this POSIX definition](https://pubs.opengroup.org/onlinepubs/9799919799/basedefs/V1_chap03.html#tag_03_170).
     pub filename: UnixStr<'path>,
 
     /// File pointed by this directory entry.
@@ -184,7 +184,7 @@ impl<'path, Dir: Directory> From<DirectoryEntry<'path, Dir>> for ReadOnlyDirecto
 
 /// A file that contains directory entries. No two directory entries in the same directory have the same name.
 ///
-/// Defined in [this POSIX definition](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap03.html#tag_03_129).
+/// Defined in [this POSIX definition](https://pubs.opengroup.org/onlinepubs/9799919799/basedefs/V1_chap03.html#tag_03_129).
 pub trait Directory: Sized + File {
     /// Type of the regular files in the [`FileSystem`](crate::fs::FileSystem) this directory belongs to.
     type Regular: Regular<FsError = Self::FsError>;
@@ -346,7 +346,7 @@ impl<Dir: Directory> ReadOnlyDirectory for Dir {
 /// A type of file with the property that when the file is encountered during pathname resolution, a string stored by the file is
 /// used to modify the pathname resolution.
 ///
-/// Defined in [this POSIX definition](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap03.html#tag_03_381).
+/// Defined in [this POSIX definition](https://pubs.opengroup.org/onlinepubs/9799919799/basedefs/V1_chap03.html#tag_03_381).
 pub trait SymbolicLink: File {
     /// Returns the string stored in this symbolic link.
     ///
@@ -384,24 +384,24 @@ impl<Symlink: SymbolicLink> ReadOnlySymbolicLink for Symlink {
 
 /// A type of file with the property that data written to such a file is read on a first-in-first-out basis.
 ///
-/// Defined in [this POSIX defintion](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap03.html#tag_03_163)
+/// Defined in [this POSIX defintion](https://pubs.opengroup.org/onlinepubs/9799919799/basedefs/V1_chap03.html#tag_03_163)
 pub trait Fifo: File {}
 
 /// A file that refers to a device (such as a terminal device file) or that has special properties (such as /dev/null).
 ///
-/// Defined in [this POSIX definition](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap03.html#tag_03_91)
+/// Defined in [this POSIX definition](https://pubs.opengroup.org/onlinepubs/9799919799/basedefs/V1_chap03.html#tag_03_91)
 pub trait CharacterDevice: File {}
 
 /// A file that refers to a device. A block special file is normally distinguished from a character special file by providing access
 /// to the device in a manner such that the hardware characteristics of the device are not visible.
 ///
-/// Defined in [this POSIX definition](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap03.html#tag_03_79)
+/// Defined in [this POSIX definition](https://pubs.opengroup.org/onlinepubs/9799919799/basedefs/V1_chap03.html#tag_03_79)
 pub trait BlockDevice: File {}
 
 /// A file of a particular type that is used as a communications endpoint for process-to-process communication as described in the
 /// System Interfaces volume of POSIX.1-2017.
 ///
-/// Defined in [this POSIX definition](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap03.html#tag_03_356)
+/// Defined in [this POSIX definition](https://pubs.opengroup.org/onlinepubs/9799919799/basedefs/V1_chap03.html#tag_03_356)
 pub trait Socket: File {}
 
 /// Enumeration of possible file types in a standard UNIX-like filesystem.

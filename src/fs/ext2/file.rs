@@ -137,6 +137,15 @@ impl<Dev: Device<u8, Ext2Error>> File<Dev> {
         // SAFETY: the result is smaller than `u32::MAX`
         new_inode.size = unsafe { u32::try_from(u64::from(u32::MAX) & size).unwrap_unchecked() };
 
+        let mut device = fs.device.lock();
+        if let Some(now) = device.now() {
+            // SAFETY: the result will always be under u32::MAX
+            let time = unsafe { (now.tv_sec.0 & i64::from(u32::MAX)).try_into().unwrap_unchecked() };
+            new_inode.atime = time;
+            new_inode.mtime = time;
+        }
+        drop(device);
+
         // SAFETY: this writes an inode at the starting address of the inode
         unsafe {
             Inode::write_on_device(&fs, self.inode_number, new_inode)?;
@@ -188,27 +197,28 @@ impl<Dev: Device<u8, Ext2Error>> file::File for File<Dev> {
 
         Stat {
             dev: crate::types::Dev(filesystem.device_id),
-            ino: Ino(self.inode_number),
+            ino: Ino(u32_to_usize(self.inode_number)),
             mode: Mode(self.inode.mode),
             nlink: Nlink(u32::from(self.inode.links_count)),
-            uid: Uid(self.inode.uid),
-            gid: Gid(self.inode.gid),
+            uid: Uid(self.inode.uid.into()),
+            gid: Gid(self.inode.gid.into()),
             rdev: crate::types::Dev::default(),
             size: Off(self.inode.data_size().try_into().unwrap_or_default()),
             atim: Timespec {
                 tv_sec: Time(self.inode.atime.into()),
-                tv_nsec: i32::default(),
+                tv_nsec: u32::default(),
             },
             mtim: Timespec {
                 tv_sec: Time(self.inode.mtime.into()),
-                tv_nsec: i32::default(),
+                tv_nsec: u32::default(),
             },
             ctim: Timespec {
                 tv_sec: Time(self.inode.ctime.into()),
-                tv_nsec: i32::default(),
+                tv_nsec: u32::default(),
             },
-            blksize: Blksize(filesystem.superblock.block_size().try_into().unwrap_or_default()),
-            blkcnt: Blkcnt(self.inode.blocks.try_into().unwrap_or_default()),
+            // SAFETY: it is safe to assume that `block_size << isize::MAX` with `isize` at least `i32`
+            blksize: Blksize(unsafe { u32_to_usize(filesystem.superblock.block_size()).try_into().unwrap_unchecked() }),
+            blkcnt: Blkcnt(self.inode.blocks.into()),
         }
     }
 
@@ -227,14 +237,16 @@ impl<Dev: Device<u8, Ext2Error>> file::File for File<Dev> {
 
     fn set_uid(&mut self, uid: Uid) -> Result<(), Error<Self::FsError>> {
         let mut new_inode = self.inode;
-        new_inode.uid = *uid;
+        new_inode.uid =
+            TryInto::<u16>::try_into(uid.0).map_err(|_| Error::Fs(FsError::Implementation(Ext2Error::UidTooLarge(uid.0))))?;
         // SAFETY: only the UID has changed
         unsafe { self.set_inode(&new_inode) }
     }
 
     fn set_gid(&mut self, gid: Gid) -> Result<(), Error<Self::FsError>> {
         let mut new_inode = self.inode;
-        new_inode.gid = *gid;
+        new_inode.gid =
+            TryInto::<u16>::try_into(gid.0).map_err(|_| Error::Fs(FsError::Implementation(Ext2Error::GidTooLarge(gid.0))))?;
         // SAFETY: only the GID has changed
         unsafe { self.set_inode(&new_inode) }
     }
@@ -277,9 +289,22 @@ impl<Dev: Device<u8, Ext2Error>> Base for File<Dev> {
 impl<Dev: Device<u8, Ext2Error>> Read for File<Dev> {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, Error<Self::FsError>> {
         let filesystem = self.filesystem.lock();
-        self.inode.read_data(&filesystem, buf, self.io_offset).inspect(|&bytes| {
+        let bytes = self.inode.read_data(&filesystem, buf, self.io_offset).inspect(|&bytes| {
             self.io_offset += usize_to_u64(bytes);
-        })
+        })?;
+
+        let mut device = filesystem.device.lock();
+        if let Some(now) = device.now() {
+            drop(device);
+
+            let mut new_inode = self.inode;
+            // SAFETY: the result will always be under u32::MAX
+            new_inode.atime = unsafe { (now.tv_sec.0 & i64::from(u32::MAX)).try_into().unwrap_unchecked() };
+            // SAFETY: only the access time has been updated
+            unsafe { Inode::write_on_device(&filesystem, self.inode_number, new_inode)? };
+        }
+
+        Ok(bytes)
     }
 }
 
@@ -405,6 +430,17 @@ impl<Dev: Device<u8, Ext2Error>> Write for File<Dev> {
 
         // SAFETY: the result cannot be greater than `u32::MAX`
         updated_inode.dir_acl = unsafe { u32::try_from((new_size >> 32) & u64::from(u32::MAX)).unwrap_unchecked() };
+
+        let fs = self.filesystem.lock();
+        let mut device = fs.device.lock();
+        if let Some(now) = device.now() {
+            // SAFETY: the result will always be under u32::MAX
+            let time = unsafe { (now.tv_sec.0 & i64::from(u32::MAX)).try_into().unwrap_unchecked() };
+            updated_inode.atime = time;
+            updated_inode.mtime = time;
+        }
+        drop(device);
+        drop(fs);
 
         // SAFETY: the updated inode contains the right inode created in this function
         unsafe { self.set_inode(&updated_inode) }?;
@@ -762,8 +798,14 @@ impl<Dev: Device<u8, Ext2Error>> file::Directory for Directory<Dev> {
         fs.allocate_inode(
             inode_number,
             TypePermissions::from(permissions) | TypePermissions::from(file_type),
-            user_id.0,
-            group_id.0,
+            user_id
+                .0
+                .try_into()
+                .map_err(|_| Error::Fs(FsError::Implementation(Ext2Error::UidTooLarge(user_id.0))))?,
+            group_id
+                .0
+                .try_into()
+                .map_err(|_| Error::Fs(FsError::Implementation(Ext2Error::GidTooLarge(group_id.0))))?,
             Flags::empty(),
             0,
             [0; 12],
@@ -830,6 +872,24 @@ impl<Dev: Device<u8, Ext2Error>> file::Directory for Directory<Dev> {
             // SAFETY: `defragment` has been called above
             unsafe { self.write_all_entries() }?;
         }
+
+        let fs = self.file.filesystem.lock();
+        let mut device = fs.device.lock();
+        if let Some(now) = device.now() {
+            drop(device);
+
+            let mut new_inode = fs.inode(inode_number)?;
+            // SAFETY: the result will always be under u32::MAX
+            let time = unsafe { (now.tv_sec.0 & i64::from(u32::MAX)).try_into().unwrap_unchecked() };
+            new_inode.atime = time;
+            new_inode.mtime = time;
+            new_inode.ctime = time;
+            // SAFETY: add ctime, atime and mtime to the inode
+            unsafe { Inode::write_on_device(&fs, inode_number, new_inode)? };
+        } else {
+            drop(device);
+        }
+        drop(fs);
 
         self.file.filesystem.file(inode_number)
     }
@@ -1087,7 +1147,7 @@ mod test {
     use alloc::string::{String, ToString};
     use alloc::vec;
     use alloc::vec::Vec;
-    use std::fs::File;
+    use core::time::Duration;
 
     use itertools::Itertools;
 
@@ -1107,7 +1167,7 @@ mod test {
 
     #[test]
     fn parse_root() {
-        let file = File::options().read(true).write(true).open("./tests/fs/ext2/extended.ext2").unwrap();
+        let file = copy_file("./tests/fs/ext2/extended.ext2").unwrap();
         let ext2 = Celled::new(Ext2::new(file, new_device_id(), true).unwrap());
         let root = Directory::new(&ext2, ROOT_DIRECTORY_INODE).unwrap();
         assert_eq!(
@@ -1124,7 +1184,7 @@ mod test {
 
     #[test]
     fn parse_root_entries_without_cache() {
-        let file = File::options().read(true).write(true).open("./tests/fs/ext2/extended.ext2").unwrap();
+        let file = copy_file("./tests/fs/ext2/extended.ext2").unwrap();
         let fs = Ext2::new(file, new_device_id(), false).unwrap();
         let root_inode = Inode::parse(&fs, ROOT_DIRECTORY_INODE).unwrap();
 
@@ -1185,7 +1245,7 @@ mod test {
 
     #[test]
     fn parse_root_entries_with_cache() {
-        let file = File::options().read(true).write(true).open("./tests/fs/ext2/extended.ext2").unwrap();
+        let file = copy_file("./tests/fs/ext2/extended.ext2").unwrap();
         let fs = Ext2::new(file, new_device_id(), true).unwrap();
         let root_inode = Inode::parse(&fs, ROOT_DIRECTORY_INODE).unwrap();
 
@@ -1246,7 +1306,7 @@ mod test {
 
     #[test]
     fn parse_big_file_inode_data() {
-        let file = File::options().read(true).write(true).open("./tests/fs/ext2/extended.ext2").unwrap();
+        let file = copy_file("./tests/fs/ext2/extended.ext2").unwrap();
         let ext2 = Celled::new(Ext2::new(file, new_device_id(), true).unwrap());
         let root = Directory::new(&ext2, ROOT_DIRECTORY_INODE).unwrap();
 
@@ -1282,7 +1342,7 @@ mod test {
 
     #[test]
     fn read_file() {
-        let file = File::options().read(true).write(true).open("./tests/fs/ext2/io_operations.ext2").unwrap();
+        let file = copy_file("./tests/fs/ext2/io_operations.ext2").unwrap();
         let ext2 = Celled::new(Ext2::new(file, new_device_id(), false).unwrap());
 
         let TypeWithFile::Directory(root) = ext2.file(ROOT_DIRECTORY_INODE).unwrap() else {
@@ -1299,7 +1359,7 @@ mod test {
 
     #[test]
     fn read_symlink() {
-        let file = File::options().read(true).write(true).open("./tests/fs/ext2/extended.ext2").unwrap();
+        let file = copy_file("./tests/fs/ext2/extended.ext2").unwrap();
         let ext2 = Celled::new(Ext2::new(file, new_device_id(), false).unwrap());
         let root = Directory::new(&ext2, ROOT_DIRECTORY_INODE).unwrap();
 
@@ -1646,6 +1706,16 @@ mod test {
         };
         assert!(crate::file::Directory::entry(&root, UnixStr::new("boo.txt").unwrap()).is_ok_and(|res| res.is_some()));
 
+        let ctime = boo.file.inode.ctime;
+        let atime = boo.file.inode.atime;
+        let mtime = boo.file.inode.mtime;
+        assert_ne!(ctime, 0);
+        assert_ne!(atime, 0);
+        assert_ne!(mtime, 0);
+
+        let root_atime = root.file.inode.atime;
+        assert!(atime - root_atime < 1);
+
         boo.write(b"Hello earth!\n").unwrap();
         assert_eq!(boo.read_all().unwrap(), b"Hello earth!\n");
     }
@@ -1698,5 +1768,45 @@ mod test {
         assert!(Inode::is_free(ex1_inode, superblock, &ex1_bitmap));
         let ex2_bitmap = fs.get_inode_bitmap(Inode::block_group(superblock, ex2_inode)).unwrap();
         assert!(Inode::is_free(ex2_inode, superblock, &ex2_bitmap));
+    }
+
+    #[test]
+    fn atime_and_mtime() {
+        let file = copy_file("./tests/fs/ext2/io_operations.ext2").unwrap();
+        let ext2 = Celled::new(Ext2::new(file, new_device_id(), false).unwrap());
+        let TypeWithFile::Directory(root) = ext2.file(ROOT_DIRECTORY_INODE).unwrap() else {
+            panic!("The root is always a directory.")
+        };
+        let TypeWithFile::Regular(mut foo) =
+            crate::file::Directory::entry(&root, UnixStr::new("foo.txt").unwrap()).unwrap().unwrap()
+        else {
+            panic!("`foo.txt` has been created as a regular file")
+        };
+
+        let atime = foo.file.inode.atime;
+        let mtime = foo.file.inode.mtime;
+
+        std::thread::sleep(Duration::from_secs(2));
+
+        foo.write(b"Hello earth!").unwrap();
+
+        let fs = ext2.lock();
+        let new_inode = Inode::parse(&fs, foo.file.inode_number).unwrap();
+        drop(fs);
+        assert!(new_inode.atime > atime);
+        assert!(new_inode.mtime > mtime);
+
+        let atime = new_inode.atime;
+        let mtime = new_inode.mtime;
+
+        std::thread::sleep(Duration::from_secs(1));
+
+        foo.write(b" and other planets too!").unwrap();
+
+        let fs = ext2.lock();
+        let new_inode = Inode::parse(&fs, foo.file.inode_number).unwrap();
+        drop(fs);
+        assert!(new_inode.atime < atime + 3);
+        assert!(new_inode.mtime < mtime + 3);
     }
 }

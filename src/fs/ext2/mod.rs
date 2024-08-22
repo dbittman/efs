@@ -722,7 +722,6 @@ impl<Dev: Device<u8, Ext2Error>> FileSystem<Directory<Dev>> for Celled<Ext2<Dev>
 #[cfg(test)]
 mod test {
     use core::str::FromStr;
-    use std::fs::File;
 
     use itertools::Itertools;
 
@@ -743,7 +742,7 @@ mod test {
 
     #[test]
     fn base_fs() {
-        let device = File::options().read(true).write(true).open("./tests/fs/ext2/base.ext2").unwrap();
+        let device = copy_file("./tests/fs/ext2/base.ext2").unwrap();
         let ext2 = Ext2::new(device, new_device_id(), false).unwrap();
         let root = ext2.inode(ROOT_DIRECTORY_INODE).unwrap();
         assert_eq!(root.file_type().unwrap(), Type::Directory);
@@ -751,7 +750,7 @@ mod test {
 
     #[test]
     fn fetch_file() {
-        let device = File::options().read(true).write(true).open("./tests/fs/ext2/extended.ext2").unwrap();
+        let device = copy_file("./tests/fs/ext2/extended.ext2").unwrap();
         let ext2 = Celled::new(Ext2::new(device, new_device_id(), false).unwrap());
 
         let TypeWithFile::Directory(root) = ext2.file(ROOT_DIRECTORY_INODE).unwrap() else { panic!() };
@@ -764,7 +763,7 @@ mod test {
 
     #[test]
     fn get_bitmap() {
-        let device = File::options().read(true).write(true).open("./tests/fs/ext2/base.ext2").unwrap();
+        let device = copy_file("./tests/fs/ext2/base.ext2").unwrap();
         let ext2 = Ext2::new(device, new_device_id(), false).unwrap();
 
         assert_eq!(ext2.get_block_bitmap(0).unwrap().length() * 8, u32_to_usize(ext2.superblock().base().blocks_per_group));
@@ -772,7 +771,7 @@ mod test {
 
     #[test]
     fn free_block_numbers() {
-        let device = File::options().read(true).write(true).open("./tests/fs/ext2/base.ext2").unwrap();
+        let device = copy_file("./tests/fs/ext2/base.ext2").unwrap();
         let ext2 = Ext2::new(device, new_device_id(), false).unwrap();
         let free_blocks = ext2.free_blocks(1_024).unwrap();
         let superblock = ext2.superblock().clone();
@@ -788,7 +787,7 @@ mod test {
 
     #[test]
     fn free_block_amount() {
-        let device = File::options().read(true).write(true).open("./tests/fs/ext2/base.ext2").unwrap();
+        let device = copy_file("./tests/fs/ext2/base.ext2").unwrap();
         let ext2 = Ext2::new(device, 0, false).unwrap();
 
         for i in 1_u32..1_024 {
