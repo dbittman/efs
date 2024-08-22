@@ -40,7 +40,7 @@ Add this to your `Cargo.toml`:
 
 ```
 [dependencies]
-efs = "0.3"
+efs = "0.4"
 ```
 
 See examples on <https://docs.rs/efs> in [`src/lib.rs`](src/lib.rs).
