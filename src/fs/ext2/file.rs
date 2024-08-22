@@ -206,15 +206,15 @@ impl<Dev: Device<u8, Ext2Error>> file::File for File<Dev> {
             size: Off(self.inode.data_size().try_into().unwrap_or_default()),
             atim: Timespec {
                 tv_sec: Time(self.inode.atime.into()),
-                tv_nsec: usize::default(),
+                tv_nsec: u32::default(),
             },
             mtim: Timespec {
                 tv_sec: Time(self.inode.mtime.into()),
-                tv_nsec: usize::default(),
+                tv_nsec: u32::default(),
             },
             ctim: Timespec {
                 tv_sec: Time(self.inode.ctime.into()),
-                tv_nsec: usize::default(),
+                tv_nsec: u32::default(),
             },
             // SAFETY: it is safe to assume that `block_size << isize::MAX` with `isize` at least `i32`
             blksize: Blksize(unsafe { u32_to_usize(filesystem.superblock.block_size()).try_into().unwrap_unchecked() }),

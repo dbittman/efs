@@ -64,12 +64,12 @@ pub struct Time(pub i64);
 
 /// Used for precise instants.
 ///
-/// Times shall be given in seconds since the Epoch.
+/// Times shall be given in seconds since the Epoch. If possible, it can be completed with nanoseconds.
 #[derive(Debug, Clone, Copy)]
 pub struct Timespec {
     /// Whole seconds.
     pub tv_sec: Time,
 
     /// Nanoseconds [0, 999999999].
-    pub tv_nsec: usize,
+    pub tv_nsec: u32,
 }

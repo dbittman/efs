@@ -1,4 +1,130 @@
 //! Everything related to the devices.
+//!
+//! # Devices
+//!
+//! In this crate, a [`Device`] is a structure capable of storing a fixed number of contiguous objects (usually bytes, i.e [`u8`],
+//! but can be any object implementing [`Copy`]). Each byte is located at a unique [`Address`], which is used to describe
+//! [`Slice`]s. When a [`Slice`] is mutated, it can be committed into a [`Commit`], which can be write back on the [`Device`].
+//!
+//! To avoid manipulating only [`Slice`]s and [`Commit`]s, which is quite heavy, you can manipulate a [`Device`] through the
+//! provided metehods [`read_at`](Device::read_at) and [`write_at`](Device::write_at).
+//!
+//! If needed for the [`FileSystem`](crate::fs::FileSystem) usage, the device may be able to give the current time.
+//!
+//! ## How to implement a device?
+//!
+//! ### In an `no_std` environment
+//!
+//! To implement a device, you need to provide three methods:
+//!
+//! * [`size`](Device::size) which returns the size of the device in bytes
+//!
+//! * [`slice`](Device::slice) which creates a [`Slice`] of the device
+//!
+//! * [`commit`](Device::commit) which commits a [`Commit`] created from a mutated [`Slice`] of the device
+//!
+//! * [`now`](Device::now) (optional) which returns the current time.
+//!
+//! To help you, here is an example of how those methods can be used:
+//!
+//! ```
+//! use std::vec;
+//!
+//! use efs::dev::sector::Address;
+//! use efs::dev::Device;
+//!
+//! // Here, our device is a `Vec<usize>`
+//! let mut device = vec![0_usize; 1024];
+//!
+//! // We take a slice of the device: `slice` now contains a reference to the
+//! // objects between the indices 256 (included) and 512 (not included) of the
+//! // device.
+//! let mut slice = Device::<usize, std::io::Error>::slice(
+//!     &mut device,
+//!     Address::try_from(256_u64).unwrap()..Address::try_from(512_u64).unwrap(),
+//! )
+//! .unwrap();
+//!
+//! // We modify change each elements `0` to a `1` in the slice.
+//! slice.iter_mut().for_each(|element| *element = 1);
+//!
+//! // We commit the changes of slice: now this slice cannot be changed anymore.
+//! let commit = slice.commit();
+//!
+//! assert!(Device::<usize, std::io::Error>::commit(&mut device, commit).is_ok());
+//!
+//! for (idx, &x) in device.iter().enumerate() {
+//!     assert_eq!(x, usize::from((256..512).contains(&idx)));
+//! }
+//! ```
+//!
+//! Moreover, your implementation of a device should only returns [`DevError`]s in case of a read/write
+//! fail.
+//!
+//! ### In an `std` environment
+//!
+//! You have two options in this case:
+//!
+//! - either doing the same process as in a `no_std` environment (see above)
+//! - either implementing [`Read`](std::io::Read), [`Write`](std::io::Write) and [`Seek`](std::io::Seek) on your device.
+//!
+//! In the second case, you will have to use the [`StdIOWrapper`](crate::io::StdIOWrapper), here is a dummy example:
+//!
+//! ```
+//! use std::error::Error;
+//! use std::fmt::Display;
+//! use std::io::{Read, Seek, SeekFrom, Write};
+//!
+//! use efs::dev::sector::Address;
+//! use efs::dev::Device;
+//! use efs::io::StdIOWrapper;
+//!
+//! #[derive(Debug)]
+//! struct Foo {} // Foo is our device
+//!
+//! #[derive(Debug)]
+//! struct BarError {} // FooError is the error type related to the Bar filesystem
+//!
+//! impl Display for BarError {
+//!     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+//!         write!(f, "BarError")
+//!     }
+//! }
+//!
+//! impl Error for BarError {}
+//!
+//! impl Read for Foo {
+//!     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+//!         buf.fill(1);
+//!         Ok(buf.len())
+//!     }
+//! }
+//!
+//! impl Write for Foo {
+//!     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+//!         Ok(buf.len())
+//!     }
+//!
+//!     fn flush(&mut self) -> std::io::Result<()> {
+//!         Ok(())
+//!     }
+//! }
+//!
+//! impl Seek for Foo {
+//!     fn seek(&mut self, _pos: SeekFrom) -> std::io::Result<u64> {
+//!         Ok(0)
+//!     }
+//! }
+//!
+//! let foo = Foo {};
+//! let mut device = StdIOWrapper::<_, BarError>::new(foo);
+//!
+//! // Now device implements `Device<u8, BarError>`,
+//! // thus we can use all the methods from the `Device` trait.
+//!
+//! assert_eq!(unsafe { device.read_at::<u8>(Address::new(0)) }.unwrap(), 1);
+//! assert_eq!(unsafe { device.read_at::<u32>(Address::new(0)) }.unwrap(), 0x0101_0101);
+//! ```
 
 use alloc::borrow::{Cow, ToOwned};
 use alloc::boxed::Box;
@@ -273,8 +399,8 @@ pub fn default_now() -> Timespec {
     Timespec {
         // SAFETY: the number of seconds from the UNIX_EPOCH will reach i64::MAX in billions of years
         tv_sec: Time(unsafe { now.as_secs().try_into().unwrap_unchecked() }),
-        // SAFETY: cannot make this conversion only on 16-bits systems, which cannot use `std` in the current version of Rust
-        tv_nsec: unsafe { usize::try_from(now.as_nanos() % 1_000_000_000).unwrap_unchecked() },
+        // SAFETY: 1_000_000_000 can always be converted into a u32
+        tv_nsec: unsafe { u32::try_from(now.as_nanos() % 1_000_000_000).unwrap_unchecked() },
     }
 }
 
