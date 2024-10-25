@@ -132,12 +132,12 @@ mod test {
     use crate::fs::ext2::Ext2;
     use crate::tests::{copy_file, new_device_id};
 
-    #[test]
+    #[test_case]
     fn struct_size() {
         assert_eq!(size_of::<BlockGroupDescriptor>(), BLOCK_GROUP_DESCRIPTOR_SIZE);
     }
 
-    #[test]
+    #[test_case]
     fn parse_first_block_group_descriptor() {
         let file = copy_file("./tests/fs/ext2/base.ext2").unwrap();
         let fs = Ext2::new(file, new_device_id(), false).unwrap();
@@ -148,7 +148,7 @@ mod test {
         assert!(BlockGroupDescriptor::parse(&fs, 0).is_ok());
     }
 
-    #[test]
+    #[test_case]
     fn failed_parse() {
         let file = copy_file("./tests/fs/ext2/base.ext2").unwrap();
         let fs = Ext2::new(file, new_device_id(), false).unwrap();
@@ -159,7 +159,7 @@ mod test {
         assert!(BlockGroupDescriptor::parse(&fs, fs.superblock().block_group_count()).is_err());
     }
 
-    #[test]
+    #[test_case]
     fn cache_test() {
         let file = copy_file("./tests/fs/ext2/base.ext2").unwrap();
         let fs = Ext2::new(file, new_device_id(), false).unwrap();
@@ -181,7 +181,7 @@ mod test {
         assert!(time_cache_disabled > time_cache_enabled);
     }
 
-    #[test]
+    #[test_case]
     fn write_back() {
         let file = copy_file("./tests/fs/ext2/io_operations.ext2").unwrap();
         let fs = Ext2::new(file, new_device_id(), false).unwrap();

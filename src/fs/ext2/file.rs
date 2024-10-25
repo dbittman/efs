@@ -1165,7 +1165,7 @@ mod test {
     use crate::tests::{copy_file, new_device_id};
     use crate::types::{Gid, Mode, Uid};
 
-    #[test]
+    #[test_case]
     fn parse_root() {
         let file = copy_file("./tests/fs/ext2/extended.ext2").unwrap();
         let ext2 = Ext2Fs::new(file, new_device_id(), true).unwrap();
@@ -1182,7 +1182,7 @@ mod test {
         );
     }
 
-    #[test]
+    #[test_case]
     fn parse_root_entries_without_cache() {
         let file = copy_file("./tests/fs/ext2/extended.ext2").unwrap();
         let fs = Ext2::new(file, new_device_id(), false).unwrap();
@@ -1243,7 +1243,7 @@ mod test {
         assert_eq!(symlink.name.as_c_str().to_string_lossy(), "symlink");
     }
 
-    #[test]
+    #[test_case]
     fn parse_root_entries_with_cache() {
         let file = copy_file("./tests/fs/ext2/extended.ext2").unwrap();
         let fs = Ext2::new(file, new_device_id(), true).unwrap();
@@ -1304,7 +1304,7 @@ mod test {
         assert_eq!(symlink.name.as_c_str().to_string_lossy(), "symlink");
     }
 
-    #[test]
+    #[test_case]
     fn parse_big_file_inode_data() {
         let file = copy_file("./tests/fs/ext2/extended.ext2").unwrap();
         let ext2 = Ext2Fs::new(file, new_device_id(), true).unwrap();
@@ -1340,7 +1340,7 @@ mod test {
         assert_eq!(buffer.iter().all_equal_value(), Ok(&0));
     }
 
-    #[test]
+    #[test_case]
     fn read_file() {
         let file = copy_file("./tests/fs/ext2/io_operations.ext2").unwrap();
         let ext2 = Ext2Fs::new(file, new_device_id(), false).unwrap();
@@ -1357,7 +1357,7 @@ mod test {
         assert_eq!(foo.file.read_all().unwrap(), b"Hello world!\n");
     }
 
-    #[test]
+    #[test_case]
     fn read_symlink() {
         let file = copy_file("./tests/fs/ext2/extended.ext2").unwrap();
         let ext2 = Ext2Fs::new(file, new_device_id(), false).unwrap();
@@ -1372,7 +1372,7 @@ mod test {
         assert_eq!(symlink.pointed_file, "big_file");
     }
 
-    #[test]
+    #[test_case]
     fn set_inode() {
         let file = copy_file("./tests/fs/ext2/io_operations.ext2").unwrap();
         let ext2 = Ext2Fs::new(file, new_device_id(), false).unwrap();
@@ -1395,7 +1395,7 @@ mod test {
         assert_eq!(foo.file.inode, new_inode);
     }
 
-    #[test]
+    #[test_case]
     fn write_file_dbp_replace_without_allocation() {
         let file = copy_file("./tests/fs/ext2/io_operations.ext2").unwrap();
         let ext2 = Ext2Fs::new(file, new_device_id(), false).unwrap();
@@ -1418,7 +1418,7 @@ mod test {
         assert_eq!(String::from_utf8(foo.read_all().unwrap()).unwrap(), "Hello earth!\n");
     }
 
-    #[test]
+    #[test_case]
     fn write_file_dbp_extend_without_allocation() {
         let file = copy_file("./tests/fs/ext2/io_operations.ext2").unwrap();
         let ext2 = Ext2Fs::new(file, new_device_id(), false).unwrap();
@@ -1441,7 +1441,7 @@ mod test {
         assert_eq!(foo.read_all().unwrap(), b"Hello earth!\nI love dogs!\n");
     }
 
-    #[test]
+    #[test_case]
     fn write_file_dbp_extend_with_allocation() {
         const BYTES_TO_WRITE: usize = 12_000;
 
@@ -1466,7 +1466,7 @@ mod test {
         assert_eq!(foo.read_all().unwrap().into_iter().all_equal_value(), Ok(b'a'));
     }
 
-    #[test]
+    #[test_case]
     fn write_file_singly_indirect_block_pointer() {
         const BYTES_TO_WRITE: usize = 23_000;
 
@@ -1495,7 +1495,7 @@ mod test {
         assert_eq!(foo.read_all().unwrap(), replace_text);
     }
 
-    #[test]
+    #[test_case]
     fn write_file_doubly_indirect_block_pointer() {
         const BYTES_TO_WRITE: usize = 400_000;
 
@@ -1524,7 +1524,7 @@ mod test {
         assert_eq!(foo.read_all().unwrap(), replace_text);
     }
 
-    #[test]
+    #[test_case]
     fn write_file_triply_indirect_block_pointer() {
         const BYTES_TO_WRITE: usize = 70_000_000;
 
@@ -1549,7 +1549,7 @@ mod test {
         assert_eq!(foo.read_all().unwrap(), replace_text);
     }
 
-    #[test]
+    #[test_case]
     fn write_file_twice() {
         const BYTES_TO_WRITE: usize = 23_000;
 
@@ -1579,7 +1579,7 @@ mod test {
         assert_eq!(foo.read_all().unwrap(), replace_text);
     }
 
-    #[test]
+    #[test_case]
     #[allow(clippy::similar_names)]
     fn file_mode() {
         let file = copy_file("./tests/fs/ext2/io_operations.ext2").unwrap();
@@ -1614,7 +1614,7 @@ mod test {
         assert_eq!(gid, 2);
     }
 
-    #[test]
+    #[test_case]
     fn file_truncation() {
         const BYTES_TO_WRITE: usize = 400_000;
 
@@ -1650,7 +1650,7 @@ mod test {
         assert!(new_free_block_number >= initial_free_block_number); // Non used blocks could be deallocated
     }
 
-    #[test]
+    #[test_case]
     fn file_simlinks() {
         let file = copy_file("./tests/fs/ext2/io_operations.ext2").unwrap();
         let ext2 = Ext2Fs::new(file, new_device_id(), false).unwrap();
@@ -1680,7 +1680,7 @@ mod test {
         assert_eq!(bar.file.inode.data_size(), 7);
     }
 
-    #[test]
+    #[test_case]
     fn new_files() {
         let file = copy_file("./tests/fs/ext2/io_operations.ext2").unwrap();
         let ext2 = Ext2Fs::new(file, new_device_id(), false).unwrap();
@@ -1720,7 +1720,7 @@ mod test {
         assert_eq!(boo.read_all().unwrap(), b"Hello earth!\n");
     }
 
-    #[test]
+    #[test_case]
     #[allow(clippy::similar_names)]
     fn remove_files() {
         let file = copy_file("./tests/fs/ext2/io_operations.ext2").unwrap();
@@ -1770,7 +1770,7 @@ mod test {
         assert!(Inode::is_free(ex2_inode, superblock, &ex2_bitmap));
     }
 
-    #[test]
+    #[test_case]
     fn atime_and_mtime() {
         let file = copy_file("./tests/fs/ext2/io_operations.ext2").unwrap();
         let ext2 = Ext2Fs::new(file, new_device_id(), false).unwrap();

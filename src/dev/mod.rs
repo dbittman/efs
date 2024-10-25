@@ -547,7 +547,7 @@ mod test {
 
     impl core::error::Error for Error {}
 
-    #[test]
+    #[test_case]
     fn device_generic_read() {
         let mut device = vec![0_u8; 1024];
         let mut slice = Device::<u8, std::io::Error>::slice(&mut device, Address::from(256_u32)..Address::from(512_u32)).unwrap();
@@ -563,7 +563,7 @@ mod test {
     }
 
     #[allow(clippy::missing_asserts_for_indexing)]
-    #[test]
+    #[test_case]
     fn device_file_write() {
         let mut file_1 = copy_file("./tests/dev/device_file_1.txt").unwrap();
 
@@ -590,7 +590,7 @@ mod test {
     }
 
     #[allow(clippy::struct_field_names)]
-    #[test]
+    #[test_case]
     fn device_generic_read_at() {
         const OFFSET: usize = 123;
 
@@ -626,7 +626,7 @@ mod test {
     }
 
     #[allow(clippy::struct_field_names)]
-    #[test]
+    #[test_case]
     fn device_generic_write_at() {
         const OFFSET: u64 = 123;
 
@@ -661,7 +661,7 @@ mod test {
         assert_eq!(test_bytes, slice.as_ref());
     }
 
-    #[test]
+    #[test_case]
     fn dummy_device() {
         #[derive(Debug)]
         struct Foo {}
@@ -703,7 +703,7 @@ mod test {
         assert_eq!(unsafe { foo.read_at::<u32>(Address::new(0)) }.unwrap(), 0x0101_0101);
     }
 
-    #[test]
+    #[test_case]
     fn dummy_std_device() {
         #[derive(Debug)]
         struct Foo {}

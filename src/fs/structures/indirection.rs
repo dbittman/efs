@@ -943,7 +943,7 @@ mod test {
     use crate::fs::ext2::inode::DIRECT_BLOCK_POINTER_COUNT;
     use crate::fs::structures::indirection::SymmetricDifference;
 
-    #[test]
+    #[test_case]
     fn direct_indirection() {
         let indirected_blocks = IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::new(
             5,
@@ -955,7 +955,7 @@ mod test {
         assert_eq!(indirected_blocks.block_at_offset(3), Some(4));
     }
 
-    #[test]
+    #[test_case]
     fn simple_indirection() {
         let indirected_blocks = IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::new(
             1_024,
@@ -967,7 +967,7 @@ mod test {
         assert_eq!(indirected_blocks.block_at_offset(14), Some(2));
     }
 
-    #[test]
+    #[test_case]
     fn double_indirection() {
         let indirected_blocks = IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::new(
             5,
@@ -982,7 +982,7 @@ mod test {
         assert_eq!(indirected_blocks.block_at_offset(1_000), None);
     }
 
-    #[test]
+    #[test_case]
     fn triple_indirection() {
         let indirected_blocks = IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::new(
             5,
@@ -998,7 +998,7 @@ mod test {
         assert_eq!(indirected_blocks.block_at_offset(97), Some(2));
     }
 
-    #[test]
+    #[test_case]
     fn last_data_block_allocated() {
         let indirected_blocks = IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::new(
             5,
@@ -1036,7 +1036,7 @@ mod test {
         assert_eq!(indirected_blocks.last_data_block_allocated(), Some((1, (Indirection::Triple, 55))));
     }
 
-    #[test]
+    #[test_case]
     fn block_counts() {
         let indirected_blocks = IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::new(
             5,
@@ -1092,7 +1092,7 @@ mod test {
         assert_eq!(indirected_blocks.indirection_block_count(), 38);
     }
 
-    #[test]
+    #[test_case]
     fn append_blocks() {
         let mut indirected_blocks = IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::new(
             5,
@@ -1157,7 +1157,7 @@ mod test {
         assert_eq!(indirected_blocks, indirected_blocks_after_append);
     }
 
-    #[test]
+    #[test_case]
     fn flatten() {
         let indirected_blocks = IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::new(
             5,
@@ -1197,7 +1197,7 @@ mod test {
         ]);
     }
 
-    #[test]
+    #[test_case]
     fn append_blocks_with_difference() {
         let indirected_blocks = IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::new(
             5,
@@ -1301,7 +1301,7 @@ mod test {
         });
     }
 
-    #[test]
+    #[test_case]
     fn symmetric_difference_changes() {
         let symmetric_difference = SymmetricDifference::<DIRECT_BLOCK_POINTER_COUNT> {
             blocks_per_indirection: 5,
@@ -1375,7 +1375,7 @@ mod test {
         assert_eq!(symmetric_difference.changed_data_blocks(), vec![4, 5, 7, 8, 9, 10, 11, 14, 15, 16]);
     }
 
-    #[test]
+    #[test_case]
     fn truncate_back() {
         let mut indirected_blocks = IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::new(
             5,
@@ -1448,7 +1448,7 @@ mod test {
         assert_eq!(indirected_blocks, indirected_blocks_after_truncation_2);
     }
 
-    #[test]
+    #[test_case]
     fn truncate_front() {
         let indirected_blocks = IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::new(
             5,

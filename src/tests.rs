@@ -5,6 +5,7 @@ use std::io::copy;
 use std::path::Path;
 use std::string::ToString;
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::{print, println};
 
 use spin::Lazy;
 use tempfile::tempfile;
@@ -29,4 +30,28 @@ pub fn copy_file<P: AsRef<Path> + ToString>(path: P) -> Result<File, Error<!>> {
     let mut temp_file = tempfile()?;
     copy(&mut real_file, &mut temp_file)?;
     Ok(temp_file)
+}
+
+/// Trait that every tested function implement.
+pub trait Testable {
+    /// Run the function with a pretty printing.
+    fn run(&self);
+}
+
+impl<T: Fn()> Testable for T {
+    #[inline]
+    fn run(&self) {
+        print!("{:.<90}", core::any::type_name::<T>());
+        self();
+        println!("[ok]");
+    }
+}
+
+/// Custom runner for tests.
+pub fn runner(tests: &[&dyn Testable]) {
+    println!("Running {} tests", tests.len());
+
+    for test in tests {
+        test.run();
+    }
 }

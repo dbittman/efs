@@ -800,13 +800,13 @@ mod test {
     use crate::fs::ext2::superblock::{Base, ExtendedFields};
     use crate::tests::copy_file;
 
-    #[test]
+    #[test_case]
     fn struct_size() {
         assert_eq!(size_of::<Base>(), 84);
         assert_eq!(size_of::<Base>() + size_of::<ExtendedFields>(), 264);
     }
 
-    #[test]
+    #[test_case]
     fn basic_superblock() {
         let file = copy_file("./tests/fs/ext2/base.ext2").unwrap();
         let celled_file = Celled::new(file);
@@ -817,7 +817,7 @@ mod test {
         assert_eq!(major_version, 0);
     }
 
-    #[test]
+    #[test_case]
     fn extended_superblock() {
         let file = copy_file("./tests/fs/ext2/extended.ext2").unwrap();
         let celled_file = Celled::new(file);
@@ -828,7 +828,7 @@ mod test {
         assert_eq!(major_version, 1);
     }
 
-    #[test]
+    #[test_case]
     fn failed_parse() {
         let device = vec![0_u8; 2048];
         let celled_device = Celled::new(device);

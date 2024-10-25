@@ -797,7 +797,7 @@ mod test {
     use crate::tests::{copy_file, new_device_id};
     use crate::types::{Gid, Uid};
 
-    #[test]
+    #[test_case]
     fn base_fs() {
         let device = copy_file("./tests/fs/ext2/base.ext2").unwrap();
         let ext2 = Ext2::new(device, new_device_id(), false).unwrap();
@@ -805,7 +805,7 @@ mod test {
         assert_eq!(root.file_type().unwrap(), Type::Directory);
     }
 
-    #[test]
+    #[test_case]
     fn fetch_file() {
         let device = copy_file("./tests/fs/ext2/extended.ext2").unwrap();
         let ext2 = Ext2Fs::new(device, new_device_id(), false).unwrap();
@@ -818,7 +818,7 @@ mod test {
         assert_eq!(buf.into_iter().all_equal_value(), Ok(1));
     }
 
-    #[test]
+    #[test_case]
     fn get_bitmap() {
         let device = copy_file("./tests/fs/ext2/base.ext2").unwrap();
         let ext2 = Ext2::new(device, new_device_id(), false).unwrap();
@@ -826,7 +826,7 @@ mod test {
         assert_eq!(ext2.get_block_bitmap(0).unwrap().length() * 8, u32_to_usize(ext2.superblock().base().blocks_per_group));
     }
 
-    #[test]
+    #[test_case]
     fn free_block_numbers() {
         let device = copy_file("./tests/fs/ext2/base.ext2").unwrap();
         let fs = Ext2Fs::new(device, new_device_id(), false).unwrap();
@@ -842,7 +842,7 @@ mod test {
         }
     }
 
-    #[test]
+    #[test_case]
     fn free_block_amount() {
         let device = copy_file("./tests/fs/ext2/base.ext2").unwrap();
         let ext2 = Ext2::new(device, 0, false).unwrap();
@@ -860,7 +860,7 @@ mod test {
         assert_eq!(superblock_free_block_count, block_group_descriptors_free_block_count);
     }
 
-    #[test]
+    #[test_case]
     fn free_block_small_allocation_deallocation() {
         let file = copy_file("./tests/fs/ext2/io_operations.ext2").unwrap();
         let fs = Ext2Fs::new(file, new_device_id(), false).unwrap();
@@ -885,7 +885,7 @@ mod test {
         }
     }
 
-    #[test]
+    #[test_case]
     fn free_block_big_allocation_deallocation() {
         let file = copy_file("./tests/fs/ext2/io_operations.ext2").unwrap();
         let fs = Ext2Fs::new(file, new_device_id(), false).unwrap();
@@ -940,7 +940,7 @@ mod test {
         assert_eq!(superblock_free_block_count, block_group_descriptors_free_block_count);
     }
 
-    #[test]
+    #[test_case]
     fn free_inode_allocation_deallocation() {
         let file = copy_file("./tests/fs/ext2/io_operations.ext2").unwrap();
         let fs = Ext2Fs::new(file, new_device_id(), false).unwrap();
@@ -972,7 +972,7 @@ mod test {
         assert!(Inode::is_free(free_inode, superblock, &bitmap));
     }
 
-    #[test]
+    #[test_case]
     fn fs_interface() {
         let file = copy_file("./tests/fs/ext2/io_operations.ext2").unwrap();
         let fs = Ext2Fs::new(file, new_device_id(), false).unwrap();

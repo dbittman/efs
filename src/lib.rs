@@ -262,6 +262,7 @@
         clippy::collection_is_never_read,
         clippy::enum_glob_use,
         clippy::indexing_slicing,
+        clippy::module_name_repetitions,
         clippy::non_ascii_literal,
         clippy::too_many_lines,
         clippy::undocumented_unsafe_blocks,
@@ -270,10 +271,12 @@
     )
 )]
 #![feature(const_mut_refs)]
+#![feature(custom_test_frameworks)]
 #![feature(exact_size_is_empty)]
 #![feature(let_chains)]
 #![feature(never_type)]
 #![feature(step_trait)]
+#![test_runner(tests::runner)]
 
 extern crate alloc;
 extern crate core;

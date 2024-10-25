@@ -219,7 +219,7 @@ mod test {
 
     use crate::fs::ext2::directory::{Entry, Header};
 
-    #[test]
+    #[test_case]
     fn struct_size() {
         assert_eq!(size_of::<Header>(), 8);
         assert!(size_of::<Entry>() > size_of::<Header>());

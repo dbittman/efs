@@ -229,7 +229,7 @@ mod test {
     use crate::io::{Read, Seek, SeekFrom, Write};
     use crate::tests::{copy_file, new_device_id};
 
-    #[test]
+    #[test_case]
     fn block_read() {
         const BLOCK_NUMBER: u32 = 2;
 
@@ -254,7 +254,7 @@ mod test {
         assert_eq!(buffer_auto, slice.as_ref());
     }
 
-    #[test]
+    #[test_case]
     fn block_write() {
         const BLOCK_NUMBER: u32 = 10_234;
 
@@ -273,7 +273,7 @@ mod test {
         assert_eq!(block.read_all().unwrap(), start);
     }
 
-    #[test]
+    #[test_case]
     fn block_set_free() {
         // This block should not be free
         const BLOCK_NUMBER: u32 = 9;
@@ -306,7 +306,7 @@ mod test {
         assert_eq!(free_block_count + 1, new_free_block_count);
     }
 
-    #[test]
+    #[test_case]
     fn block_set_used() {
         // This block should not be used
         const BLOCK_NUMBER: u32 = 1920;

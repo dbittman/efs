@@ -819,12 +819,12 @@ mod test {
     use crate::fs::ext2::Ext2;
     use crate::tests::{copy_file, new_device_id};
 
-    #[test]
+    #[test_case]
     fn struct_size() {
         assert_eq!(size_of::<Inode>(), 128);
     }
 
-    #[test]
+    #[test_case]
     fn parse_root() {
         let file = copy_file("./tests/fs/ext2/base.ext2").unwrap();
         let fs = Ext2::new(file, new_device_id(), false).unwrap();
@@ -835,7 +835,7 @@ mod test {
         assert!(Inode::parse(&fs, ROOT_DIRECTORY_INODE).is_ok());
     }
 
-    #[test]
+    #[test_case]
     fn failed_parse() {
         let file = copy_file("./tests/fs/ext2/base.ext2").unwrap();
         let fs = Ext2::new(file, new_device_id(), false).unwrap();
@@ -846,7 +846,7 @@ mod test {
         assert!(Inode::parse(&fs, 0).is_err());
     }
 
-    #[test]
+    #[test_case]
     fn starting_addr() {
         let file = copy_file("./tests/fs/ext2/base.ext2").unwrap();
         let fs = Ext2::new(file, new_device_id(), false).unwrap();
@@ -861,7 +861,7 @@ mod test {
         assert_eq!(root_auto, root_manual);
     }
 
-    #[test]
+    #[test_case]
     fn cache_test() {
         let file = copy_file("./tests/fs/ext2/base.ext2").unwrap();
         let fs = Ext2::new(file, new_device_id(), false).unwrap();
