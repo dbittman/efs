@@ -525,7 +525,7 @@ mod test {
     use core::mem::size_of;
     use core::ptr::addr_of;
     use core::slice;
-    use std::fs;
+    use std::fs::{self, File};
     use std::io::{Read, Seek, SeekFrom, Write};
 
     use derive_more::derive::Display;
@@ -534,7 +534,6 @@ mod test {
     use crate::dev::sector::Address;
     use crate::dev::Device;
     use crate::io::{Base, StdIOWrapper};
-    use crate::tests::copy_file;
 
     #[derive(Debug)]
     struct Error;
@@ -547,7 +546,7 @@ mod test {
 
     impl core::error::Error for Error {}
 
-    #[test_case]
+    #[test]
     fn device_generic_read() {
         let mut device = vec![0_u8; 1024];
         let mut slice = Device::<u8, std::io::Error>::slice(&mut device, Address::from(256_u32)..Address::from(512_u32)).unwrap();
@@ -563,10 +562,7 @@ mod test {
     }
 
     #[allow(clippy::missing_asserts_for_indexing)]
-    #[test_case]
-    fn device_file_write() {
-        let mut file_1 = copy_file("./tests/dev/device_file_1.txt").unwrap();
-
+    fn device_file_write(mut file_1: File) {
         let mut slice = Device::<u8, Error>::slice(&mut file_1, Address::new(0)..Address::new(13)).unwrap();
 
         let word = slice.get_mut(6..=10).unwrap();
@@ -590,7 +586,7 @@ mod test {
     }
 
     #[allow(clippy::struct_field_names)]
-    #[test_case]
+    #[test]
     fn device_generic_read_at() {
         const OFFSET: usize = 123;
 
@@ -626,7 +622,7 @@ mod test {
     }
 
     #[allow(clippy::struct_field_names)]
-    #[test_case]
+    #[test]
     fn device_generic_write_at() {
         const OFFSET: u64 = 123;
 
@@ -661,7 +657,7 @@ mod test {
         assert_eq!(test_bytes, slice.as_ref());
     }
 
-    #[test_case]
+    #[test]
     fn dummy_device() {
         #[derive(Debug)]
         struct Foo {}
@@ -703,7 +699,7 @@ mod test {
         assert_eq!(unsafe { foo.read_at::<u32>(Address::new(0)) }.unwrap(), 0x0101_0101);
     }
 
-    #[test_case]
+    #[test]
     fn dummy_std_device() {
         #[derive(Debug)]
         struct Foo {}
@@ -740,5 +736,11 @@ mod test {
         let mut device = StdIOWrapper::<_, FooError>::new(foo);
         assert_eq!(unsafe { device.read_at::<u8>(Address::new(0)) }.unwrap(), 1);
         assert_eq!(unsafe { device.read_at::<u32>(Address::new(0)) }.unwrap(), 0x0101_0101);
+    }
+
+    mod generated {
+        use crate::tests::generate_fs_test;
+
+        generate_fs_test!(device_file_write, "./tests/dev/device_file_1.txt");
     }
 }

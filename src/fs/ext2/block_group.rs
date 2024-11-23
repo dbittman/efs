@@ -126,42 +126,42 @@ impl BlockGroupDescriptor {
 #[cfg(test)]
 mod test {
     use core::mem::size_of;
+    use std::fs::File;
     use std::time;
 
     use super::{BlockGroupDescriptor, BLOCK_GROUP_DESCRIPTOR_SIZE};
     use crate::fs::ext2::Ext2;
     use crate::tests::{copy_file, new_device_id};
 
-    #[test_case]
+    #[test]
     fn struct_size() {
         assert_eq!(size_of::<BlockGroupDescriptor>(), BLOCK_GROUP_DESCRIPTOR_SIZE);
     }
 
-    #[test_case]
-    fn parse_first_block_group_descriptor() {
-        let file = copy_file("./tests/fs/ext2/base.ext2").unwrap();
-        let fs = Ext2::new(file, new_device_id(), false).unwrap();
-        assert!(BlockGroupDescriptor::parse(&fs, 0).is_ok());
-
-        let file = copy_file("./tests/fs/ext2/extended.ext2").unwrap();
+    fn parse_first_block_group_descriptor_base(file: File) {
         let fs = Ext2::new(file, new_device_id(), false).unwrap();
         assert!(BlockGroupDescriptor::parse(&fs, 0).is_ok());
     }
 
-    #[test_case]
-    fn failed_parse() {
-        let file = copy_file("./tests/fs/ext2/base.ext2").unwrap();
+    fn parse_first_block_group_descriptor_extended(file: File) {
         let fs = Ext2::new(file, new_device_id(), false).unwrap();
-        assert!(BlockGroupDescriptor::parse(&fs, fs.superblock().block_group_count()).is_err());
+        assert!(BlockGroupDescriptor::parse(&fs, 0).is_ok());
+    }
 
-        let file = copy_file("./tests/fs/ext2/extended.ext2").unwrap();
+    fn failed_parse_base(file: File) {
         let fs = Ext2::new(file, new_device_id(), false).unwrap();
         assert!(BlockGroupDescriptor::parse(&fs, fs.superblock().block_group_count()).is_err());
     }
 
-    #[test_case]
+    fn failed_parse_extended(file: File) {
+        let fs = Ext2::new(file, new_device_id(), false).unwrap();
+        assert!(BlockGroupDescriptor::parse(&fs, fs.superblock().block_group_count()).is_err());
+    }
+
+    #[test]
     fn cache_test() {
-        let file = copy_file("./tests/fs/ext2/base.ext2").unwrap();
+        let file_name = copy_file("./tests/fs/ext2/base.ext2").unwrap();
+        let file = std::fs::File::open(&file_name).unwrap();
         let fs = Ext2::new(file, new_device_id(), false).unwrap();
 
         let start_time = time::Instant::now();
@@ -169,21 +169,22 @@ mod test {
             assert!(BlockGroupDescriptor::parse(&fs, 0).is_ok());
         }
         let time_cache_disabled = start_time.elapsed();
+        std::fs::remove_file(&file_name).unwrap();
 
-        let file = copy_file("./tests/fs/ext2/base.ext2").unwrap();
+        let file_name = copy_file("./tests/fs/ext2/base.ext2").unwrap();
+        let file = std::fs::File::open(&file_name).unwrap();
         let fs = Ext2::new(file, new_device_id(), true).unwrap();
         let start_time = time::Instant::now();
         for _ in 0..100_000 {
             assert!(BlockGroupDescriptor::parse(&fs, 0).is_ok());
         }
         let time_cache_enabled = start_time.elapsed();
+        std::fs::remove_file(&file_name).unwrap();
 
         assert!(time_cache_disabled > time_cache_enabled);
     }
 
-    #[test_case]
-    fn write_back() {
-        let file = copy_file("./tests/fs/ext2/io_operations.ext2").unwrap();
+    fn write_back(file: File) {
         let fs = Ext2::new(file, new_device_id(), false).unwrap();
 
         let mut bgd = BlockGroupDescriptor::parse(&fs, 0).unwrap();
@@ -193,5 +194,15 @@ mod test {
 
         let new_bgd = BlockGroupDescriptor::parse(&fs, 0).unwrap();
         assert_eq!(bgd, new_bgd);
+    }
+
+    mod generated {
+        use crate::tests::{generate_fs_test, PostCheck};
+
+        generate_fs_test!(parse_first_block_group_descriptor_base, "./tests/fs/ext2/base.ext2", PostCheck::Ext);
+        generate_fs_test!(parse_first_block_group_descriptor_extended, "./tests/fs/ext2/extended.ext2", PostCheck::Ext);
+        generate_fs_test!(failed_parse_base, "./tests/fs/ext2/base.ext2", PostCheck::Ext);
+        generate_fs_test!(failed_parse_extended, "./tests/fs/ext2/extended.ext2", PostCheck::Ext);
+        generate_fs_test!(write_back, "./tests/fs/ext2/io_operations.ext2", PostCheck::Ext);
     }
 }

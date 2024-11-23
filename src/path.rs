@@ -834,7 +834,7 @@ mod test {
 
     use crate::path::{Component, Path, UnixStr};
 
-    #[test_case]
+    #[test]
     fn unix_str_creation() {
         assert!(UnixStr::new("/").is_ok());
         assert!(UnixStr::new("/home//user///foo").is_ok());
@@ -843,7 +843,7 @@ mod test {
         assert!(UnixStr::new("/home//user///\0foo").is_err());
     }
 
-    #[test_case]
+    #[test]
     fn path_eq() {
         assert_eq!(Path::from_str("/").unwrap(), Path::from_str("/").unwrap());
         assert_eq!(Path::from_str("/").unwrap(), Path::from_str("///").unwrap());
@@ -859,7 +859,7 @@ mod test {
         assert_ne!(Path::from_str("//home").unwrap(), Path::from_str("/home").unwrap());
     }
 
-    #[test_case]
+    #[test]
     fn path_canonical() {
         assert_eq!(Path::from_str("/").unwrap(), Path::from_str("/").unwrap());
         assert_eq!(Path::from_str("/").unwrap(), Path::from_str("///").unwrap());
@@ -875,7 +875,7 @@ mod test {
         assert_ne!(Path::from_str("//home").unwrap(), Path::from_str("/home").unwrap());
     }
 
-    #[test_case]
+    #[test]
     fn path_extension() {
         let first_path = Path::from_str("/home").unwrap();
         let second_path = Path::from_str("user").unwrap();
@@ -907,7 +907,7 @@ mod test {
     }
 
     #[allow(clippy::cognitive_complexity)]
-    #[test_case]
+    #[test]
     fn path_components() {
         let path = Path::from_str("/home/user/foo").unwrap();
         let mut components = path.components();
@@ -964,7 +964,7 @@ mod test {
     }
 
     #[allow(clippy::cognitive_complexity)]
-    #[test_case]
+    #[test]
     fn path_components_back() {
         let path = Path::from_str("/home/user/foo").unwrap();
         let mut components = path.components();
@@ -1019,7 +1019,7 @@ mod test {
     }
 
     #[allow(clippy::cognitive_complexity)]
-    #[test_case]
+    #[test]
     fn path_components_double_side() {
         let path = Path::from_str("/home/user/foo").unwrap();
         let mut components = path.components();
@@ -1075,7 +1075,7 @@ mod test {
         assert_eq!(iterator.next_back(), None);
     }
 
-    #[test_case]
+    #[test]
     fn path_components_len() {
         let path = Path::from_str("/home/user/foo").unwrap();
         let mut components = path.components();
@@ -1098,7 +1098,7 @@ mod test {
         assert_eq!(iterator.len(), 5);
     }
 
-    #[test_case]
+    #[test]
     fn path_parent() {
         let path = Path::from_str("/foo/bar").unwrap();
         let parent = path.parent().unwrap();
@@ -1123,7 +1123,7 @@ mod test {
         assert_eq!(great_grand_parent, None);
     }
 
-    #[test_case]
+    #[test]
     fn path_file_name() {
         let path = Path::from_str("/foo/bar").unwrap();
         assert_eq!(path.file_name(), Some(UnixStr::from_str("bar").unwrap()));

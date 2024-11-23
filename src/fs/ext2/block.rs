@@ -227,13 +227,11 @@ mod test {
     use crate::fs::ext2::superblock::Superblock;
     use crate::fs::ext2::Ext2Fs;
     use crate::io::{Read, Seek, SeekFrom, Write};
-    use crate::tests::{copy_file, new_device_id};
+    use crate::tests::new_device_id;
 
-    #[test_case]
-    fn block_read() {
+    fn block_read(file: File) {
         const BLOCK_NUMBER: u32 = 2;
 
-        let file = copy_file("./tests/fs/ext2/io_operations.ext2").unwrap();
         let celled_file = Celled::new(file);
         let superblock = Superblock::parse(&celled_file).unwrap();
 
@@ -254,11 +252,9 @@ mod test {
         assert_eq!(buffer_auto, slice.as_ref());
     }
 
-    #[test_case]
-    fn block_write() {
+    fn block_write(file: File) {
         const BLOCK_NUMBER: u32 = 10_234;
 
-        let file = copy_file("./tests/fs/ext2/io_operations.ext2").unwrap();
         let ext2 = Ext2Fs::new(file, new_device_id(), false).unwrap();
         let superblock = ext2.lock().superblock().clone();
 
@@ -273,12 +269,10 @@ mod test {
         assert_eq!(block.read_all().unwrap(), start);
     }
 
-    #[test_case]
-    fn block_set_free() {
+    fn block_set_free(file: File) {
         // This block should not be free
         const BLOCK_NUMBER: u32 = 9;
 
-        let file = copy_file("./tests/fs/ext2/io_operations.ext2").unwrap();
         let ext2 = Ext2Fs::new(file, new_device_id(), false).unwrap();
         let superblock = ext2.lock().superblock().clone();
 
@@ -306,12 +300,10 @@ mod test {
         assert_eq!(free_block_count + 1, new_free_block_count);
     }
 
-    #[test_case]
-    fn block_set_used() {
+    fn block_set_used(file: File) {
         // This block should not be used
         const BLOCK_NUMBER: u32 = 1920;
 
-        let file = copy_file("./tests/fs/ext2/io_operations.ext2").unwrap();
         let ext2 = Ext2Fs::new(file, new_device_id(), false).unwrap();
         let superblock = ext2.lock().superblock().clone();
 
@@ -338,5 +330,14 @@ mod test {
 
         assert!(block.is_used(&superblock, &fs.get_block_bitmap(block_group).unwrap()));
         assert_eq!(free_block_count - 1, new_free_block_count);
+    }
+
+    mod generated {
+        use crate::tests::{generate_fs_test, PostCheck};
+
+        generate_fs_test!(block_read, "./tests/fs/ext2/io_operations.ext2", PostCheck::Ext);
+        generate_fs_test!(block_write, "./tests/fs/ext2/io_operations.ext2", PostCheck::Ext);
+        generate_fs_test!(block_set_free, "./tests/fs/ext2/io_operations.ext2", PostCheck::Ext);
+        generate_fs_test!(block_set_used, "./tests/fs/ext2/io_operations.ext2", PostCheck::Ext);
     }
 }

@@ -794,21 +794,19 @@ impl Superblock {
 mod test {
     use alloc::vec;
     use core::mem::size_of;
+    use std::fs::File;
 
     use super::Superblock;
     use crate::celled::Celled;
     use crate::fs::ext2::superblock::{Base, ExtendedFields};
-    use crate::tests::copy_file;
 
-    #[test_case]
+    #[test]
     fn struct_size() {
         assert_eq!(size_of::<Base>(), 84);
         assert_eq!(size_of::<Base>() + size_of::<ExtendedFields>(), 264);
     }
 
-    #[test_case]
-    fn basic_superblock() {
-        let file = copy_file("./tests/fs/ext2/base.ext2").unwrap();
+    fn basic_superblock(file: File) {
         let celled_file = Celled::new(file);
         let superblock = Superblock::parse(&celled_file).unwrap();
         assert!(!superblock.is_extended());
@@ -817,9 +815,7 @@ mod test {
         assert_eq!(major_version, 0);
     }
 
-    #[test_case]
-    fn extended_superblock() {
-        let file = copy_file("./tests/fs/ext2/extended.ext2").unwrap();
+    fn extended_superblock(file: File) {
         let celled_file = Celled::new(file);
         let superblock = Superblock::parse(&celled_file).unwrap();
         assert!(superblock.is_extended());
@@ -828,10 +824,17 @@ mod test {
         assert_eq!(major_version, 1);
     }
 
-    #[test_case]
+    #[test]
     fn failed_parse() {
         let device = vec![0_u8; 2048];
         let celled_device = Celled::new(device);
         assert!(Superblock::parse(&celled_device).is_err());
+    }
+
+    mod generated {
+        use crate::tests::generate_fs_test;
+
+        generate_fs_test!(basic_superblock, "./tests/fs/ext2/base.ext2");
+        generate_fs_test!(extended_superblock, "./tests/fs/ext2/extended.ext2");
     }
 }

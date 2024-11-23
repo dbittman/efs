@@ -271,12 +271,10 @@
     )
 )]
 #![feature(const_mut_refs)]
-#![feature(custom_test_frameworks)]
 #![feature(exact_size_is_empty)]
 #![feature(let_chains)]
 #![feature(never_type)]
 #![feature(step_trait)]
-#![test_runner(tests::runner)]
 
 extern crate alloc;
 extern crate core;
