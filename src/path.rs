@@ -5,7 +5,7 @@ use alloc::ffi::CString;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::iter::FusedIterator;
-use core::ops::{Deref, DerefMut};
+use core::ops::Deref;
 use core::str::FromStr;
 use core::{error, fmt};
 
@@ -48,12 +48,6 @@ impl<'path> Deref for UnixStr<'path> {
     }
 }
 
-impl<'path> DerefMut for UnixStr<'path> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
 impl<'path> UnixStr<'path> {
     /// Creates a new [`UnixStr`] from a string.
     ///
@@ -92,6 +86,15 @@ impl<'path> UnixStr<'path> {
     }
 
     /// Creates a copy of this object whose lifetime is arbitrary.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use efs::path::UnixStr;
+    ///
+    /// let root = UnixStr::new("/").unwrap();
+    /// let static_root: UnixStr<'static> = root.to_owned();
+    /// ```
     #[must_use]
     pub fn to_owned<'out>(&self) -> UnixStr<'out> {
         UnixStr(Cow::Owned(self.0.to_string()))
