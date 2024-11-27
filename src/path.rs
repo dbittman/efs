@@ -36,6 +36,7 @@ impl error::Error for PathError {}
 /// A general structure to implement paths.
 ///
 /// A [`UnixStr`] cannot be empty nor contain `<NUL>` character ('\0')! It is guaranteed at creation time.
+#[repr(transparent)]
 #[derive(Debug, Clone, PartialEq, Eq, Display)]
 pub struct UnixStr<'path>(Cow<'path, str>);
 
