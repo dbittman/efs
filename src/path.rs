@@ -5,6 +5,7 @@ use alloc::ffi::CString;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::iter::FusedIterator;
+use core::ops::{Deref, DerefMut};
 use core::str::FromStr;
 use core::{error, fmt};
 
@@ -38,6 +39,20 @@ impl error::Error for PathError {}
 #[derive(Debug, Clone, PartialEq, Eq, Display)]
 pub struct UnixStr<'path>(Cow<'path, str>);
 
+impl<'path> Deref for UnixStr<'path> {
+    type Target = Cow<'path, str>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<'path> DerefMut for UnixStr<'path> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
 impl<'path> UnixStr<'path> {
     /// Creates a new [`UnixStr`] from a string.
     ///
@@ -64,16 +79,21 @@ impl<'path> UnixStr<'path> {
             .ok_or_else(|| PathError::InvalidFilename(str.to_owned()))
     }
 
-    /// Checks whether the inner string contains exactly two leading '/' characters
+    /// Checks whether the inner string contains exactly two leading '/' characters.
     fn starts_with_two_slashes(&self) -> bool {
         self.0.starts_with("//") && !self.0.starts_with("///")
     }
 
     /// Returns whether the [`UnixStr`] ends with a trailing backslash.
-
     #[must_use]
     pub fn has_trailing_backslash(&self) -> bool {
         self.0.ends_with('/')
+    }
+
+    /// Creates a copy of this object whose lifetime is arbitrary.
+    #[must_use]
+    pub fn to_owned<'out>(&self) -> UnixStr<'out> {
+        UnixStr(Cow::Owned(self.0.to_string()))
     }
 }
 
