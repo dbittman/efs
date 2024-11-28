@@ -32,11 +32,6 @@ use crate::path::{UnixStr, CUR_DIR, PARENT_DIR};
 use crate::permissions::Permissions;
 use crate::types::{Blkcnt, Blksize, Gid, Ino, Mode, Nlink, Off, Time, Timespec, Uid};
 
-/// Minimal allocation in bytes for a file.
-///
-/// This does not directly come from an ext2's doc but [this paragraph](https://www.kernel.org/doc/html/v6.7/filesystems/ext4/overview.html#block-and-inode-allocation-policy) from the ext4's doc.
-pub const MINIMAL_FILE_ALLOCATION: u64 = 8_192;
-
 /// Limit in bytes for the length of a pointed path of a symbolic link to be store in an inode and not in a separate data block.
 pub const SYMBOLIC_LINK_INODE_STORE_LIMIT: usize = 60;
 
@@ -146,15 +141,32 @@ impl<Dev: Device<u8, Ext2Error>> File<Dev> {
         }
         drop(device);
 
-        // SAFETY: this writes an inode at the starting address of the inode
-        unsafe {
-            Inode::write_on_device(&fs, self.inode_number, new_inode)?;
+        let kept_data_blocks_number = if size == 0 {
+            0
+        } else {
+            // SAFETY: the result is a u32 as `size` is valid (it has been checked)
+            unsafe { 1 + u32::try_from(size.saturating_sub(1) / u64::from(fs.superblock().block_size())).unwrap_unchecked() }
         };
-
-        // SAFETY: the result is a u32 as `size` is valid (it has been checked)
-        let kept_data_blocks_number =
-            unsafe { 1 + u32::try_from(size.saturating_sub(1) / u64::from(fs.superblock().block_size())).unwrap_unchecked() };
         let indirection_blocks = self.inode.indirected_blocks(&fs)?;
+
+        let mut new_indirection_blocks = indirection_blocks.clone();
+        new_indirection_blocks.truncate_back_data_blocks(kept_data_blocks_number);
+
+        new_inode.blocks = (new_indirection_blocks.data_block_count() + new_indirection_blocks.indirection_block_count())
+            * fs.superblock().block_size()
+            / 512;
+
+        let mut direct_block_pointers = new_inode.direct_block_pointers;
+        for i in 0..u32_to_usize(DIRECT_BLOCK_POINTER_COUNT) {
+            // SAFETY: there is exactly `DIRECT_BLOCK_POINTER_COUNT` direct block pointers in an inode
+            let block = unsafe { direct_block_pointers.get_mut(i).unwrap_unchecked() };
+            *block = new_indirection_blocks.direct_blocks.get(i).copied().unwrap_or_default();
+        }
+        new_inode.direct_block_pointers = direct_block_pointers;
+        new_inode.singly_indirect_block_pointer = new_indirection_blocks.singly_indirected_blocks.0;
+        new_inode.doubly_indirect_block_pointer = new_indirection_blocks.doubly_indirected_blocks.0;
+        new_inode.triply_indirect_block_pointer = new_indirection_blocks.triply_indirected_blocks.0;
+
         let symmetrical_difference = indirection_blocks.truncate_front_data_blocks(kept_data_blocks_number);
 
         let mut deallocated_blocks = symmetrical_difference.changed_data_blocks();
@@ -165,6 +177,11 @@ impl<Dev: Device<u8, Ext2Error>> File<Dev> {
                 .map(|(_, (indirection_block, _))| indirection_block)
                 .collect_vec(),
         );
+
+        // SAFETY: this writes an inode at the starting address of the inode
+        unsafe {
+            Inode::write_on_device(&fs, self.inode_number, new_inode)?;
+        };
 
         fs.deallocate_blocks(&deallocated_blocks)?;
 
@@ -320,11 +337,7 @@ impl<Dev: Device<u8, Ext2Error>> Write for File<Dev> {
         }
 
         // Calcul of the number of needed data blocks
-        let bytes_to_write = if self.inode.file_type().map_err(FsError::Implementation)? == Type::Regular {
-            (buf_len).max(MINIMAL_FILE_ALLOCATION)
-        } else {
-            buf_len
-        };
+        let bytes_to_write = buf_len;
         let data_blocks_needed =
             // SAFETY: there are at most u32::MAX blocks on the filesystem
             1 + unsafe { u32::try_from((bytes_to_write + self.io_offset - 1) / block_size).unwrap_unchecked() };
@@ -337,7 +350,7 @@ impl<Dev: Device<u8, Ext2Error>> Write for File<Dev> {
         // SAFETY: there are at most u32::MAX blocks on the filesystem
         indirected_blocks.truncate_back_data_blocks(unsafe {
             // In case of blocks that are not used and not 0
-            1 + u32::try_from((self.inode.data_size().max(MINIMAL_FILE_ALLOCATION) - 1) / block_size).unwrap_unchecked()
+            1 + u32::try_from((self.inode.data_size().max(1) - 1) / block_size).unwrap_unchecked()
         });
 
         let current_data_block_count = indirected_blocks.data_block_count();
@@ -405,6 +418,7 @@ impl<Dev: Device<u8, Ext2Error>> Write for File<Dev> {
 
         let mut updated_inode = self.inode;
 
+        let total_block_used = new_indirected_blocks.data_block_count() + new_indirected_blocks.indirection_block_count();
         let (
             mut direct_block_pointers,
             singly_indirected_block_pointer,
@@ -426,7 +440,7 @@ impl<Dev: Device<u8, Ext2Error>> Write for File<Dev> {
 
         // SAFETY: the result cannot be greater than `u32::MAX`
         updated_inode.size = unsafe { u32::try_from(new_size & u64::from(u32::MAX)).unwrap_unchecked() };
-        updated_inode.blocks = data_blocks_needed * self.filesystem.lock().superblock().block_size() / 512;
+        updated_inode.blocks = (total_block_used * self.filesystem.lock().superblock().block_size()) / 512;
 
         // SAFETY: the result cannot be greater than `u32::MAX`
         updated_inode.dir_acl = unsafe { u32::try_from((new_size >> 32) & u64::from(u32::MAX)).unwrap_unchecked() };
@@ -940,10 +954,9 @@ impl<Dev: Device<u8, Ext2Error>> file::Directory for Directory<Dev> {
                         }
                     }
 
-                    let file_type_feature = self.file.filesystem.lock().options().file_type;
-
                     if let TypeWithFile::Directory(mut dir) = self.file.filesystem.file(entry.inode)? {
                         let mut new_inode = self.file.inode;
+                        new_inode.links_count -= 1;
                         let sub_entries = dir.entries.lock().clone().into_iter().flatten().collect_vec();
                         for sub_entry in sub_entries {
                             let sub_entry_name: UnixStr<'_> = sub_entry.name.clone().try_into().unwrap_or_else(|_| {
@@ -951,26 +964,13 @@ impl<Dev: Device<u8, Ext2Error>> file::Directory for Directory<Dev> {
                             });
                             if sub_entry_name != *CUR_DIR && sub_entry_name != *PARENT_DIR {
                                 dir.remove_entry(sub_entry_name.clone())?;
-
-                                if file_type_feature {
-                                    if FileType::from(sub_entry.file_type) == FileType::Dir {
-                                        new_inode.links_count -= 1;
-                                    }
-                                } else {
-                                    let fs = self.file.filesystem.lock();
-                                    let sub_entry_inode = fs.inode(sub_entry.inode)?;
-                                    if sub_entry_inode.file_type().map_err(FsError::Implementation)? == Type::Directory {
-                                        new_inode.links_count -= 1;
-                                    }
-                                    drop(fs);
-                                }
-                                if self.file.inode.links_count != new_inode.links_count {
-                                    unsafe {
-                                        self.file.set_inode(&new_inode)?;
-                                    };
-                                }
                             }
                         }
+
+                        // SAFETY: the new number of links is exactly the previous one minus all the children that are directories
+                        unsafe {
+                            self.file.set_inode(&new_inode)?;
+                        };
                     }
 
                     let mut fs = self.file.filesystem.lock();
@@ -1079,6 +1079,8 @@ impl<Dev: Device<u8, Ext2Error>> file::SymbolicLink for SymbolicLink<Dev> {
             self.file.write(bytes)?;
             self.file.truncate(usize_to_u64(bytes.len()))?;
         } else {
+            self.file.truncate(0)?;
+
             let mut new_inode = self.file.inode;
             // SAFETY: `bytes.len() < PATH_MAX << u32::MAX`
             new_inode.size = unsafe { u32::try_from(bytes.len()).unwrap_unchecked() };
@@ -1642,6 +1644,7 @@ mod test {
         assert_eq!(bar.file.inode.data_size(), 70);
 
         bar.set_pointed_file("foo.txt").unwrap();
+
         assert_eq!(bar.get_pointed_file().unwrap(), "foo.txt");
         assert!(bar.file.read_all().is_err());
         assert_eq!(bar.file.inode.data_size(), 7);
@@ -1780,7 +1783,6 @@ mod test {
         generate_fs_test!(parse_big_file_inode_data, "./tests/fs/ext2/extended.ext2", PostCheck::Ext);
         generate_fs_test!(read_file, "./tests/fs/ext2/io_operations.ext2", PostCheck::Ext);
         generate_fs_test!(read_symlink, "./tests/fs/ext2/extended.ext2", PostCheck::Ext);
-        generate_fs_test!(set_inode, "./tests/fs/ext2/io_operations.ext2", PostCheck::Ext);
         generate_fs_test!(write_file_dbp_extend_without_allocation, "./tests/fs/ext2/io_operations.ext2", PostCheck::Ext);
         generate_fs_test!(write_file_dbp_replace_without_allocation, "./tests/fs/ext2/io_operations.ext2", PostCheck::Ext);
         generate_fs_test!(write_file_dbp_extend_with_allocation, "./tests/fs/ext2/io_operations.ext2", PostCheck::Ext);
@@ -1794,5 +1796,8 @@ mod test {
         generate_fs_test!(new_files, "./tests/fs/ext2/io_operations.ext2", PostCheck::Ext);
         generate_fs_test!(remove_files, "./tests/fs/ext2/io_operations.ext2", PostCheck::Ext);
         generate_fs_test!(atime_and_mtime, "./tests/fs/ext2/io_operations.ext2", PostCheck::Ext);
+
+        // Unsound changes on the ext2 filesystem are made so there should not be a e2fsck check afterward.
+        generate_fs_test!(set_inode, "./tests/fs/ext2/io_operations.ext2", PostCheck::None);
     }
 }

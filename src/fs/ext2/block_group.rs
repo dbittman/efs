@@ -203,6 +203,8 @@ mod test {
         generate_fs_test!(parse_first_block_group_descriptor_extended, "./tests/fs/ext2/extended.ext2", PostCheck::Ext);
         generate_fs_test!(failed_parse_base, "./tests/fs/ext2/base.ext2", PostCheck::Ext);
         generate_fs_test!(failed_parse_extended, "./tests/fs/ext2/extended.ext2", PostCheck::Ext);
-        generate_fs_test!(write_back, "./tests/fs/ext2/io_operations.ext2", PostCheck::Ext);
+
+        // Unsound changes on the ext2 filesystem are made so there should not be a e2fsck check afterward.
+        generate_fs_test!(write_back, "./tests/fs/ext2/io_operations.ext2", PostCheck::None);
     }
 }

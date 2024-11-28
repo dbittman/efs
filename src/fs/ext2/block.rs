@@ -337,7 +337,9 @@ mod test {
 
         generate_fs_test!(block_read, "./tests/fs/ext2/io_operations.ext2", PostCheck::Ext);
         generate_fs_test!(block_write, "./tests/fs/ext2/io_operations.ext2", PostCheck::Ext);
-        generate_fs_test!(block_set_free, "./tests/fs/ext2/io_operations.ext2", PostCheck::Ext);
-        generate_fs_test!(block_set_used, "./tests/fs/ext2/io_operations.ext2", PostCheck::Ext);
+
+        // Unsound changes on the ext2 filesystem are made so there should not be a e2fsck check afterward.
+        generate_fs_test!(block_set_free, "./tests/fs/ext2/io_operations.ext2", PostCheck::None);
+        generate_fs_test!(block_set_used, "./tests/fs/ext2/io_operations.ext2", PostCheck::None);
     }
 }

@@ -500,7 +500,7 @@ impl Inode {
             atime: superblock.base().wtime,
             ctime: superblock.base().wtime,
             mtime: superblock.base().wtime,
-            dtime: superblock.base().wtime,
+            dtime: 0,
             gid,
             links_count: 1,
             blocks: 0,

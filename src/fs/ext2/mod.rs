@@ -653,6 +653,17 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
         self.locate_inode(inode_number, true)?;
         let inode = Inode::create(self.superblock(), mode, uid, gid, flags, osd1, osd2);
 
+        if inode.file_type().map_err(|err| Error::Fs(FsError::Implementation(err)))? == Type::Directory {
+            let block_group_number = Inode::block_group(self.superblock(), inode_number);
+            let mut block_group_descriptor = BlockGroupDescriptor::parse(self, block_group_number)?;
+            block_group_descriptor.used_dirs_count += 1;
+
+            // SAFETY: update the right block group descriptor
+            unsafe {
+                BlockGroupDescriptor::write_on_device(self, block_group_number, block_group_descriptor)?;
+            }
+        }
+
         // SAFETY: the starting address is the one for an inode
         unsafe { Inode::write_on_device(self, inode_number, inode) }
     }
@@ -672,6 +683,7 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
     pub fn deallocate_inode(&mut self, inode_number: u32) -> Result<(), Error<Ext2Error>> {
         let mut inode = self.inode(inode_number)?;
 
+        inode.dtime = self.superblock().base().wtime;
         inode.links_count -= if inode.file_type().map_err(FsError::Implementation)? == Type::Directory { 2 } else { 1 };
         if inode.links_count == 0 {
             let file_type = inode.file_type().map_err(FsError::Implementation)?;
@@ -683,6 +695,17 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
                 self.deallocate_blocks(&indirected_blocks.flatten_data_blocks())?;
             }
             self.locate_inode(inode_number, false)?;
+        }
+
+        if inode.file_type().map_err(|err| Error::Fs(FsError::Implementation(err)))? == Type::Directory {
+            let block_group_number = Inode::block_group(self.superblock(), inode_number);
+            let mut block_group_descriptor = BlockGroupDescriptor::parse(self, block_group_number)?;
+            block_group_descriptor.used_dirs_count -= 1;
+
+            // SAFETY: update the right block group descriptor
+            unsafe {
+                BlockGroupDescriptor::write_on_device(self, block_group_number, block_group_descriptor)?;
+            }
         }
 
         // SAFETY: `inode_address` is the starting address of the inode

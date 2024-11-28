@@ -72,11 +72,22 @@ impl PostCheck {
 }
 
 /// Produces a new function that will be tested from a function whose arguments depend on the type of the test.
+///
+/// This macro should only be used inside an other module (usually `generated`).
+///
+/// Here are the arguments:
+/// * `func_name`: name of the initial function ;
+/// * `input_file`: name of the file containing the filesystem ;
+/// * `post_check`: variant of the [`PostCheck`] enumeration to use ;
+/// * `clear`: boolean indicating whether to clear the test file produced or not.
 macro_rules! generate_fs_test {
     ($func_name:ident, $input_file:tt) => {
-        generate_fs_test!($func_name, $input_file, crate::tests::PostCheck::None);
+        generate_fs_test!($func_name, $input_file, crate::tests::PostCheck::None, true);
     };
     ($func_name:ident, $input_file:tt, $post_check:expr) => {
+        generate_fs_test!($func_name, $input_file, $post_check, true);
+    };
+    ($func_name:ident, $input_file:tt, $post_check:expr, $clear:expr) => {
         #[test]
         fn $func_name() {
             let file_name = crate::tests::copy_file($input_file).unwrap();
@@ -84,10 +95,14 @@ macro_rules! generate_fs_test {
             super::$func_name(file);
             match $post_check.run(&file_name) {
                 Ok(()) => {
-                    std::fs::remove_file(&file_name).unwrap();
+                    if $clear {
+                        std::fs::remove_file(&file_name).unwrap();
+                    }
                 },
                 Err(err) => {
-                    std::fs::remove_file(&file_name).unwrap();
+                    if $clear {
+                        std::fs::remove_file(&file_name).unwrap();
+                    }
                     panic!("Post Check Error: {err}");
                 },
             }
