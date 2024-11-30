@@ -11,6 +11,12 @@ use spin::Lazy;
 
 use crate::error::Error;
 
+/// Common `LOREM IPSUM` string used for tests.
+pub const LOREM: &str = include_str!("../tests/lorem.txt");
+
+/// Length of [`LOREM`].
+pub const LOREM_LENGTH: usize = LOREM.len();
+
 /// Stores the next unique device id returned by [`new_device_id`].
 static DEVICE_ID: Lazy<AtomicU32> = Lazy::new(AtomicU32::default);
 

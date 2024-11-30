@@ -736,6 +736,8 @@ impl Inode {
         buffer: &mut [u8],
         mut offset: u64,
     ) -> Result<usize, Error<Ext2Error>> {
+        let block_size = u32_to_usize(fs.superblock().block_size());
+
         let indirected_blocks = self.indirected_blocks(fs)?;
         let blocks = indirected_blocks.flatten_data_blocks();
 
@@ -749,8 +751,8 @@ impl Inode {
             }
 
             if offset == 0 {
-                let count = u32_to_usize(fs.superblock().block_size()).min(buffer_length - read_bytes);
-                let block_addr = Address::from(u32_to_usize(block_number) * u32_to_usize(fs.superblock().block_size()));
+                let count = block_size.min(buffer_length - read_bytes);
+                let block_addr = Address::from(u32_to_usize(block_number) * block_size);
                 let slice = device.slice(block_addr..block_addr + count)?;
 
                 // SAFETY: buffer contains at least `block_size.min(remaining_bytes_count)` since `remaining_bytes_count <=
@@ -762,24 +764,20 @@ impl Inode {
             } else if offset >= u64::from(fs.superblock().block_size()) {
                 offset -= u64::from(fs.superblock().block_size());
             } else {
-                let data_count = u32_to_usize(fs.superblock().block_size()).min(buffer_length - read_bytes);
                 // SAFETY: `offset < superblock.block_size()` and `superblock.block_size()` is generally around few KB, which is
                 // fine when `usize > u8`.
                 let offset_usize = unsafe { usize::try_from(offset).unwrap_unchecked() };
-                match data_count.checked_sub(offset_usize) {
-                    None => read_bytes = buffer_length,
-                    Some(count) => {
-                        let block_addr = Address::from(u32_to_usize(block_number) * u32_to_usize(fs.superblock().block_size()));
-                        let slice = device.slice(block_addr + offset_usize..block_addr + offset_usize + count)?;
 
-                        // SAFETY: buffer contains at least `block_size.min(remaining_bytes_count)` since `remaining_bytes_count <=
-                        // buffer_length`
-                        let block_buffer = unsafe { buffer.get_mut(read_bytes..read_bytes + count).unwrap_unchecked() };
-                        block_buffer.clone_from_slice(slice.as_ref());
+                let count = (block_size - offset_usize).min(buffer_length - read_bytes);
+                let block_addr = Address::from(u32_to_usize(block_number) * block_size);
+                let slice = device.slice(block_addr + offset_usize..block_addr + offset_usize + count)?;
 
-                        read_bytes += count;
-                    },
-                }
+                // SAFETY: buffer contains at least `block_size.min(remaining_bytes_count)` since `remaining_bytes_count <=
+                // buffer_length`
+                let block_buffer = unsafe { buffer.get_mut(read_bytes..read_bytes + count).unwrap_unchecked() };
+                block_buffer.clone_from_slice(slice.as_ref());
+
+                read_bytes += count;
                 offset = 0;
             }
         }

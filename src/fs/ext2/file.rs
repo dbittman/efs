@@ -1162,10 +1162,10 @@ mod test {
     use crate::fs::ext2::inode::{Inode, TypePermissions, ROOT_DIRECTORY_INODE};
     use crate::fs::ext2::{Ext2, Ext2Fs};
     use crate::fs::FileSystem;
-    use crate::io::{Seek, SeekFrom, Write};
+    use crate::io::{Read, Seek, SeekFrom, Write};
     use crate::path::{Path, UnixStr};
     use crate::permissions::Permissions;
-    use crate::tests::new_device_id;
+    use crate::tests::{new_device_id, LOREM, LOREM_LENGTH};
     use crate::types::{Gid, Mode, Uid};
 
     fn parse_root(file: File) {
@@ -1348,6 +1348,50 @@ mod test {
         };
 
         assert_eq!(foo.file.read_all().unwrap(), b"Hello world!\n");
+    }
+
+    fn read_file_with_offset(file: File) {
+        let ext2 = Ext2Fs::new(file, new_device_id(), false).unwrap();
+
+        let TypeWithFile::Directory(root) = ext2.file(ROOT_DIRECTORY_INODE).unwrap() else {
+            panic!("The root is always a directory.")
+        };
+        let TypeWithFile::Regular(mut foo) =
+            crate::file::Directory::entry(&root, UnixStr::new("foo.txt").unwrap()).unwrap().unwrap()
+        else {
+            panic!("`foo.txt` has been created as a regular file")
+        };
+
+        foo.seek(SeekFrom::Start(6)).unwrap();
+        let mut buf = [0; 7];
+        foo.file.read_exact(&mut buf).unwrap();
+
+        assert_eq!(&buf, b"world!\n");
+    }
+
+    fn read_lorem(file: File) {
+        let ext2 = Ext2Fs::new(file, new_device_id(), false).unwrap();
+
+        let TypeWithFile::Directory(root) = ext2.file(ROOT_DIRECTORY_INODE).unwrap() else {
+            panic!("The root is always a directory.")
+        };
+        let TypeWithFile::Regular(mut lorem) =
+            crate::file::Directory::entry(&root, UnixStr::new("lorem.txt").unwrap()).unwrap().unwrap()
+        else {
+            panic!("`lorem.txt` has been created as a regular file")
+        };
+
+        assert_eq!(LOREM.as_bytes(), lorem.read_all().unwrap());
+
+        lorem.seek(SeekFrom::Start(504)).unwrap();
+        let mut buf = [0_u8; 3000];
+        lorem.read_exact(&mut buf).unwrap();
+        assert_eq!(buf, LOREM.as_bytes()[504..(504 + 3000)]);
+
+        lorem.seek(SeekFrom::End(-830)).unwrap();
+        let mut buf = [0_u8; 300];
+        lorem.read_exact(&mut buf).unwrap();
+        assert_eq!(buf, LOREM.as_bytes()[(LOREM_LENGTH - 830)..(LOREM_LENGTH - 830 + 300)]);
     }
 
     fn read_symlink(file: File) {
@@ -1782,6 +1826,8 @@ mod test {
         generate_fs_test!(parse_root_entries_with_cache, "./tests/fs/ext2/extended.ext2", PostCheck::Ext);
         generate_fs_test!(parse_big_file_inode_data, "./tests/fs/ext2/extended.ext2", PostCheck::Ext);
         generate_fs_test!(read_file, "./tests/fs/ext2/io_operations.ext2", PostCheck::Ext);
+        generate_fs_test!(read_file_with_offset, "./tests/fs/ext2/io_operations.ext2", PostCheck::Ext);
+        generate_fs_test!(read_lorem, "./tests/fs/ext2/io_operations.ext2", PostCheck::Ext);
         generate_fs_test!(read_symlink, "./tests/fs/ext2/extended.ext2", PostCheck::Ext);
         generate_fs_test!(write_file_dbp_extend_without_allocation, "./tests/fs/ext2/io_operations.ext2", PostCheck::Ext);
         generate_fs_test!(write_file_dbp_replace_without_allocation, "./tests/fs/ext2/io_operations.ext2", PostCheck::Ext);
