@@ -30,7 +30,7 @@ An OS and architecture independent implementation of some Unix filesystems in Ru
 
 ## Supported filesystems
 
-* [`ext2`](https://en.wikipedia.org/wiki/Ext2) without time support (creation/deletion/modification time of files)
+* [`ext2`](https://en.wikipedia.org/wiki/Ext2)
 
 If you want more supported filesystems, do not hesitate to open an issue on <https://codeberg.org/RatCornu/efs/issues>.
 
