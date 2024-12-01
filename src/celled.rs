@@ -1,7 +1,7 @@
 //! Interface to use celled objects.
 //!
-//! It provides an interface to contenerize objects with the guarantee that the `clone` method is not expansive and the new celled
-//! object point to the same initial one;
+//! It provides an interface to contenerize objects with the guarantee that the `clone` method is not expansive and the
+//! new celled object point to the same initial one;
 
 use alloc::sync::Arc;
 

@@ -9,8 +9,8 @@ use core::ops::{Deref, DerefMut};
 
 use crate::arch::u32_to_usize;
 use crate::celled::Celled;
-use crate::dev::sector::Address;
 use crate::dev::Device;
+use crate::dev::sector::Address;
 use crate::error::Error;
 
 /// Generic bitmap structure.
@@ -47,7 +47,8 @@ impl<FSE: core::error::Error, T: Copy + Debug, Dev: Device<T, FSE>> Debug for Bi
 }
 
 impl<FSE: core::error::Error, T: Copy, Dev: Device<T, FSE>> Bitmap<T, FSE, Dev> {
-    /// Creates a new [`Bitmap`] instance from the device on which it is located, its starting address on the device and its length.
+    /// Creates a new [`Bitmap`] instance from the device on which it is located, its starting address on the device and
+    /// its length.
     ///
     /// # Errors
     ///
@@ -115,8 +116,8 @@ impl<FSE: core::error::Error, T: Copy, Dev: Device<T, FSE>> Bitmap<T, FSE, Dev> 
 }
 
 impl<FSE: core::error::Error, Dev: Device<u8, FSE>> Bitmap<u8, FSE, Dev> {
-    /// Specialization of [`find_to_count`](Bitmap::find_to_count) to find the first bytes such that the sum of set bits is at least
-    /// `n`.
+    /// Specialization of [`find_to_count`](Bitmap::find_to_count) to find the first bytes such that the sum of set bits
+    /// is at least `n`.
     #[must_use]
     pub fn find_n_set_bits(&self, n: usize) -> Vec<(usize, u8)> {
         self.find_to_count(n, |byte| {
@@ -127,8 +128,8 @@ impl<FSE: core::error::Error, Dev: Device<u8, FSE>> Bitmap<u8, FSE, Dev> {
         })
     }
 
-    /// Specialization of [`find_to_count`](Bitmap::find_to_count) to find the first bytes such that the sum of unset bits is at
-    /// least `n`.
+    /// Specialization of [`find_to_count`](Bitmap::find_to_count) to find the first bytes such that the sum of unset
+    /// bits is at least `n`.
     #[must_use]
     pub fn find_n_unset_bits(&self, n: usize) -> Vec<(usize, u8)> {
         self.find_to_count(n, |byte| {

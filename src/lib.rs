@@ -4,8 +4,8 @@
 //!
 //! <div class="warning">
 //!
-//! This crate is provided as is and do not offer any guaranty. It is still in early development so bugs are excepted to occur. If
-//! you find one, please report it at <https://codeberg.org/RatCornu/efs/issues>. In all cases, please do **NOT** use this library for important data, and make sure to backup your data before using it.
+//! This crate is provided as is and do not offer any guaranty. It is still in early development so bugs are excepted to
+//! occur. If you find one, please report it at <https://codeberg.org/RatCornu/efs/issues>. In all cases, please do **NOT** use this library for important data, and make sure to backup your data before using it.
 //!
 //! </div>
 //!
@@ -15,7 +15,8 @@
 //!
 //! Currently, only the [Second Extended Filesystem](https://en.wikipedia.org/wiki/Ext2) (ext2) is supported, but you can implement your own filesystem with this interface.
 //!
-//! This crate does **NOT** provide a virtual filesystem: you can either make one or use another crate on top on this one.
+//! This crate does **NOT** provide a virtual filesystem: you can either make one or use another crate on top on this
+//! one.
 //!
 //! **Every** structure, trait and function in this crate is documented and contains source if needed. If you find something unclear, do not hesitate to create an issue at <https://codeberg.org/RatCornu/efs/issues>.
 //!
@@ -23,37 +24,37 @@
 //!
 //! ### File interfaces
 //!
-//! * As defined in POSIX, a file can either be a [`Regular`](crate::file::Regular), a [`Directory`](crate::file::Directory), a
-//!   [`SymbolicLink`](crate::file::SymbolicLink), a [`Fifo`](crate::file::Fifo), a
-//!   [`CharacterDevice`](crate::file::CharacterDevice), a [`BlockDevice`](crate::file::BlockDevice) or a
-//!   [`Socket`](crate::file::Socket). Traits are available for each one of them, with basic read and `write` operations. Moreover,
-//!   a read-only version of each trait is available.
+//! * As defined in POSIX, a file can either be a [`Regular`](crate::file::Regular), a
+//!   [`Directory`](crate::file::Directory), a [`SymbolicLink`](crate::file::SymbolicLink), a
+//!   [`Fifo`](crate::file::Fifo), a [`CharacterDevice`](crate::file::CharacterDevice), a
+//!   [`BlockDevice`](crate::file::BlockDevice) or a [`Socket`](crate::file::Socket). Traits are available for each one
+//!   of them, with basic read and `write` operations. Moreover, a read-only version of each trait is available.
 //!
-//! * [`File`](crate::file::File) is the base trait of all other file traits. It provides an interface to retrieve and modify
-//!   general attributes of a POSIX file (basically everything returned by the `stat` command on a UNIX OS).
+//! * [`File`](crate::file::File) is the base trait of all other file traits. It provides an interface to retrieve and
+//!   modify general attributes of a POSIX file (basically everything returned by the `stat` command on a UNIX OS).
 //!
-//! * A [`Regular`](crate::file::Regular) (file) is a basic file containing a sequence of bytes, which can be read into a string (or
-//!   not, depending on its content). As this file is `no_std` oriented, the use of [`std::io`] is not possible, this is why has to
-//!   be manipulated through [`efs::io`](self::io) (you can find [`Read`](crate::io::Read), [`Write`](crate::io::Write) and
-//!   [`Seek`](crate::io::Seek) as in [`std::io`]).
+//! * A [`Regular`](crate::file::Regular) (file) is a basic file containing a sequence of bytes, which can be read into
+//!   a string (or not, depending on its content). As this file is `no_std` oriented, the use of [`std::io`] is not
+//!   possible, this is why has to be manipulated through [`efs::io`](self::io) (you can find [`Read`](crate::io::Read),
+//!   [`Write`](crate::io::Write) and [`Seek`](crate::io::Seek) as in [`std::io`]).
 //!
-//! * A [`Directory`](crate::file::Directory) is a node in the tree-like hierarchy of a filesystem. You can retrieve, add and remove
-//!   entries (which are other files).
+//! * A [`Directory`](crate::file::Directory) is a node in the tree-like hierarchy of a filesystem. You can retrieve,
+//!   add and remove entries (which are other files).
 //!
-//! * A [`SymbolicLink`](crate::file::SymbolicLink) is a file pointing an other file. It can be interpreted as the symbolic link or
-//!   the pointed file in the [`FileSystem`](crate::fs::FileSystem) trait.
+//! * A [`SymbolicLink`](crate::file::SymbolicLink) is a file pointing an other file. It can be interpreted as the
+//!   symbolic link or the pointed file in the [`FileSystem`](crate::fs::FileSystem) trait.
 //!
-//! * Other file types are defined but cannot be much manipulated as their implementation depends on the virtual file system and on
-//!   the OS.
+//! * Other file types are defined but cannot be much manipulated as their implementation depends on the virtual file
+//!   system and on the OS.
 //!
 //! ### Filesystem interface
 //!
-//! All the manipulations needed in a filesystem can be made through the file traits. The [`FileSystem`](crate::fs::FileSystem) is
-//! here to provide two things : an entry point to the filesystem with the [`root`](crate::fs::FileSystem::root) method, and
-//! high-level functions to make the file manipulations easier.
+//! All the manipulations needed in a filesystem can be made through the file traits. The
+//! [`FileSystem`](crate::fs::FileSystem) is here to provide two things : an entry point to the filesystem with the
+//! [`root`](crate::fs::FileSystem::root) method, and high-level functions to make the file manipulations easier.
 //!
-//! You can read the documentation in the [`fs`] module for more information on [`FileSystem`](crate::fs::FileSystem)s and on how to
-//! implement them.
+//! You can read the documentation in the [`fs`] module for more information on [`FileSystem`](crate::fs::FileSystem)s
+//! and on how to implement them.
 //!
 //! ### Paths
 //!
@@ -63,10 +64,11 @@
 //!
 //! ### Devices
 //!
-//! In this crate, a [`Device`](crate::dev::Device) is a sized structure that can be read, written directly at any point.
+//! In this crate, a [`Device`](crate::dev::Device) is a sized structure that can be read, written directly at any
+//! point.
 //!
-//! You can read the documentation in the [`dev`] module for more information on [`Device`](dev::Device)s and on how to implement
-//! them.
+//! You can read the documentation in the [`dev`] module for more information on [`Device`](dev::Device)s and on how to
+//! implement them.
 //!
 //! ## Usage
 //!
@@ -74,18 +76,19 @@
 //!
 //! You always need to provide two things to use this crate: a filesystem and a device.
 //!
-//! For the filesystem, you can use the filesystems provided by this crate or make one by yourself (see the [how to implement a
-//! filesystem section](#how-to-implement-a-filesystem)). The usage of a filesystem does not depend on whether you are in a `no_std`
-//! environment or not.
+//! For the filesystem, you can use the filesystems provided by this crate or make one by yourself (see the [how to
+//! implement a filesystem section](#how-to-implement-a-filesystem)). The usage of a filesystem does not depend on
+//! whether you are in a `no_std` environment or not.
 //!
 //! For the devices :
 //!
-//! * if you are in a `no_std` environment: you can make test with `Vec<u8>`, `&[u8]`, ... if needed, but you will probably have to
-//!   provide your own device implementation. See the part on [how to implement a device](#how-to-implement-a-device) if needed.
+//! * if you are in a `no_std` environment: you can make test with `Vec<u8>`, `&[u8]`, ... if needed, but you will
+//!   probably have to provide your own device implementation. See the part on [how to implement a
+//!   device](#how-to-implement-a-device) if needed.
 //!
-//! * if you are in a `std` environment: you can use every structure that implements [`std::io::Read`], [`std::io::Write`] and
-//!   [`std::io::Seek`] through the use of [`StdIOWrapper`](crate::io::StdIOWrapper). Moreover, you can directly use std's
-//!   [`File`](std::fs::File) like this:
+//! * if you are in a `std` environment: you can use every structure that implements [`std::io::Read`],
+//!   [`std::io::Write`] and [`std::io::Seek`] through the use of [`StdIOWrapper`](crate::io::StdIOWrapper). Moreover,
+//!   you can directly use std's [`File`](std::fs::File) like this:
 //!
 //!     ```
 //!     use std::fs::File;
@@ -103,9 +106,9 @@
 //!
 //! ### Concurrency
 //!
-//! This library do not offer any guaranty for the behaviour of file manipulations when an other program is making `write`
-//! operations on the same device at the same time in a general context. Each filesystem implementation documentation contains a
-//! paragraph on its handle on concurrency, you can refer to it for more information.
+//! This library do not offer any guaranty for the behaviour of file manipulations when an other program is making
+//! `write` operations on the same device at the same time in a general context. Each filesystem implementation
+//! documentation contains a paragraph on its handle on concurrency, you can refer to it for more information.
 //!
 //! In concrete terms, in particular for OS developers, it's your duty, and more precisely the duty of the [virtual filesystem](https://en.wikipedia.org/wiki/Virtual_file_system)
 //! to handle the case where two programs tries to modify the same data at the same time.
@@ -120,8 +123,8 @@
 //! use core::str::FromStr;
 //!
 //! use efs::file::{Directory, SymbolicLink, Type, TypeWithFile};
-//! use efs::fs::ext2::Ext2Fs;
 //! use efs::fs::FileSystem;
+//! use efs::fs::ext2::Ext2Fs;
 //! use efs::io::{Read, Write};
 //! use efs::path::{Path, UnixStr};
 //! use efs::permissions::Permissions;
@@ -270,7 +273,6 @@
         clippy::wildcard_imports
     )
 )]
-#![feature(const_mut_refs)]
 #![feature(exact_size_is_empty)]
 #![feature(let_chains)]
 #![feature(never_type)]

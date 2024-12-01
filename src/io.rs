@@ -89,7 +89,6 @@ pub trait Write: Base {
     ///
     /// Otherwise, returns the same errors as [`write`](Write::write).
     #[allow(clippy::indexing_slicing)]
-
     fn write_all(&mut self, mut buf: &[u8]) -> Result<(), Error<Self::FsError>> {
         while !buf.is_empty() {
             match self.write(buf) {
@@ -163,7 +162,8 @@ pub trait Seek: Base {
 
 /// A wrapper struct for types that have implementations for [`std::io`] traits.
 ///
-/// [`Read`], [`Write`] and [`Seek`] are implemented for this type if the corresponding [`std::io`] trait is implemented for `S`.
+/// [`Read`], [`Write`] and [`Seek`] are implemented for this type if the corresponding [`std::io`] trait is implemented
+/// for `S`.
 ///
 /// Moreover, `FSE` correspond to the filesystem's error type.
 #[cfg(feature = "std")]

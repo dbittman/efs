@@ -128,16 +128,23 @@ impl<const DBPC: u32> IndirectedBlocks<DBPC> {
     /// Returns every data block with the indirected blocks.
     #[must_use]
     pub fn blocks(self) -> (DirectBlocks, SimpleIndirection, DoubleIndirection, TripleIndirection) {
-        (self.direct_blocks, self.singly_indirected_blocks, self.doubly_indirected_blocks, self.triply_indirected_blocks)
+        (
+            self.direct_blocks,
+            self.singly_indirected_blocks,
+            self.doubly_indirected_blocks,
+            self.triply_indirected_blocks,
+        )
     }
 
-    /// Returns the complete list of block numbers containing this inode's data (indirect blocks are not considered) in a single
-    /// continuous vector.
+    /// Returns the complete list of block numbers containing this inode's data (indirect blocks are not considered) in
+    /// a single continuous vector.
     #[must_use]
     pub fn flatten_data_blocks_with_indirection(&self) -> Vec<(u32, (Indirection, u32))> {
         let block_with_indirection = |indirection| {
             // SAFETY: the total number of blocks is stored on a u32
-            move |(index, block): (usize, &u32)| (*block, (indirection, unsafe { u32::try_from(index).unwrap_unchecked() }))
+            move |(index, block): (usize, &u32)| {
+                (*block, (indirection, unsafe { u32::try_from(index).unwrap_unchecked() }))
+            }
         };
 
         let mut blocks = self
@@ -226,8 +233,8 @@ impl<const DBPC: u32> IndirectedBlocks<DBPC> {
         blocks
     }
 
-    /// Returns the complete list of block numbers containing this inode's data (indirect blocks are not considered) in a single
-    /// continuous vector.
+    /// Returns the complete list of block numbers containing this inode's data (indirect blocks are not considered) in
+    /// a single continuous vector.
     #[must_use]
     pub fn flatten_data_blocks(&self) -> Vec<u32> {
         self.flatten_data_blocks_with_indirection()
@@ -241,7 +248,10 @@ impl<const DBPC: u32> IndirectedBlocks<DBPC> {
     /// Returns [`None`] if the offset points a block outside the range of this structure.
     #[allow(clippy::suspicious_operation_groupings)]
     #[must_use]
-    pub const fn block_at_offset_remainging_in_indirection(offset: u32, blocks_per_indirection: u32) -> Option<(Indirection, u32)> {
+    pub const fn block_at_offset_remainging_in_indirection(
+        offset: u32,
+        blocks_per_indirection: u32,
+    ) -> Option<(Indirection, u32)> {
         if offset < 12 {
             Some((Indirection::Direct, offset))
         } else if offset < DBPC + blocks_per_indirection {
@@ -254,7 +264,10 @@ impl<const DBPC: u32> IndirectedBlocks<DBPC> {
                 + blocks_per_indirection * blocks_per_indirection
                 + blocks_per_indirection * blocks_per_indirection * blocks_per_indirection
         {
-            Some((Indirection::Triple, offset - (DBPC + blocks_per_indirection + blocks_per_indirection * blocks_per_indirection)))
+            Some((
+                Indirection::Triple,
+                offset - (DBPC + blocks_per_indirection + blocks_per_indirection * blocks_per_indirection),
+            ))
         } else {
             None
         }
@@ -263,27 +276,34 @@ impl<const DBPC: u32> IndirectedBlocks<DBPC> {
     /// Returns the block at the given offset in the given indirection.
     ///
     /// This is easily usable in pair with
-    /// [`block_at_offset_remainging_in_indirection`](struct.IndirectedBlocks.html#method.block_at_offset_remainging_in_indirection)
-    /// or with [`last_data_block_allocated`](struct.IndirectedBlocks.html#method.last_data_block_allocated).
+    /// [`block_at_offset_remainging_in_indirection`](IndirectedBlocks::block_at_offset_remainging_in_indirection) or
+    /// with [`last_data_block_allocated`](IndirectedBlocks::last_data_block_allocated).
     #[must_use]
     pub fn block_at_offset_in_indirection(&self, indirection: Indirection, offset: u32) -> Option<u32> {
         match indirection {
             Indirection::Direct => self.direct_blocks.resolve_indirection(offset, self.blocks_per_indirection),
-            Indirection::Simple => self.singly_indirected_blocks.resolve_indirection(offset, self.blocks_per_indirection),
-            Indirection::Double => self.doubly_indirected_blocks.resolve_indirection(offset, self.blocks_per_indirection),
-            Indirection::Triple => self.triply_indirected_blocks.resolve_indirection(offset, self.blocks_per_indirection),
+            Indirection::Simple => {
+                self.singly_indirected_blocks.resolve_indirection(offset, self.blocks_per_indirection)
+            },
+            Indirection::Double => {
+                self.doubly_indirected_blocks.resolve_indirection(offset, self.blocks_per_indirection)
+            },
+            Indirection::Triple => {
+                self.triply_indirected_blocks.resolve_indirection(offset, self.blocks_per_indirection)
+            },
         }
     }
 
     /// Returns the block at the given offset.
     #[must_use]
     pub fn block_at_offset(&self, offset: u32) -> Option<u32> {
-        let (indirection, remaining_offset) = Self::block_at_offset_remainging_in_indirection(offset, self.blocks_per_indirection)?;
+        let (indirection, remaining_offset) =
+            Self::block_at_offset_remainging_in_indirection(offset, self.blocks_per_indirection)?;
         self.block_at_offset_in_indirection(indirection, remaining_offset)
     }
 
-    /// Returns the last allocated block of the complete structure, if it exists, with its indirection and its the remaining offset
-    /// in the redirection.
+    /// Returns the last allocated block of the complete structure, if it exists, with its indirection and its the
+    /// remaining offset in the redirection.
     #[must_use]
     pub fn last_data_block_allocated(&self) -> Option<(u32, (Indirection, u32))> {
         let last_triply_indirected = self
@@ -335,7 +355,9 @@ impl<const DBPC: u32> IndirectedBlocks<DBPC> {
             .1
             .last()
             // SAFETY: `direct_block_index < blocks_per_indirection << u32::MAX`
-            .map(|block| (unsafe { u32::try_from(self.singly_indirected_blocks.1.len() - 1).unwrap_unchecked() }, *block));
+            .map(|block| {
+                (unsafe { u32::try_from(self.singly_indirected_blocks.1.len() - 1).unwrap_unchecked() }, *block)
+            });
 
         if let Some((offset, block)) = last_singly_indirected {
             return Some((block, (Indirection::Simple, offset)));
@@ -361,7 +383,8 @@ impl<const DBPC: u32> IndirectedBlocks<DBPC> {
                         Indirection::Simple => DBPC,
                         Indirection::Double => DBPC + self.blocks_per_indirection,
                         Indirection::Triple => {
-                            DBPC + self.blocks_per_indirection + self.blocks_per_indirection * self.blocks_per_indirection
+                            DBPC + self.blocks_per_indirection
+                                + self.blocks_per_indirection * self.blocks_per_indirection
                         },
                     }
             },
@@ -417,8 +440,9 @@ impl<const DBPC: u32> IndirectedBlocks<DBPC> {
         let blocks_iterator = &mut blocks.iter();
 
         if self.direct_blocks.len() < u32_to_usize(DBPC) {
-            self.direct_blocks
-                .append(&mut blocks_iterator.take(u32_to_usize(DBPC) - self.direct_blocks.len()).copied().collect_vec());
+            self.direct_blocks.append(
+                &mut blocks_iterator.take(u32_to_usize(DBPC) - self.direct_blocks.len()).copied().collect_vec(),
+            );
         }
 
         if self.singly_indirected_blocks.0 == 0 {
@@ -451,8 +475,12 @@ impl<const DBPC: u32> IndirectedBlocks<DBPC> {
                 None => {},
                 Some((_, data_blocks)) => {
                     if data_blocks.len() < blocks_per_indirection {
-                        data_blocks
-                            .append(&mut blocks_iterator.take(blocks_per_indirection - data_blocks.len()).copied().collect_vec());
+                        data_blocks.append(
+                            &mut blocks_iterator
+                                .take(blocks_per_indirection - data_blocks.len())
+                                .copied()
+                                .collect_vec(),
+                        );
                     }
                 },
             }
@@ -495,7 +523,8 @@ impl<const DBPC: u32> IndirectedBlocks<DBPC> {
                         while indirected_blocks.len() < blocks_per_indirection
                             && let Some(block) = blocks_iterator.next()
                         {
-                            let indirection_block = (*block, blocks_iterator.take(blocks_per_indirection).copied().collect_vec());
+                            let indirection_block =
+                                (*block, blocks_iterator.take(blocks_per_indirection).copied().collect_vec());
                             indirected_blocks.push(indirection_block);
                         }
                     }
@@ -509,7 +538,8 @@ impl<const DBPC: u32> IndirectedBlocks<DBPC> {
                 while let Some(block) = blocks_iterator.next()
                     && doubly_indirection_block.1.len() < blocks_per_indirection
                 {
-                    let indirection_block = (*block, blocks_iterator.take(blocks_per_indirection).copied().collect_vec());
+                    let indirection_block =
+                        (*block, blocks_iterator.take(blocks_per_indirection).copied().collect_vec());
                     doubly_indirection_block.1.push(indirection_block);
                 }
                 self.triply_indirected_blocks.1.push(doubly_indirection_block);
@@ -545,7 +575,9 @@ impl<const DBPC: u32> IndirectedBlocks<DBPC> {
         n -= self.blocks_per_indirection;
 
         if n <= self.blocks_per_indirection * self.blocks_per_indirection {
-            if let Some((_, blocks)) = self.doubly_indirected_blocks.1.get_mut(u32_to_usize(n / self.blocks_per_indirection)) {
+            if let Some((_, blocks)) =
+                self.doubly_indirected_blocks.1.get_mut(u32_to_usize(n / self.blocks_per_indirection))
+            {
                 blocks.drain(u32_to_usize(n % self.blocks_per_indirection)..);
             }
             self.doubly_indirected_blocks
@@ -630,8 +662,9 @@ impl<const DBPC: u32> IndirectedBlocks<DBPC> {
                 .1
                 .drain(..u32_to_usize((n / blocks_per_indirection) / blocks_per_indirection));
             if let Some((_, indirected_blocks)) = symmetric_difference.triply_indirected_blocks.1.1.first_mut() {
-                indirected_blocks
-                    .drain(..u32_to_usize((n % (blocks_per_indirection * blocks_per_indirection)) / blocks_per_indirection));
+                indirected_blocks.drain(
+                    ..u32_to_usize((n % (blocks_per_indirection * blocks_per_indirection)) / blocks_per_indirection),
+                );
                 if let Some((_, blocks)) = indirected_blocks.first_mut() {
                     blocks.drain(..u32_to_usize(n % blocks_per_indirection));
                 }
@@ -647,12 +680,17 @@ impl<const DBPC: u32> IndirectedBlocks<DBPC> {
     /// Returns the result of `self.append_blocks(blocks)` and the [`SymmetricDifference`] between `self` and the
     /// [`IndirectedBlocks`] obtained after adding `blocks` to `self`.
     ///
-    /// In the resulting symmetric difference, all the blocks starting at the given `offset` (included) are considered as modified.
+    /// In the resulting symmetric difference, all the blocks starting at the given `offset` (included) are considered
+    /// as modified.
     ///
     /// If the `offset` is [`None`], only the added blocks are considered as modified.
     #[allow(clippy::too_many_lines)]
     #[must_use]
-    pub(crate) fn append_blocks_with_difference(&self, blocks: &[u32], offset: Option<u32>) -> (Self, SymmetricDifference<DBPC>) {
+    pub(crate) fn append_blocks_with_difference(
+        &self,
+        blocks: &[u32],
+        offset: Option<u32>,
+    ) -> (Self, SymmetricDifference<DBPC>) {
         let (last_indirection, last_index) = match offset {
             None => {
                 let Some((_, (last_indirection, last_index))) = self.last_data_block_allocated() else {
@@ -666,17 +704,19 @@ impl<const DBPC: u32> IndirectedBlocks<DBPC> {
                 };
                 (last_indirection, last_index + 1)
             },
-            Some(offset) => match Self::block_at_offset_remainging_in_indirection(offset, self.blocks_per_indirection) {
-                Some(indirection_offset) => indirection_offset,
-                None => {
-                    return (self.clone(), SymmetricDifference {
-                        blocks_per_indirection: self.blocks_per_indirection,
-                        direct_blocks: (0, Vec::new()),
-                        singly_indirected_blocks: (0, (0, Vec::new())),
-                        doubly_indirected_blocks: (0, (0, Vec::new())),
-                        triply_indirected_blocks: (0, (0, Vec::new())),
-                    });
-                },
+            Some(offset) => {
+                match Self::block_at_offset_remainging_in_indirection(offset, self.blocks_per_indirection) {
+                    Some(indirection_offset) => indirection_offset,
+                    None => {
+                        return (self.clone(), SymmetricDifference {
+                            blocks_per_indirection: self.blocks_per_indirection,
+                            direct_blocks: (0, Vec::new()),
+                            singly_indirected_blocks: (0, (0, Vec::new())),
+                            doubly_indirected_blocks: (0, (0, Vec::new())),
+                            triply_indirected_blocks: (0, (0, Vec::new())),
+                        });
+                    },
+                }
             },
         };
 
@@ -688,7 +728,8 @@ impl<const DBPC: u32> IndirectedBlocks<DBPC> {
 
         match last_indirection {
             Indirection::Direct => {
-                indirection.direct_blocks = indirection.direct_blocks.get(index..).map(<[u32]>::to_vec).unwrap_or_default();
+                indirection.direct_blocks =
+                    indirection.direct_blocks.get(index..).map(<[u32]>::to_vec).unwrap_or_default();
             },
             Indirection::Simple => {
                 indirection.direct_blocks = Vec::new();
@@ -780,8 +821,8 @@ impl<const DBPC: u32> IndirectedBlocks<DBPC> {
 
 /// Type alias representing direct blocks and their starting offset.
 ///
-/// The value `(index, blocks)` thus represents a [`DirectBlocks`] without all the leading "0": the `index` is the offset of the
-/// first element of `blocks` in the corresponding [`DirectBlocks`].
+/// The value `(index, blocks)` thus represents a [`DirectBlocks`] without all the leading "0": the `index` is the
+/// offset of the first element of `blocks` in the corresponding [`DirectBlocks`].
 pub type DirectBlocksOffset = (usize, DirectBlocks);
 
 /// Type alias representing a single indirection block and its starting offset.
@@ -804,8 +845,8 @@ pub type TripleIndirectionOffset = (usize, TripleIndirection);
 
 /// Represents the symmetric difference between two [`IndirectedBlocks`].
 ///
-/// This can be very useful in the manipulation of [`IndirectedBlocks`] during the addition or the removal of some indirection
-/// blocks.
+/// This can be very useful in the manipulation of [`IndirectedBlocks`] during the addition or the removal of some
+/// indirection blocks.
 #[derive(Debug, PartialEq, Eq)]
 pub struct SymmetricDifference<const DBPC: u32> {
     /// Number of blocks contained in each indirection.
@@ -829,8 +870,9 @@ pub struct SymmetricDifference<const DBPC: u32> {
 impl<const DBPC: u32> SymmetricDifference<DBPC> {
     /// Returns the list of all changed blocks of indirection.
     ///
-    /// In each tuple, the first element is the index at which the first block contained in this indirection block begins, the
-    /// second element is a tuple containing the indirection block and the list of the blocks contained in this indirection block.
+    /// In each tuple, the first element is the index at which the first block contained in this indirection block
+    /// begins, the second element is a tuple containing the indirection block and the list of the blocks contained
+    /// in this indirection block.
     ///
     /// All blocks, **starting at the first non-zero block** to the end, should be considered as being changed.
     #[must_use]
@@ -858,8 +900,10 @@ impl<const DBPC: u32> SymmetricDifference<DBPC> {
             let indirect_block_iterator = &mut self.doubly_indirected_blocks.1.1.iter();
 
             if let Some((indirection_block, blocks)) = indirect_block_iterator.next() {
-                indirected_blocks
-                    .push((self.doubly_indirected_blocks.0 % blocks_per_indirection, (*indirection_block, blocks.clone())));
+                indirected_blocks.push((
+                    self.doubly_indirected_blocks.0 % blocks_per_indirection,
+                    (*indirection_block, blocks.clone()),
+                ));
             }
 
             for (indirection_block, blocks) in indirect_block_iterator.by_ref() {
@@ -880,15 +924,18 @@ impl<const DBPC: u32> SymmetricDifference<DBPC> {
 
             if let Some((double_indirection_block, doubly_indirected_blocks)) = triply_indirect_block_iterator.next() {
                 indirected_blocks.push((
-                    (self.triply_indirected_blocks.0 % (blocks_per_indirection * blocks_per_indirection)) / blocks_per_indirection,
+                    (self.triply_indirected_blocks.0 % (blocks_per_indirection * blocks_per_indirection))
+                        / blocks_per_indirection,
                     (*double_indirection_block, doubly_indirected_blocks.iter().map(|(block, _)| *block).collect_vec()),
                 ));
 
                 let doubly_indirect_block_iterator = &mut doubly_indirected_blocks.iter();
 
                 if let Some((indirect_block, blocks)) = doubly_indirect_block_iterator.next() {
-                    indirected_blocks
-                        .push((self.triply_indirected_blocks.0 % blocks_per_indirection, (*indirect_block, blocks.clone())));
+                    indirected_blocks.push((
+                        self.triply_indirected_blocks.0 % blocks_per_indirection,
+                        (*indirect_block, blocks.clone()),
+                    ));
                 }
 
                 for (indirect_block, blocks) in doubly_indirect_block_iterator.by_ref() {
@@ -897,8 +944,10 @@ impl<const DBPC: u32> SymmetricDifference<DBPC> {
             }
 
             for (double_indirection_block, doubly_indirected_blocks) in triply_indirect_block_iterator {
-                indirected_blocks
-                    .push((0, (*double_indirection_block, doubly_indirected_blocks.iter().map(|(block, _)| *block).collect_vec())));
+                indirected_blocks.push((
+                    0,
+                    (*double_indirection_block, doubly_indirected_blocks.iter().map(|(block, _)| *block).collect_vec()),
+                ));
 
                 for (indirection_block, blocks) in doubly_indirected_blocks {
                     indirected_blocks.push((0, (*indirection_block, blocks.clone())));
@@ -911,8 +960,9 @@ impl<const DBPC: u32> SymmetricDifference<DBPC> {
 
     /// Returns the list of all changed data blocks.
     ///
-    /// As a write is always on contiguous blocks (from [`IndirectedBlocks`] point of vue), those data blocks should also be
-    /// considered as contiguous. Thus, a write should modify every block starting at the first one returned.
+    /// As a write is always on contiguous blocks (from [`IndirectedBlocks`] point of vue), those data blocks should
+    /// also be considered as contiguous. Thus, a write should modify every block starting at the first one
+    /// returned.
     #[must_use]
     pub fn changed_data_blocks(&self) -> Vec<u32> {
         let mut data_blocks = Vec::new();
@@ -1009,8 +1059,13 @@ mod test {
         );
         assert_eq!(indirected_blocks.last_data_block_allocated(), Some((7, (Indirection::Direct, 6))));
 
-        let indirected_blocks =
-            IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::new(1_024, vec![0; 12], (0, vec![0, 0, 1]), (0, vec![]), (0, vec![]));
+        let indirected_blocks = IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::new(
+            1_024,
+            vec![0; 12],
+            (0, vec![0, 0, 1]),
+            (0, vec![]),
+            (0, vec![]),
+        );
         assert_eq!(indirected_blocks.last_data_block_allocated(), Some((1, (Indirection::Simple, 2))));
 
         let indirected_blocks = IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::new(
@@ -1049,8 +1104,13 @@ mod test {
         assert_eq!(indirected_blocks.indirection_block_count(), 0);
         assert_eq!(IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::necessary_indirection_block_count(7, 5), 0);
 
-        let indirected_blocks =
-            IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::new(1_024, vec![1; 12], (1, vec![1, 1, 1]), (0, vec![]), (0, vec![]));
+        let indirected_blocks = IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::new(
+            1_024,
+            vec![1; 12],
+            (1, vec![1, 1, 1]),
+            (0, vec![]),
+            (0, vec![]),
+        );
         assert_eq!(indirected_blocks.data_block_count(), 15);
         assert_eq!(indirected_blocks.indirection_block_count(), 1);
         assert_eq!(IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::necessary_indirection_block_count(15, 5), 1);
@@ -1121,10 +1181,20 @@ mod test {
         indirected_blocks.append_blocks(&[12, 13, 14]);
         assert_eq!(indirected_blocks, indirected_blocks_after_append_2);
 
-        let mut indirected_blocks =
-            IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::new(5, vec![1; 12], (1, vec![1, 1, 1]), (0, vec![]), (0, vec![]));
-        let indirected_blocks_after_append_1 =
-            IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::new(5, vec![1; 12], (1, vec![1, 1, 1, 2, 2]), (2, vec![]), (0, vec![]));
+        let mut indirected_blocks = IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::new(
+            5,
+            vec![1; 12],
+            (1, vec![1, 1, 1]),
+            (0, vec![]),
+            (0, vec![]),
+        );
+        let indirected_blocks_after_append_1 = IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::new(
+            5,
+            vec![1; 12],
+            (1, vec![1, 1, 1, 2, 2]),
+            (2, vec![]),
+            (0, vec![]),
+        );
         let indirected_blocks_after_append_2 = IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::new(
             5,
             vec![1; 12],
@@ -1176,8 +1246,13 @@ mod test {
             (7, (Indirection::Direct, 6))
         ]);
 
-        let indirected_blocks =
-            IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::new(5, vec![1; 12], (2, vec![3, 3, 3]), (0, vec![]), (0, vec![]));
+        let indirected_blocks = IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::new(
+            5,
+            vec![1; 12],
+            (2, vec![3, 3, 3]),
+            (0, vec![]),
+            (0, vec![]),
+        );
         assert_eq!(indirected_blocks.flatten_data_blocks_with_indirection(), vec![
             (1, (Indirection::Direct, 0)),
             (1, (Indirection::Direct, 1)),
@@ -1214,8 +1289,13 @@ mod test {
             triply_indirected_blocks: (0, (0, vec![]))
         });
 
-        let indirected_blocks =
-            IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::new(5, vec![1; 12], (1, vec![1, 1, 1]), (0, vec![]), (0, vec![]));
+        let indirected_blocks = IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::new(
+            5,
+            vec![1; 12],
+            (1, vec![1, 1, 1]),
+            (0, vec![]),
+            (0, vec![]),
+        );
 
         assert_eq!(indirected_blocks.append_blocks_with_difference(&[2, 3, 4, 5], None).1, SymmetricDifference {
             blocks_per_indirection: 5,
@@ -1232,13 +1312,16 @@ mod test {
             (2, vec![(3, vec![3; 5]), (3, vec![3])]),
             (0, vec![]),
         );
-        assert_eq!(indirected_blocks.append_blocks_with_difference(&[4, 5, 6, 7, 8, 9, 10], None).1, SymmetricDifference {
-            blocks_per_indirection: 5,
-            direct_blocks: (0, vec![]),
-            singly_indirected_blocks: (0, (0, vec![])),
-            doubly_indirected_blocks: (6, (2, vec![(3, vec![4, 5, 6, 7]), (8, vec![9, 10])])),
-            triply_indirected_blocks: (0, (0, vec![]))
-        });
+        assert_eq!(
+            indirected_blocks.append_blocks_with_difference(&[4, 5, 6, 7, 8, 9, 10], None).1,
+            SymmetricDifference {
+                blocks_per_indirection: 5,
+                direct_blocks: (0, vec![]),
+                singly_indirected_blocks: (0, (0, vec![])),
+                doubly_indirected_blocks: (6, (2, vec![(3, vec![4, 5, 6, 7]), (8, vec![9, 10])])),
+                triply_indirected_blocks: (0, (0, vec![]))
+            }
+        );
 
         let indirected_blocks = IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::new(
             5,
@@ -1262,13 +1345,16 @@ mod test {
             (2, vec![(3, vec![3; 5]), (3, vec![3])]),
             (0, vec![]),
         );
-        assert_eq!(indirected_blocks.append_blocks_with_difference(&[4, 5, 6, 7, 8, 9, 10], Some(0)).1, SymmetricDifference {
-            blocks_per_indirection: 5,
-            direct_blocks: (0, vec![1; 12]),
-            singly_indirected_blocks: (0, (1, vec![1, 1, 1, 2, 2])),
-            doubly_indirected_blocks: (0, (2, vec![(3, vec![3; 5]), (3, vec![3, 4, 5, 6, 7]), (8, vec![9, 10])])),
-            triply_indirected_blocks: (0, (0, vec![]))
-        });
+        assert_eq!(
+            indirected_blocks.append_blocks_with_difference(&[4, 5, 6, 7, 8, 9, 10], Some(0)).1,
+            SymmetricDifference {
+                blocks_per_indirection: 5,
+                direct_blocks: (0, vec![1; 12]),
+                singly_indirected_blocks: (0, (1, vec![1, 1, 1, 2, 2])),
+                doubly_indirected_blocks: (0, (2, vec![(3, vec![3; 5]), (3, vec![3, 4, 5, 6, 7]), (8, vec![9, 10])])),
+                triply_indirected_blocks: (0, (0, vec![]))
+            }
+        );
 
         let indirected_blocks = IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::new(
             5,
@@ -1277,13 +1363,16 @@ mod test {
             (2, vec![(3, vec![3; 5]), (3, vec![3])]),
             (0, vec![]),
         );
-        assert_eq!(indirected_blocks.append_blocks_with_difference(&[4, 5, 6, 7, 8, 9, 10], Some(13)).1, SymmetricDifference {
-            blocks_per_indirection: 5,
-            direct_blocks: (0, vec![]),
-            singly_indirected_blocks: (1, (1, vec![1, 1, 2, 2])),
-            doubly_indirected_blocks: (0, (2, vec![(3, vec![3; 5]), (3, vec![3, 4, 5, 6, 7]), (8, vec![9, 10])])),
-            triply_indirected_blocks: (0, (0, vec![]))
-        });
+        assert_eq!(
+            indirected_blocks.append_blocks_with_difference(&[4, 5, 6, 7, 8, 9, 10], Some(13)).1,
+            SymmetricDifference {
+                blocks_per_indirection: 5,
+                direct_blocks: (0, vec![]),
+                singly_indirected_blocks: (1, (1, vec![1, 1, 2, 2])),
+                doubly_indirected_blocks: (0, (2, vec![(3, vec![3; 5]), (3, vec![3, 4, 5, 6, 7]), (8, vec![9, 10])])),
+                triply_indirected_blocks: (0, (0, vec![]))
+            }
+        );
 
         let indirected_blocks = IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::new(
             5,
@@ -1292,13 +1381,16 @@ mod test {
             (1, vec![(1, vec![1; 5]), (1, vec![1; 5]), (1, vec![1, 1, 2, 2, 2]), (2, vec![2; 5]), (2, vec![2; 5])]),
             (2, vec![(2, vec![(2, vec![2; 5]), (2, vec![2; 5]), (3, vec![3; 4])])]),
         );
-        assert_eq!(indirected_blocks.append_blocks_with_difference(&[4, 5, 6, 7, 8, 9, 10], Some(55)).1, SymmetricDifference {
-            blocks_per_indirection: 5,
-            direct_blocks: (0, vec![]),
-            singly_indirected_blocks: (0, (0, vec![])),
-            doubly_indirected_blocks: (0, (0, vec![])),
-            triply_indirected_blocks: (13, (2, vec![(2, vec![(3, vec![3, 4]), (5, vec![6, 7, 8, 9, 10])])]))
-        });
+        assert_eq!(
+            indirected_blocks.append_blocks_with_difference(&[4, 5, 6, 7, 8, 9, 10], Some(55)).1,
+            SymmetricDifference {
+                blocks_per_indirection: 5,
+                direct_blocks: (0, vec![]),
+                singly_indirected_blocks: (0, (0, vec![])),
+                doubly_indirected_blocks: (0, (0, vec![])),
+                triply_indirected_blocks: (13, (2, vec![(2, vec![(3, vec![3, 4]), (5, vec![6, 7, 8, 9, 10])])]))
+            }
+        );
     }
 
     #[test]
@@ -1384,13 +1476,23 @@ mod test {
             (0, vec![]),
             (0, vec![]),
         );
-        let indirected_blocks_after_truncation =
-            IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::new(5, vec![1, 2, 3], (0, vec![]), (0, vec![]), (0, vec![]));
+        let indirected_blocks_after_truncation = IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::new(
+            5,
+            vec![1, 2, 3],
+            (0, vec![]),
+            (0, vec![]),
+            (0, vec![]),
+        );
         indirected_blocks.truncate_back_data_blocks(3);
         assert_eq!(indirected_blocks, indirected_blocks_after_truncation);
 
-        let mut indirected_blocks =
-            IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::new(5, vec![1; 12], (1, vec![1, 1, 1]), (0, vec![]), (0, vec![]));
+        let mut indirected_blocks = IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::new(
+            5,
+            vec![1; 12],
+            (1, vec![1, 1, 1]),
+            (0, vec![]),
+            (0, vec![]),
+        );
         let indirected_blocks_after_truncation_1 =
             IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::new(5, vec![1; 12], (1, vec![1]), (0, vec![]), (0, vec![]));
         let indirected_blocks_after_truncation_2 =
@@ -1414,8 +1516,13 @@ mod test {
             (2, vec![(3, vec![3; 3])]),
             (0, vec![]),
         );
-        let indirected_blocks_after_truncation_2 =
-            IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::new(5, vec![1; 12], (1, vec![1; 5]), (0, vec![]), (0, vec![]));
+        let indirected_blocks_after_truncation_2 = IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::new(
+            5,
+            vec![1; 12],
+            (1, vec![1; 5]),
+            (0, vec![]),
+            (0, vec![]),
+        );
         indirected_blocks.truncate_back_data_blocks(20);
         assert_eq!(indirected_blocks, indirected_blocks_after_truncation_1);
         indirected_blocks.truncate_back_data_blocks(17);

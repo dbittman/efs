@@ -53,7 +53,8 @@ impl<'path> UnixStr<'path> {
     ///
     /// # Errors
     ///
-    /// Returns an [`InvalidFilename`](PathError::InvalidFilename) if the given string is empty or contains a `\0` character.
+    /// Returns an [`InvalidFilename`](PathError::InvalidFilename) if the given string is empty or contains a `\0`
+    /// character.
     ///
     /// # Examples
     ///
@@ -119,7 +120,7 @@ impl TryFrom<CString> for UnixStr<'_> {
     }
 }
 
-impl<'path> From<UnixStr<'path>> for CString {
+impl From<UnixStr<'_>> for CString {
     fn from(value: UnixStr) -> Self {
         // SAFETY: `value` cannot contain any <NUL> char
         unsafe { Self::from_vec_unchecked(value.0.as_bytes().to_vec()) }
@@ -140,9 +141,9 @@ impl<'path> From<Component<'path>> for UnixStr<'path> {
 
 /// A slice of a path.
 ///
-/// It is represented by a string that is used to identify a file. It has optional beginning `/`, followed by zero or more filenames
-/// separated by `/`. A pathname can optionally contain one or more trailing `/`. Multiple successive `/` characters are considered
-/// to be the same as one `/`, except for the case of exactly two leading `/`.
+/// It is represented by a string that is used to identify a file. It has optional beginning `/`, followed by zero or
+/// more filenames separated by `/`. A pathname can optionally contain one or more trailing `/`. Multiple successive `/`
+/// characters are considered to be the same as one `/`, except for the case of exactly two leading `/`.
 ///
 /// See [the POSIX definition](https://pubs.opengroup.org/onlinepubs/9799919799/basedefs/V1_chap03.html#tag_03_254) for more information.
 #[derive(Debug, Clone, Display)]
@@ -388,7 +389,6 @@ impl<'path> Path<'path> {
     }
 
     /// Produces an iterator over the Components of the path.
-
     #[must_use]
     pub fn components(&'path self) -> Components<'path> {
         Components::new(self)
@@ -456,7 +456,7 @@ impl PartialEq for Path<'_> {
 
 impl Eq for Path<'_> {}
 
-impl<'path> TryFrom<&Components<'_>> for Path<'path> {
+impl TryFrom<&Components<'_>> for Path<'_> {
     type Error = <Self as FromStr>::Err;
 
     fn try_from(value: &Components<'_>) -> Result<Self, Self::Error> {
@@ -465,7 +465,8 @@ impl<'path> TryFrom<&Components<'_>> for Path<'path> {
 }
 
 /// Root Unix string.
-pub static ROOT: Lazy<UnixStr> = Lazy::new(|| UnixStr::from_str("/").unwrap_or_else(|_| unreachable!("ROOT is a non-empty path")));
+pub static ROOT: Lazy<UnixStr> =
+    Lazy::new(|| UnixStr::from_str("/").unwrap_or_else(|_| unreachable!("ROOT is a non-empty path")));
 
 /// Curent directory Unix string.
 pub static CUR_DIR: Lazy<UnixStr> =
@@ -557,7 +558,8 @@ pub struct Components<'path> {
     /// Starting dir of the path.
     ///
     /// If [`Some`], can only contain [`RootDir`](enum.Component.html#variant.RootDir),
-    /// [`DoubleSlashRootDir`](enum.Component.html#variant.DoubleSlashRootDir) or [`CurDir`](enum.Component.html#variant.CurDir).
+    /// [`DoubleSlashRootDir`](enum.Component.html#variant.DoubleSlashRootDir) or
+    /// [`CurDir`](enum.Component.html#variant.CurDir).
     start_dir: Option<Component<'path>>,
 
     /// Keeps track of what has been consumed on the left side of the path.
@@ -709,7 +711,8 @@ impl<'path> Iterator for &mut Components<'path> {
                 },
                 State::Body if !self.path.is_empty() => {
                     let (size, comp) = self.parse_next_component();
-                    // SAFETY: It is ensure in `parse_next_component` that `self.path` contains at least `size` characters
+                    // SAFETY: It is ensure in `parse_next_component` that `self.path` contains at least `size`
+                    // characters
                     self.path = unsafe { self.path.get_unchecked(size..) };
                     if comp.is_some() {
                         return comp;
@@ -761,13 +764,14 @@ impl<'path> Iterator for &mut Components<'path> {
     }
 }
 
-impl<'path> DoubleEndedIterator for &mut Components<'path> {
+impl DoubleEndedIterator for &mut Components<'_> {
     fn next_back(&mut self) -> Option<Self::Item> {
         while !self.is_finished() {
             match self.back {
                 State::Body if self.path.len() > self.len_before_body() => {
                     let (size, comp) = self.parse_next_component_back();
-                    // SAFETY: It is ensure in `parse_next_component_back` that `self.path` contains at least `size` characters
+                    // SAFETY: It is ensure in `parse_next_component_back` that `self.path` contains at least `size`
+                    // characters
                     self.path = unsafe { self.path.get_unchecked(..self.path.len() - size) };
                     if comp.is_some() {
                         return comp;

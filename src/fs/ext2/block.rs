@@ -1,28 +1,28 @@
 //! Interface to manipulate blocks.
 //!
-//! A block is a contiguous part of the disk space. For a given filesystem, all the blocks have the same size, indicated in the
-//! [`Superblock`].
+//! A block is a contiguous part of the disk space. For a given filesystem, all the blocks have the same size, indicated
+//! in the [`Superblock`].
 //!
 //! See [the OSDev wiki](https://wiki.osdev.org/Ext2#What_is_a_Block.3F) for more information.
 
 use alloc::vec;
 use alloc::vec::Vec;
 
+use super::Ext2Fs;
 use super::error::Ext2Error;
 use super::superblock::Superblock;
-use super::Ext2Fs;
 use crate::arch::u32_to_usize;
-use crate::dev::sector::Address;
 use crate::dev::Device;
+use crate::dev::sector::Address;
 use crate::error::Error;
 use crate::fs::error::FsError;
 use crate::io::{Base, Read, Seek, SeekFrom, Write};
 
 /// An ext2 block.
 ///
-/// The [`Device`] is splitted in contiguous ext2 blocks that have all the same size in bytes. This is **NOT** the block as in block
-/// device, here "block" always refers to ext2's blocks. They start at 0, so the `n`th block will start at the adress `n *
-/// block_size`. Thus, a block is entirely described by its number.
+/// The [`Device`] is splitted in contiguous ext2 blocks that have all the same size in bytes. This is **NOT** the block
+/// as in block device, here "block" always refers to ext2's blocks. They start at 0, so the `n`th block will start at
+/// the adress `n * block_size`. Thus, a block is entirely described by its number.
 #[derive(Clone)]
 pub struct Block<Dev: Device<u8, Ext2Error>> {
     /// Block number.
@@ -76,7 +76,8 @@ impl<Dev: Device<u8, Ext2Error>> Block<Dev> {
 
     /// Returns whether this block is currently free or not from the block bitmap in which the block resides.
     ///
-    /// The `bitmap` argument is usually the result of the method [`get_block_bitmap`](../struct.Ext2.html#method.get_block_bitmap).
+    /// The `bitmap` argument is usually the result of the method
+    /// [`get_block_bitmap`](../struct.Ext2.html#method.get_block_bitmap).
     #[allow(clippy::indexing_slicing)]
     #[must_use]
     pub const fn is_free(&self, superblock: &Superblock, bitmap: &[u8]) -> bool {
@@ -87,7 +88,8 @@ impl<Dev: Device<u8, Ext2Error>> Block<Dev> {
 
     /// Returns whether this block is currently used or not from the block bitmap in which the block resides.
     ///
-    /// The `bitmap` argument is usually the result of the method [`get_block_bitmap`](../struct.Ext2.html#method.get_block_bitmap).
+    /// The `bitmap` argument is usually the result of the method
+    /// [`get_block_bitmap`](../struct.Ext2.html#method.get_block_bitmap).
     #[allow(clippy::indexing_slicing)]
     #[must_use]
     pub const fn is_used(&self, superblock: &Superblock, bitmap: &[u8]) -> bool {
@@ -146,8 +148,9 @@ impl<Dev: Device<u8, Ext2Error>> Read for Block<Dev> {
         let mut device = fs.device.lock();
 
         let length = u32_to_usize(fs.superblock().block_size() - self.io_offset).min(buf.len());
-        let starting_addr =
-            Address::new(u32_to_usize(self.number) * u32_to_usize(fs.superblock().block_size()) + u32_to_usize(self.io_offset));
+        let starting_addr = Address::new(
+            u32_to_usize(self.number) * u32_to_usize(fs.superblock().block_size()) + u32_to_usize(self.io_offset),
+        );
         let slice = device.slice(starting_addr..starting_addr + length)?;
         buf.clone_from_slice(slice.as_ref());
 
@@ -164,8 +167,9 @@ impl<Dev: Device<u8, Ext2Error>> Write for Block<Dev> {
         let mut device = fs.device.lock();
 
         let length = u32_to_usize(fs.superblock().block_size() - self.io_offset).min(buf.len());
-        let starting_addr =
-            Address::new(u32_to_usize(self.number) * u32_to_usize(fs.superblock().block_size()) + u32_to_usize(self.io_offset));
+        let starting_addr = Address::new(
+            u32_to_usize(self.number) * u32_to_usize(fs.superblock().block_size()) + u32_to_usize(self.io_offset),
+        );
         let mut slice = device.slice(starting_addr..starting_addr + length)?;
         // SAFETY: buf size is at least length
         slice.clone_from_slice(unsafe { buf.get_unchecked(..length) });
@@ -191,12 +195,13 @@ impl<Dev: Device<u8, Ext2Error>> Seek for Block<Dev> {
         let previous_offset = self.io_offset;
         match pos {
             SeekFrom::Start(offset) => {
-                self.io_offset =
-                    u32::try_from(offset).map_err(|_err| FsError::Implementation(Ext2Error::OutOfBounds(offset.into())))?;
+                self.io_offset = u32::try_from(offset)
+                    .map_err(|_err| FsError::Implementation(Ext2Error::OutOfBounds(offset.into())))?;
             },
             SeekFrom::End(back_offset) => {
-                self.io_offset = TryInto::<u32>::try_into(block_size - back_offset)
-                    .map_err(|_err| FsError::Implementation(Ext2Error::OutOfBounds(i128::from(block_size - back_offset))))?;
+                self.io_offset = TryInto::<u32>::try_into(block_size - back_offset).map_err(|_err| {
+                    FsError::Implementation(Ext2Error::OutOfBounds(i128::from(block_size - back_offset)))
+                })?;
             },
             SeekFrom::Current(add_offset) => {
                 self.io_offset = (i64::from(previous_offset) + add_offset).try_into().map_err(|_err| {
@@ -219,13 +224,13 @@ mod test {
     use std::fs::File;
 
     use crate::celled::Celled;
-    use crate::dev::sector::Address;
     use crate::dev::Device;
+    use crate::dev::sector::Address;
+    use crate::fs::ext2::Ext2Fs;
     use crate::fs::ext2::block::Block;
     use crate::fs::ext2::block_group::BlockGroupDescriptor;
     use crate::fs::ext2::error::Ext2Error;
     use crate::fs::ext2::superblock::Superblock;
-    use crate::fs::ext2::Ext2Fs;
     use crate::io::{Read, Seek, SeekFrom, Write};
     use crate::tests::new_device_id;
 
@@ -333,7 +338,7 @@ mod test {
     }
 
     mod generated {
-        use crate::tests::{generate_fs_test, PostCheck};
+        use crate::tests::{PostCheck, generate_fs_test};
 
         generate_fs_test!(block_read, "./tests/fs/ext2/io_operations.ext2", PostCheck::Ext);
         generate_fs_test!(block_write, "./tests/fs/ext2/io_operations.ext2", PostCheck::Ext);

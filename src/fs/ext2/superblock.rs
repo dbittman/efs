@@ -8,8 +8,8 @@ use bitflags::bitflags;
 
 use super::error::Ext2Error;
 use crate::celled::Celled;
-use crate::dev::sector::Address;
 use crate::dev::Device;
+use crate::dev::sector::Address;
 use crate::error::Error;
 use crate::fs::error::FsError;
 
@@ -53,7 +53,8 @@ pub struct Base {
     /// log2(block size) - 10. (In other words, the number to shift 1,024 to the left by to obtain the block size)
     pub log_block_size: u32,
 
-    /// log2(fragment size) - 10. (In other words, the number to shift 1,024 to the left by to obtain the fragment size)
+    /// log2(fragment size) - 10. (In other words, the number to shift 1,024 to the left by to obtain the fragment
+    /// size)
     pub log_frag_size: u32,
 
     /// Number of blocks in each block group
@@ -157,12 +158,12 @@ pub enum State {
 }
 
 impl State {
-    /// Returns the [`State`] corresponding to the [`state`](struct.Base.html#structfield.state) field in the [`Base`] structure.
+    /// Returns the [`State`] corresponding to the [`state`](struct.Base.html#structfield.state) field in the [`Base`]
+    /// structure.
     ///
     /// # Errors
     ///
     /// Returns an [`Ext2Error::InvalidState`] error if the give bytes does not correspond to a valid state.
-
     pub const fn try_from_bytes(bytes: u16) -> Result<Self, Ext2Error> {
         match bytes {
             0x0001 => Ok(Self::Clean),
@@ -203,13 +204,13 @@ pub enum ErrorHandlingMethod {
 }
 
 impl ErrorHandlingMethod {
-    /// Returns the [`ErrorHandlingMethod`] corresponding to the [`error`](struct.Base.html#structfield.error) field in the [`Base`]
-    /// structure.
+    /// Returns the [`ErrorHandlingMethod`] corresponding to the [`error`](struct.Base.html#structfield.error) field in
+    /// the [`Base`] structure.
     ///
     /// # Errors
     ///
-    /// Returns an [`Ext2Error::InvalidErrorHandlingMethod`] error if the give bytes does not correspond to a valid state.
-
+    /// Returns an [`Ext2Error::InvalidErrorHandlingMethod`] error if the give bytes does not correspond to a valid
+    /// state.
     pub const fn try_from_bytes(bytes: u16) -> Result<Self, Ext2Error> {
         match bytes {
             0x0001 => Ok(Self::Ignore),
@@ -262,9 +263,8 @@ pub enum OperatingSystem {
 }
 
 impl OperatingSystem {
-    /// Returns the [`OperatingSystem`] corresponding to the [`creator_os`](struct.Base.html#structfield.creator_os) field in the
-    /// [`Base`] structure.
-
+    /// Returns the [`OperatingSystem`] corresponding to the [`creator_os`](struct.Base.html#structfield.creator_os)
+    /// field in the [`Base`] structure.
     #[must_use]
     pub const fn from_bytes(bytes: u32) -> Self {
         match bytes {
@@ -301,21 +301,18 @@ impl Base {
     /// Returns the number of block groups.
     ///
     /// It is equal to the round up of the total number of blocks divided by the number of blocks per block group.
-
     #[must_use]
     pub const fn block_group_count(&self) -> u32 {
         self.blocks_count.div_ceil(self.blocks_per_group)
     }
 
     /// Returns the size of a block in the filesystem described by this superblock.
-
     #[must_use]
     pub const fn block_size(&self) -> u32 {
         1024 << self.log_block_size
     }
 
     /// Returns the size of a fragment in the filesystem described by this superblock.
-
     #[must_use]
     pub const fn frag_size(&self) -> u32 {
         1024 << self.log_frag_size
@@ -326,7 +323,6 @@ impl Base {
     /// # Errors
     ///
     /// Returns an [`Ext2Error::InvalidState`] if an invalid state has been found.
-
     pub const fn state(&self) -> Result<State, Ext2Error> {
         State::try_from_bytes(self.state)
     }
@@ -336,20 +332,17 @@ impl Base {
     /// # Errors
     ///
     /// Returns an [`Ext2Error::InvalidErrorHandlingMethod`] if an invalid state has been found.
-
     pub const fn error_handling_method(&self) -> Result<ErrorHandlingMethod, Ext2Error> {
         ErrorHandlingMethod::try_from_bytes(self.errors)
     }
 
     /// Returns the Operating system from which the filesystem on this volume was created.
-
     #[must_use]
     pub const fn creator_operating_system(&self) -> OperatingSystem {
         OperatingSystem::from_bytes(self.creator_os)
     }
 
     /// Returns the maximal size in bytes for a single file.
-
     #[must_use]
     pub const fn max_file_size(&self) -> u64 {
         let block_size = self.block_size() as u64;
@@ -363,8 +356,8 @@ impl Base {
 
 /// Extended Superblock Fields of the [`Base`].
 ///
-/// These fields are only present if [`major`](struct.Base.html#structfield.rev_level) version is greater than or equal to
-/// 1.
+/// These fields are only present if [`major`](struct.Base.html#structfield.rev_level) version is greater than or equal
+/// to 1.
 #[repr(C, packed)]
 #[derive(Debug, Clone, Copy)]
 pub struct ExtendedFields {
@@ -377,7 +370,8 @@ pub struct ExtendedFields {
     /// Block group that this superblock is part of (if backup copy)
     pub block_group_nr: u16,
 
-    /// Optional features present (features that are not required to read or write, but usually result in a performance increase)
+    /// Optional features present (features that are not required to read or write, but usually result in a performance
+    /// increase)
     pub feature_compat: u32,
 
     /// Required features present (features that are required to be supported to read or write)
@@ -395,7 +389,8 @@ pub struct ExtendedFields {
     /// Path volume was last mounted to (C-style string: characters terminated by a 0 byte)
     pub last_mounted: [u8; 64],
 
-    /// Compression algorithms used (see [`required_features`](struct.ExtendedFields.html#structfield.required_features))
+    /// Compression algorithms used (see
+    /// [`required_features`](struct.ExtendedFields.html#structfield.required_features))
     pub algo_bitmap: u32,
 
     /// Number of blocks to preallocate for files
@@ -572,7 +567,6 @@ impl ExtendedFields {
     /// Returns the [`OptionalFeatures`] described in thoses extended fields.
     ///
     /// Returns [`None`] if an unknown feature is set.
-
     #[must_use]
     pub const fn optional_features(&self) -> OptionalFeatures {
         OptionalFeatures::from_bits_truncate(self.feature_compat)
@@ -581,7 +575,6 @@ impl ExtendedFields {
     /// Returns the [`RequiredFeatures`] described in thoses extended fields.
     ///
     /// Returns [`None`] if an unknown feature is set.
-
     #[must_use]
     pub const fn required_features(&self) -> RequiredFeatures {
         RequiredFeatures::from_bits_truncate(self.feature_incompat)
@@ -590,7 +583,6 @@ impl ExtendedFields {
     /// Returns the [`ReadOnlyFeatures`] described in thoses extended fields.
     ///
     /// Returns [`None`] if an unknown feature is set.
-
     #[must_use]
     pub const fn read_only_features(&self) -> ReadOnlyFeatures {
         ReadOnlyFeatures::from_bits_truncate(self.feature_ro_compat)
@@ -603,7 +595,8 @@ pub enum Superblock {
     /// Basic superblock (with a [`major version`](struct.Base.html#structfield.rev_level) lower than 1).
     Basic(Base),
 
-    /// Extended superblock (with a [`major_version`](struct.Base.html#structfield.rev_level) greater than or equal to 1).
+    /// Extended superblock (with a [`major_version`](struct.Base.html#structfield.rev_level) greater than or equal to
+    /// 1).
     Extended(Base, ExtendedFields),
 }
 

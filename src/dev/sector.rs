@@ -19,8 +19,8 @@ pub struct Address(usize);
 impl Address {
     /// Returns a new [`Address`] from its index.
     ///
-    /// This function is equivalent to the [`From<usize>`](struct.Address.html#impl-From<usize>-for-Address) implementation but
-    /// with a `const fn`.
+    /// This function is equivalent to the [`From<usize>`](struct.Address.html#impl-From<usize>-for-Address)
+    /// implementation but with a `const fn`.
     #[must_use]
     pub const fn new(index: usize) -> Self {
         Self(index)
@@ -98,7 +98,7 @@ impl Mul<usize> for Address {
 }
 
 impl Step for Address {
-    fn steps_between(start: &Self, end: &Self) -> Option<usize> {
+    fn steps_between(start: &Self, end: &Self) -> (usize, Option<usize>) {
         usize::steps_between(start, end)
     }
 

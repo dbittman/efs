@@ -7,35 +7,37 @@
 //! files](crate::file::Regular), [directories](crate::file::Directory), ...) of your filesystem through the method
 //! [`root`](FileSystem::root).
 //!
-//! The other provided methods, such as [`get_file`](FileSystem::get_file), are here to help you read and manipulate easily the
-//! content of your filesystem.
+//! The other provided methods, such as [`get_file`](FileSystem::get_file), are here to help you read and manipulate
+//! easily the content of your filesystem.
 //!
 //! All the needed methods for [`File`](crate::file::File) manipulation are implemented by other structures linked to a
 //! [`FileSystem`]. You can read the module [`file`](crate::file)'s documentation for more information.
 //!
 //! ## How to implement a filesystem?
 //!
-//! To implement a filesystem, you will need a lot of structures and methods. You can read the implementation of the `ext2`
-//! filesystem as an example, but here is a general layout of what you need to do:
+//! To implement a filesystem, you will need a lot of structures and methods. You can read the implementation of the
+//! `ext2` filesystem as an example, but here is a general layout of what you need to do:
 //!
 //! * create a structure which will implement [`FileSystem`]: it will be the core structure of your filesystem
 //!
-//! * create an error structure, which implements [`core::error::Error`]. This will contain **every** error that your filesystem
-//!   will be able to return.
+//! * create an error structure, which implements [`core::error::Error`]. This will contain **every** error that your
+//!   filesystem will be able to return.
 //!
 //! * create objects for every structure in your filesystem
 //!
-//! * create structures for [`File`](crate::file::File), [`Regular`](crate::file::Regular), [`Directory`] and [`SymbolicLink`]. For
-//!   each of this structure, create functions allowing to be parsed easily. For [`Fifo`](crate::file::Fifo),
-//!   [`CharacterDevice`](crate::file::CharacterDevice), [`BlockDevice`](crate::file::BlockDevice) and
-//!   [`Socket`](crate::file::Socket), you can use a simple struct like `struct Socket(File)` as you will likely never use them
-//!   directly with this crate
+//! * create structures for [`File`](crate::file::File), [`Regular`](crate::file::Regular), [`Directory`] and
+//!   [`SymbolicLink`]. For each of this structure, create functions allowing to be parsed easily. For
+//!   [`Fifo`](crate::file::Fifo), [`CharacterDevice`](crate::file::CharacterDevice),
+//!   [`BlockDevice`](crate::file::BlockDevice) and [`Socket`](crate::file::Socket), you can use a simple struct like
+//!   `struct Socket(File)` as you will likely never use them directly with this crate
 //!
-//! * implement the functions allowing to retrieve the [`Regular`](crate::file::Regular), [`Directory`] and [`SymbolicLink`], and
-//!   the [`root`](FileSystem::root) particularily. For the [`double_slash_root`](FileSystem::double_slash_root), if you don't know
-//!   what it means, you can just implement it as `self.root()` (and it will very probably be the right thing to do)
+//! * implement the functions allowing to retrieve the [`Regular`](crate::file::Regular), [`Directory`] and
+//!   [`SymbolicLink`], and the [`root`](FileSystem::root) particularily. For the
+//!   [`double_slash_root`](FileSystem::double_slash_root), if you don't know what it means, you can just implement it
+//!   as `self.root()` (and it will very probably be the right thing to do)
 //!
-//! * implements all the other functions for the [`Regular`](crate::file::Regular), [`Directory`] and [`SymbolicLink`] structures.
+//! * implements all the other functions for the [`Regular`](crate::file::Regular), [`Directory`] and [`SymbolicLink`]
+//!   structures.
 //!
 //! Advice: start with the read-only functions and methods. It will be **MUCH** easier that the write methods.
 
@@ -48,7 +50,9 @@ use core::str::FromStr;
 use itertools::{Itertools, Position};
 
 use crate::error::Error;
-use crate::file::{Directory, ReadOnlyDirectory, ReadOnlySymbolicLink, ReadOnlyTypeWithFile, SymbolicLink, Type, TypeWithFile};
+use crate::file::{
+    Directory, ReadOnlyDirectory, ReadOnlySymbolicLink, ReadOnlyTypeWithFile, SymbolicLink, Type, TypeWithFile,
+};
 use crate::fs::error::FsError;
 use crate::path::{Component, Path, PathError};
 use crate::permissions::Permissions;
@@ -96,8 +100,8 @@ pub trait FileSystem<Dir: Directory> {
     ///
     /// Returns the file of this filesystem corresponding to the given `path`, starting at the `current_dir`.
     ///
-    /// `symlink_resolution` indicates whether the function calling this method is required to act on the symbolic link itself, or
-    /// certain arguments direct that the function act on the symbolic link itself.
+    /// `symlink_resolution` indicates whether the function calling this method is required to act on the symbolic link
+    /// itself, or certain arguments direct that the function act on the symbolic link itself.
     ///
     /// # Errors
     ///
@@ -109,17 +113,23 @@ pub trait FileSystem<Dir: Directory> {
     ///
     /// Returns an [`Loop`](FsError::Loop) error if a loop is found during the symbolic link resolution.
     ///
-    /// Returns an [`NameTooLong`](FsError::NameTooLong) error if the complete path contains more than [`PATH_MAX`] characters.
+    /// Returns an [`NameTooLong`](FsError::NameTooLong) error if the complete path contains more than [`PATH_MAX`]
+    /// characters.
     ///
     /// Returns an [`NoEnt`](FsError::NoEnt) error if an encountered symlink points to a non-existing file.
     ///
     /// Otherwise, returns a [`FsError::Implementation`] in any other case.
-    fn get_file(&self, path: &Path, current_dir: Dir, symlink_resolution: bool) -> Result<TypeWithFile<Dir>, Error<Dir::FsError>>
+    fn get_file(
+        &self,
+        path: &Path,
+        current_dir: Dir,
+        symlink_resolution: bool,
+    ) -> Result<TypeWithFile<Dir>, Error<Dir::FsError>>
     where
         Self: Sized,
     {
-        /// Auxiliary function used to store the visited symlinks during the pathname resolution to detect loops caused bt symbolic
-        /// links.
+        /// Auxiliary function used to store the visited symlinks during the pathname resolution to detect loops caused
+        /// bt symbolic links.
         fn path_resolution<FSE: core::error::Error, D: Directory<FsError = FSE>>(
             fs: &impl FileSystem<D>,
             path: &Path,
@@ -151,7 +161,9 @@ pub trait FileSystem<Dir: Directory> {
                         if pos == Position::First || pos == Position::Only {
                             current_dir = fs.double_slash_root()?;
                         } else {
-                            unreachable!("The double slash root directory cannot be encountered during the pathname resolution");
+                            unreachable!(
+                                "The double slash root directory cannot be encountered during the pathname resolution"
+                            );
                         }
                     },
                     Component::CurDir => {},
@@ -160,7 +172,8 @@ pub trait FileSystem<Dir: Directory> {
                     },
                     Component::Normal(filename) => {
                         let children = current_dir.entries()?;
-                        let Some(entry) = children.into_iter().find(|entry| entry.filename == filename).map(|entry| entry.file)
+                        let Some(entry) =
+                            children.into_iter().find(|entry| entry.filename == filename).map(|entry| entry.file)
                         else {
                             return Err(Error::Fs(FsError::NotFound(filename.to_string())));
                         };
@@ -171,17 +184,18 @@ pub trait FileSystem<Dir: Directory> {
                                 current_dir = dir;
                             },
 
-                            // This case is the symbolic link resolution, which is the one described as **not** being the one
-                            // explained in the following paragraph from the POSIX definition of the pathname resolution:
+                            // This case is the symbolic link resolution, which is the one described as **not** being
+                            // the one explained in the following paragraph from the POSIX
+                            // definition of the pathname resolution:
                             //
-                            // If a symbolic link is encountered during pathname resolution, the behavior shall depend on whether
-                            // the pathname component is at the end of the pathname and on the function
-                            // being performed. If all of the following are true, then pathname
-                            // resolution is complete:
+                            // If a symbolic link is encountered during pathname resolution, the behavior shall depend
+                            // on whether the pathname component is at the end of the
+                            // pathname and on the function being performed. If all of the
+                            // following are true, then pathname resolution is complete:
                             //   1. This is the last pathname component of the pathname.
                             //   2. The pathname has no trailing <slash>.
-                            //   3. The function is required to act on the symbolic link itself, or certain arguments direct that
-                            //      the function act on the symbolic link itself.
+                            //   3. The function is required to act on the symbolic link itself, or certain arguments
+                            //      direct that the function act on the symbolic link itself.
                             TypeWithFile::SymbolicLink(symlink)
                                 if (pos != Position::Last && pos != Position::Only && !trailing_blackslash)
                                     || symlink_resolution =>
@@ -255,7 +269,9 @@ pub trait FileSystem<Dir: Directory> {
             return Err(Error::Path(PathError::AbsolutePathRequired(path.to_string())));
         }
 
-        let Some(parent_dir_path) = path.parent() else { return Err(Error::Fs(FsError::EntryAlreadyExist(path.to_string()))) };
+        let Some(parent_dir_path) = path.parent() else {
+            return Err(Error::Fs(FsError::EntryAlreadyExist(path.to_string())));
+        };
         let parent_dir_file = self.get_file(&parent_dir_path, self.root()?, true)?;
         let mut parent_dir = match parent_dir_file {
             TypeWithFile::Directory(dir) => dir,
@@ -297,7 +313,9 @@ pub trait FileSystem<Dir: Directory> {
             return Err(Error::Path(PathError::AbsolutePathRequired(path.to_string())));
         }
 
-        let Some(parent_dir_path) = path.parent() else { return Err(Error::Fs(FsError::EntryAlreadyExist(path.to_string()))) };
+        let Some(parent_dir_path) = path.parent() else {
+            return Err(Error::Fs(FsError::EntryAlreadyExist(path.to_string())));
+        };
         let parent_dir_file = self.get_file(&parent_dir_path, self.root()?, true)?;
         let mut parent_dir = match parent_dir_file {
             TypeWithFile::Directory(dir) => dir,
@@ -347,8 +365,8 @@ pub trait ReadOnlyFileSystem<RoDir: ReadOnlyDirectory> {
     ///
     /// Returns the file of this filesystem corresponding to the given `path`, starting at the `current_dir`.
     ///
-    /// `symlink_resolution` indicates whether the function calling this method is required to act on the symbolic link itself, or
-    /// certain arguments direct that the function act on the symbolic link itself.
+    /// `symlink_resolution` indicates whether the function calling this method is required to act on the symbolic link
+    /// itself, or certain arguments direct that the function act on the symbolic link itself.
     ///
     /// # Errors
     ///
@@ -360,7 +378,8 @@ pub trait ReadOnlyFileSystem<RoDir: ReadOnlyDirectory> {
     ///
     /// Returns an [`Loop`](FsError::Loop) error if a loop is found during the symbolic link resolution.
     ///
-    /// Returns an [`NameTooLong`](FsError::NameTooLong) error if the complete path contains more than [`PATH_MAX`] characters.
+    /// Returns an [`NameTooLong`](FsError::NameTooLong) error if the complete path contains more than [`PATH_MAX`]
+    /// characters.
     ///
     /// Returns an [`NoEnt`](FsError::NoEnt) error if an encountered symlink points to a non-existing file.
     ///
@@ -374,8 +393,8 @@ pub trait ReadOnlyFileSystem<RoDir: ReadOnlyDirectory> {
     where
         Self: Sized,
     {
-        /// Auxiliary function used to store the visited symlinks during the pathname resolution to detect loops caused bt symbolic
-        /// links.
+        /// Auxiliary function used to store the visited symlinks during the pathname resolution to detect loops caused
+        /// bt symbolic links.
         fn path_resolution<FSE: core::error::Error, D: ReadOnlyDirectory<FsError = FSE>>(
             fs: &impl ReadOnlyFileSystem<D>,
             path: &Path,
@@ -407,7 +426,9 @@ pub trait ReadOnlyFileSystem<RoDir: ReadOnlyDirectory> {
                         if pos == Position::First || pos == Position::Only {
                             current_dir = fs.double_slash_root()?;
                         } else {
-                            unreachable!("The double slash root directory cannot be encountered during the pathname resolution");
+                            unreachable!(
+                                "The double slash root directory cannot be encountered during the pathname resolution"
+                            );
                         }
                     },
                     Component::CurDir => {},
@@ -416,7 +437,8 @@ pub trait ReadOnlyFileSystem<RoDir: ReadOnlyDirectory> {
                     },
                     Component::Normal(filename) => {
                         let children = current_dir.entries()?;
-                        let Some(entry) = children.into_iter().find(|entry| entry.filename == filename).map(|entry| entry.file)
+                        let Some(entry) =
+                            children.into_iter().find(|entry| entry.filename == filename).map(|entry| entry.file)
                         else {
                             return Err(Error::Fs(FsError::NotFound(filename.to_string())));
                         };
@@ -427,17 +449,18 @@ pub trait ReadOnlyFileSystem<RoDir: ReadOnlyDirectory> {
                                 current_dir = dir;
                             },
 
-                            // This case is the symbolic link resolution, which is the one described as **not** being the one
-                            // explained in the following paragraph from the POSIX definition of the pathname resolution:
+                            // This case is the symbolic link resolution, which is the one described as **not** being
+                            // the one explained in the following paragraph from the POSIX
+                            // definition of the pathname resolution:
                             //
-                            // If a symbolic link is encountered during pathname resolution, the behavior shall depend on whether
-                            // the pathname component is at the end of the pathname and on the function
-                            // being performed. If all of the following are true, then pathname
-                            // resolution is complete:
+                            // If a symbolic link is encountered during pathname resolution, the behavior shall depend
+                            // on whether the pathname component is at the end of the
+                            // pathname and on the function being performed. If all of the
+                            // following are true, then pathname resolution is complete:
                             //   1. This is the last pathname component of the pathname.
                             //   2. The pathname has no trailing <slash>.
-                            //   3. The function is required to act on the symbolic link itself, or certain arguments direct that
-                            //      the function act on the symbolic link itself.
+                            //   3. The function is required to act on the symbolic link itself, or certain arguments
+                            //      direct that the function act on the symbolic link itself.
                             ReadOnlyTypeWithFile::SymbolicLink(symlink)
                                 if (pos != Position::Last && pos != Position::Only)
                                     || !trailing_blackslash

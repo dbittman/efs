@@ -2,12 +2,12 @@
 //!
 //! See the [OSdev wiki](https://wiki.osdev.org/Ext2#Block_Group_Descriptor_Table) and the [*The Second Extended Filesystem* book](https://www.nongnu.org/ext2-doc/ext2.html) for more information.
 
-use super::error::Ext2Error;
-use super::superblock::{Superblock, SUPERBLOCK_SIZE, SUPERBLOCK_START_BYTE};
 use super::Ext2;
+use super::error::Ext2Error;
+use super::superblock::{SUPERBLOCK_SIZE, SUPERBLOCK_START_BYTE, Superblock};
 use crate::cache::Cache;
-use crate::dev::sector::Address;
 use crate::dev::Device;
+use crate::dev::sector::Address;
 use crate::error::Error;
 use crate::fs::error::FsError;
 
@@ -59,8 +59,8 @@ impl BlockGroupDescriptor {
     ///
     /// # Errors
     ///
-    /// Returns an [`NonExistingBlockGroup`](Ext2Error::NonExistingBlockGroup) if `n` is greater than the block group count of this
-    /// device.
+    /// Returns an [`NonExistingBlockGroup`](Ext2Error::NonExistingBlockGroup) if `n` is greater than the block group
+    /// count of this device.
     pub const fn starting_addr(superblock: &Superblock, n: u32) -> Result<Address, Error<Ext2Error>> {
         let block_group_count = superblock.block_group_count();
         if block_group_count <= n {
@@ -75,8 +75,8 @@ impl BlockGroupDescriptor {
     ///
     /// # Errors
     ///
-    /// Returns an [`NonExistingBlockGroup`](Ext2Error::NonExistingBlockGroup) if `n` is greater than the block group count of this
-    /// device.
+    /// Returns an [`NonExistingBlockGroup`](Ext2Error::NonExistingBlockGroup) if `n` is greater than the block group
+    /// count of this device.
     ///
     /// Returns an [`Error::Device`] if the device cannot be read.
     pub fn parse<Dev: Device<u8, Ext2Error>>(fs: &Ext2<Dev>, n: u32) -> Result<Self, Error<Ext2Error>> {
@@ -129,7 +129,7 @@ mod test {
     use std::fs::File;
     use std::time;
 
-    use super::{BlockGroupDescriptor, BLOCK_GROUP_DESCRIPTOR_SIZE};
+    use super::{BLOCK_GROUP_DESCRIPTOR_SIZE, BlockGroupDescriptor};
     use crate::fs::ext2::Ext2;
     use crate::tests::{copy_file, new_device_id};
 
@@ -197,7 +197,7 @@ mod test {
     }
 
     mod generated {
-        use crate::tests::{generate_fs_test, PostCheck};
+        use crate::tests::{PostCheck, generate_fs_test};
 
         generate_fs_test!(parse_first_block_group_descriptor_base, "./tests/fs/ext2/base.ext2", PostCheck::Ext);
         generate_fs_test!(parse_first_block_group_descriptor_extended, "./tests/fs/ext2/extended.ext2", PostCheck::Ext);

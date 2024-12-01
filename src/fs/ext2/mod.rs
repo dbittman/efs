@@ -52,39 +52,40 @@
 //!
 //! Important things to know about ext2:
 //!
-//! - The [`Device`] is splitted in contiguous [`Block`](block::Block)s that have all the same size in bytes. This is **NOT** the
-//!   block as in block device, here "block" always refers to ext2's blocks. They start at 0, so the `n`th block will start at the
-//!   adress `n * block_size`.
+//! - The [`Device`] is splitted in contiguous [`Block`](block::Block)s that have all the same size in bytes. This is
+//!   **NOT** the block as in block device, here "block" always refers to ext2's blocks. They start at 0, so the `n`th
+//!   block will start at the adress `n * block_size`.
 //!
-//! - The [superblock](Superblock) contains all the important filesystem metadata, such as the total number of blocks, the number of
-//!   free blocks, the state of the filesystem, the supported features, etc.
+//! - The [superblock](Superblock) contains all the important filesystem metadata, such as the total number of blocks,
+//!   the number of free blocks, the state of the filesystem, the supported features, etc.
 //!
-//! - The data blocks are splitted in block groups containing the same amount of blocks. Each block group is descriped by a [block
-//!   group descriptor](BlockGroupDescriptor) containing all the relevant metadata about its block group.
+//! - The data blocks are splitted in block groups containing the same amount of blocks. Each block group is descriped
+//!   by a [block group descriptor](BlockGroupDescriptor) containing all the relevant metadata about its block group.
 //!
-//! - Each file is described by an [inode](Inode) containing all the metadata of the file and pointers to the data blocks. See the
-//!   documentation of the [`Inode`] structure for more information.
+//! - Each file is described by an [inode](Inode) containing all the metadata of the file and pointers to the data
+//!   blocks. See the documentation of the [`Inode`] structure for more information.
 //!
-//! - The block and inode bitmaps keep track of which blocks and inodes are currently used or not. This is useful to find empty
-//!   space when writting in a file or allocating a new file.
+//! - The block and inode bitmaps keep track of which blocks and inodes are currently used or not. This is useful to
+//!   find empty space when writting in a file or allocating a new file.
 //!
 //! ## Concurrency
 //!
-//! When instancing a new instance of [`Ext2Fs`], the principal structure to manipulate an ext2 filesystem, you can choose whether
-//! to enable caches or not.
+//! When instancing a new instance of [`Ext2Fs`], the principal structure to manipulate an ext2 filesystem, you can
+//! choose whether to enable caches or not.
 //!
-//! - When the cache is not enabled, all the structures will be read whenever needed to make sure no change has been made by an
-//!   external program. Only the [superblock](Superblock) will be kept in memory because of its high usage: it will only be updated
-//!   before each write operation.
+//! - When the cache is not enabled, all the structures will be read whenever needed to make sure no change has been
+//!   made by an external program. Only the [superblock](Superblock) will be kept in memory because of its high usage:
+//!   it will only be updated before each write operation.
 //!
 //! - When the cache is enabled the [superblock](Superblock), the [inodes](Inode), the [block group
-//!   descriptors](BlockGroupDescriptor) and the [directories](Directory) will be cached so that the program does not need to read
-//!   the current state of the filesystem to know the content of those structures.
+//!   descriptors](BlockGroupDescriptor) and the [directories](Directory) will be cached so that the program does not
+//!   need to read the current state of the filesystem to know the content of those structures.
 //!
-//! Enabling the cache will consume more memory but can greatly increase speed when dealing with a high number of requests.
+//! Enabling the cache will consume more memory but can greatly increase speed when dealing with a high number of
+//! requests.
 //!
-//! The cache **CANNOT** be used if an external program is writing on this filesystem at the same time. When using the cache, you
-//! have to make sure that all the write operations are made by this library.
+//! The cache **CANNOT** be used if an external program is writing on this filesystem at the same time. When using the
+//! cache, you have to make sure that all the write operations are made by this library.
 
 use alloc::borrow::ToOwned;
 use alloc::vec;
@@ -96,15 +97,15 @@ use file::{BlockDevice, CharacterDevice, Fifo, Socket};
 
 use self::block_group::BlockGroupDescriptor;
 use self::error::Ext2Error;
-use self::file::{Directory, Regular, SymbolicLink, SYMBOLIC_LINK_INODE_STORE_LIMIT};
-use self::inode::{Flags, Inode, TypePermissions, ROOT_DIRECTORY_INODE};
-use self::superblock::{ReadOnlyFeatures, RequiredFeatures, Superblock, SUPERBLOCK_START_BYTE};
-use super::structures::bitmap::Bitmap;
+use self::file::{Directory, Regular, SYMBOLIC_LINK_INODE_STORE_LIMIT, SymbolicLink};
+use self::inode::{Flags, Inode, ROOT_DIRECTORY_INODE, TypePermissions};
+use self::superblock::{ReadOnlyFeatures, RequiredFeatures, SUPERBLOCK_START_BYTE, Superblock};
 use super::FileSystem;
+use super::structures::bitmap::Bitmap;
 use crate::arch::{u32_to_usize, usize_to_u64};
 use crate::celled::Celled;
-use crate::dev::sector::Address;
 use crate::dev::Device;
+use crate::dev::sector::Address;
 use crate::error::Error;
 use crate::file::{Type, TypeWithFile};
 use crate::fs::error::FsError;
@@ -154,7 +155,8 @@ pub struct Ext2<Dev: Device<u8, Ext2Error>> {
 }
 
 impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
-    /// Creates a new [`Ext2`] object from the given device that should contain an ext2 filesystem and a given device ID.
+    /// Creates a new [`Ext2`] object from the given device that should contain an ext2 filesystem and a given device
+    /// ID.
     ///
     /// # Errors
     ///
@@ -167,13 +169,15 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
         Self::new_celled(celled_device, device_id, cache)
     }
 
-    /// Creates a new [`Ext2`] object from the given celled device that should contain an ext2 filesystem and a given device ID.
+    /// Creates a new [`Ext2`] object from the given celled device that should contain an ext2 filesystem and a given
+    /// device ID.
     ///
     /// # Errors
     ///
     /// Returns an [`Error::Device`] if the device cannot be read.
     ///
-    /// Returns [`Ext2Error::UnsupportedFeature`] if the filesystem requires a feature that is unsupported by this implementation.
+    /// Returns [`Ext2Error::UnsupportedFeature`] if the filesystem requires a feature that is unsupported by this
+    /// implementation.
     ///
     /// Returns [`Ext2Error::BadMagic`] if the magic number found in the superblock is not equal to
     /// [`EXT2_SIGNATURE`](superblock::EXT2_SIGNATURE).
@@ -182,9 +186,13 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
 
         if let Ok(required_features) = superblock.required_features() {
             if required_features.contains(RequiredFeatures::COMPRESSION) {
-                return Err(Error::Fs(FsError::Implementation(Ext2Error::UnsupportedFeature("compression".to_owned()))));
+                return Err(Error::Fs(FsError::Implementation(Ext2Error::UnsupportedFeature(
+                    "compression".to_owned(),
+                ))));
             } else if required_features.contains(RequiredFeatures::JOURNAL_DEV) {
-                return Err(Error::Fs(FsError::Implementation(Ext2Error::UnsupportedFeature("journal_dev".to_owned()))));
+                return Err(Error::Fs(FsError::Implementation(Ext2Error::UnsupportedFeature(
+                    "journal_dev".to_owned(),
+                ))));
             } else if required_features.contains(RequiredFeatures::META_BG) {
                 return Err(Error::Fs(FsError::Implementation(Ext2Error::UnsupportedFeature("meta_bg".to_owned()))));
             } else if required_features.contains(RequiredFeatures::RECOVER) {
@@ -289,7 +297,8 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
         let superblock = self.superblock();
 
         let block_group_descriptor = BlockGroupDescriptor::parse(self, block_group_number)?;
-        let starting_addr = Address::new(u32_to_usize(block_group_descriptor.block_bitmap) * u32_to_usize(superblock.block_size()));
+        let starting_addr =
+            Address::new(u32_to_usize(block_group_descriptor.block_bitmap) * u32_to_usize(superblock.block_size()));
         let length = u32_to_usize(superblock.base().blocks_per_group / 8);
 
         Bitmap::new(self.device.clone(), starting_addr, length)
@@ -301,7 +310,8 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
     ///
     /// # Errors
     ///
-    /// Returns an [`NotEnoughFreeBlocks`](Ext2Error::NotEnoughFreeBlocks) error if requested more free blocks than available.
+    /// Returns an [`NotEnoughFreeBlocks`](Ext2Error::NotEnoughFreeBlocks) error if requested more free blocks than
+    /// available.
     ///
     /// Returns an [`Error::Device`] if the device cannot be read.
     pub fn free_blocks_offset(&self, n: u32, start_block_group: u32) -> Result<Vec<u32>, Error<Ext2Error>> {
@@ -366,17 +376,18 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
         self.free_blocks_offset(n, 0)
     }
 
-    /// Sets all the given `blocks` as `usage` in their bitmap, and updates the block group descriptors and the superblock
-    /// accordingly.
+    /// Sets all the given `blocks` as `usage` in their bitmap, and updates the block group descriptors and the
+    /// superblock accordingly.
     ///
     /// # Errors
     ///
     /// Returns an [`Error::Device`] if the device cannot be read/written.
     ///
-    /// Returns an [`BlockAlreadyInUse`](Ext2Error::BlockAlreadyInUse) error if it tries to allocate a block that was already in
-    /// use.
+    /// Returns an [`BlockAlreadyInUse`](Ext2Error::BlockAlreadyInUse) error if it tries to allocate a block that was
+    /// already in use.
     ///
-    /// Returns an [`BlockAlreadyFree`](Ext2Error::BlockAlreadyFree) error if it tries to deallocate a block that was already free.
+    /// Returns an [`BlockAlreadyFree`](Ext2Error::BlockAlreadyFree) error if it tries to deallocate a block that was
+    /// already free.
     ///
     /// Returns an [`NonExistingBlock`](Ext2Error::NonExistingBlock) error if a given block does not exist.
     ///
@@ -428,7 +439,13 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
                 if self.superblock().block_group(*block) != block_group_number {
                     // SAFETY: the state of the filesystem stays coherent within this function
                     unsafe {
-                        update_block_group(self, block_group_number, number_blocks_changed_in_group, &mut bitmap, usage)?;
+                        update_block_group(
+                            self,
+                            block_group_number,
+                            number_blocks_changed_in_group,
+                            &mut bitmap,
+                            usage,
+                        )?;
                     };
 
                     number_blocks_changed_in_group = 0;
@@ -507,12 +524,14 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
     ///
     /// # Errors
     ///
-    /// Returns the same errors as [`BlockGroupDescriptor::parse`](block_group/struct.BlockGroupDescriptor.html#method.parse).
+    /// Returns the same errors as
+    /// [`BlockGroupDescriptor::parse`](block_group/struct.BlockGroupDescriptor.html#method.parse).
     pub fn get_inode_bitmap(&self, block_group_number: u32) -> Result<Bitmap<u8, Ext2Error, Dev>, Error<Ext2Error>> {
         let superblock = self.superblock();
 
         let block_group_descriptor = BlockGroupDescriptor::parse(self, block_group_number)?;
-        let starting_addr = Address::new(u32_to_usize(block_group_descriptor.inode_bitmap) * u32_to_usize(superblock.block_size()));
+        let starting_addr =
+            Address::new(u32_to_usize(block_group_descriptor.inode_bitmap) * u32_to_usize(superblock.block_size()));
         let length = u32_to_usize(superblock.base().inodes_per_group / 8);
 
         Bitmap::new(self.device.clone(), starting_addr, length)
@@ -540,7 +559,10 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
                         // SAFETY: a block size is usually at most thousands of bytes, which is smaller than `u32::MAX`
                         let index = unsafe { u32::try_from(index).unwrap_unchecked() };
 
-                        return Ok(block_group_number * self.superblock().base().inodes_per_group + 8 * index + bit + 1);
+                        return Ok(block_group_number * self.superblock().base().inodes_per_group
+                            + 8 * index
+                            + bit
+                            + 1);
                     }
                 }
             }
@@ -602,7 +624,8 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
         // SAFETY: 0 <= inode_offset < 8
         let inode_offset = unsafe { u8::try_from((inode_number - 1) % 8).unwrap_unchecked() };
         let bitmap_inode_address = Address::new(
-            usize::try_from(bitmap_starting_byte + inode_index).expect("Could not fit the starting byte of the inode on a usize"),
+            usize::try_from(bitmap_starting_byte + inode_index)
+                .expect("Could not fit the starting byte of the inode on a usize"),
         );
 
         let mut device = self.device.lock();
@@ -668,8 +691,8 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
         unsafe { Inode::write_on_device(self, inode_number, inode) }
     }
 
-    /// Decreases the hard link count of this inode by 1. If the hard link count reaches 0, sets the usage of this inode as `false`
-    /// and deallocates every block used by this inode.
+    /// Decreases the hard link count of this inode by 1. If the hard link count reaches 0, sets the usage of this inode
+    /// as `false` and deallocates every block used by this inode.
     ///
     /// # Errors
     ///
@@ -689,7 +712,8 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
             let file_type = inode.file_type().map_err(FsError::Implementation)?;
             if file_type == Type::Regular
                 || file_type == Type::Directory
-                || (file_type == Type::SymbolicLink && inode.data_size() >= usize_to_u64(SYMBOLIC_LINK_INODE_STORE_LIMIT))
+                || (file_type == Type::SymbolicLink
+                    && inode.data_size() >= usize_to_u64(SYMBOLIC_LINK_INODE_STORE_LIMIT))
             {
                 let indirected_blocks = inode.indirected_blocks(self)?;
                 self.deallocate_blocks(&indirected_blocks.flatten_data_blocks())?;
@@ -714,8 +738,8 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
 
     /// Returns a usable time for creation, modification and deletion times (which is always encoded on a [`u32`]).
     ///
-    /// This function will returns the current time if it is available through [`Device::now`], or the last mount time of the
-    /// filesystem otherwise.
+    /// This function will returns the current time if it is available through [`Device::now`], or the last mount time
+    /// of the filesystem otherwise.
     #[must_use]
     pub fn get_time(&self) -> u32 {
         let mut device = self.device.lock();
@@ -739,7 +763,8 @@ impl<Dev: Device<u8, Ext2Error>> Clone for Ext2Fs<Dev> {
 }
 
 impl<Dev: Device<u8, Ext2Error>> Ext2Fs<Dev> {
-    /// Creates a new [`Ext2Fs`] object from the given device that should contain an ext2 filesystem and a given device ID.
+    /// Creates a new [`Ext2Fs`] object from the given device that should contain an ext2 filesystem and a given device
+    /// ID.
     ///
     /// # Errors
     ///
@@ -751,7 +776,8 @@ impl<Dev: Device<u8, Ext2Error>> Ext2Fs<Dev> {
         Ok(Self(Celled::new(Ext2::new(device, device_id, cache)?)))
     }
 
-    /// Creates a new [`Ext2Fs`] object from the given celled device that should contain an ext2 filesystem and a given device ID.
+    /// Creates a new [`Ext2Fs`] object from the given celled device that should contain an ext2 filesystem and a given
+    /// device ID.
     ///
     /// # Errors
     ///
@@ -773,7 +799,8 @@ impl<Dev: Device<u8, Ext2Error>> Ext2Fs<Dev> {
     ///
     /// # Errors
     ///
-    /// Returns an [`BadFileType`](Ext2Error::BadFileType) if the type of the file pointed by the given inode is ill-formed.
+    /// Returns an [`BadFileType`](Ext2Error::BadFileType) if the type of the file pointed by the given inode is
+    /// ill-formed.
     ///
     /// Otherwise, returns the same errors as [`Inode::parse`].
     pub fn file(&self, inode_number: u32) -> Result<Ext2TypeWithFile<Dev>, Error<Ext2Error>> {
@@ -785,7 +812,9 @@ impl<Dev: Device<u8, Ext2Error>> Ext2Fs<Dev> {
             Type::Directory => Ok(TypeWithFile::Directory(Directory::new(&self.clone(), inode_number)?)),
             Type::SymbolicLink => Ok(TypeWithFile::SymbolicLink(SymbolicLink::new(&self.clone(), inode_number)?)),
             Type::Fifo => Ok(TypeWithFile::Fifo(Fifo::new(&self.clone(), inode_number)?)),
-            Type::CharacterDevice => Ok(TypeWithFile::CharacterDevice(CharacterDevice::new(&self.clone(), inode_number)?)),
+            Type::CharacterDevice => {
+                Ok(TypeWithFile::CharacterDevice(CharacterDevice::new(&self.clone(), inode_number)?))
+            },
             Type::BlockDevice => Ok(TypeWithFile::BlockDevice(BlockDevice::new(&self.clone(), inode_number)?)),
             Type::Socket => Ok(TypeWithFile::Socket(Socket::new(&self.clone(), inode_number)?)),
         }
@@ -820,15 +849,15 @@ mod test {
 
     use itertools::Itertools;
 
-    use super::inode::ROOT_DIRECTORY_INODE;
     use super::Ext2;
+    use super::inode::ROOT_DIRECTORY_INODE;
     use crate::arch::u32_to_usize;
     use crate::file::{Directory, SymbolicLink, Type, TypeWithFile};
+    use crate::fs::FileSystem;
+    use crate::fs::ext2::Ext2Fs;
     use crate::fs::ext2::block::Block;
     use crate::fs::ext2::block_group::BlockGroupDescriptor;
     use crate::fs::ext2::inode::{Flags, Inode, TypePermissions};
-    use crate::fs::ext2::Ext2Fs;
-    use crate::fs::FileSystem;
     use crate::io::{Read, Write};
     use crate::path::{Path, UnixStr};
     use crate::permissions::Permissions;
@@ -845,7 +874,9 @@ mod test {
         let ext2 = Ext2Fs::new(file, new_device_id(), false).unwrap();
 
         let TypeWithFile::Directory(root) = ext2.file(ROOT_DIRECTORY_INODE).unwrap() else { panic!() };
-        let Some(TypeWithFile::Regular(mut big_file)) = root.entry(UnixStr::new("big_file").unwrap()).unwrap() else { panic!() };
+        let Some(TypeWithFile::Regular(mut big_file)) = root.entry(UnixStr::new("big_file").unwrap()).unwrap() else {
+            panic!()
+        };
 
         let mut buf = [0_u8; 1024];
         big_file.read(&mut buf).unwrap();
@@ -855,7 +886,10 @@ mod test {
     fn get_bitmap(file: File) {
         let ext2 = Ext2::new(file, new_device_id(), false).unwrap();
 
-        assert_eq!(ext2.get_block_bitmap(0).unwrap().length() * 8, u32_to_usize(ext2.superblock().base().blocks_per_group));
+        assert_eq!(
+            ext2.get_block_bitmap(0).unwrap().length() * 8,
+            u32_to_usize(ext2.superblock().base().blocks_per_group)
+        );
     }
 
     fn free_block_numbers(file: File) {
@@ -1015,14 +1049,21 @@ mod test {
         ex1_txt.write_all(b"Hello earth!\n").unwrap();
 
         let TypeWithFile::SymbolicLink(mut boo) = folder
-            .add_entry(UnixStr::new("boo.txt").unwrap(), Type::SymbolicLink, Permissions::from_bits_retain(0o777), Uid(0), Gid(0))
+            .add_entry(
+                UnixStr::new("boo.txt").unwrap(),
+                Type::SymbolicLink,
+                Permissions::from_bits_retain(0o777),
+                Uid(0),
+                Gid(0),
+            )
             .unwrap()
         else {
             panic!("Could not create a symbolic link");
         };
         boo.set_pointed_file("../baz.txt").unwrap();
 
-        let TypeWithFile::Regular(mut baz_txt) = fs.get_file(&Path::from_str("/folder/boo.txt").unwrap(), root, true).unwrap()
+        let TypeWithFile::Regular(mut baz_txt) =
+            fs.get_file(&Path::from_str("/folder/boo.txt").unwrap(), root, true).unwrap()
         else {
             panic!("Could not retrieve baz.txt from boo.txt");
         };

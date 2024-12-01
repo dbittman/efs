@@ -8,11 +8,11 @@ use alloc::vec::Vec;
 use core::fmt::Debug;
 use core::mem::size_of;
 
-use super::error::Ext2Error;
 use super::Ext2;
+use super::error::Ext2Error;
 use crate::arch::u32_to_usize;
-use crate::dev::sector::Address;
 use crate::dev::Device;
+use crate::dev::sector::Address;
 use crate::error::Error;
 use crate::file::Type;
 use crate::fs::error::FsError;
@@ -152,19 +152,22 @@ impl Entry {
     /// Must ensure that a directory entry is located at `starting_addr`.
     ///
     /// Must also ensure the requirements of [`Device::read_at`].
-    pub unsafe fn parse<Dev: Device<u8, Ext2Error>>(fs: &Ext2<Dev>, starting_addr: Address) -> Result<Self, Error<Ext2Error>> {
+    pub unsafe fn parse<Dev: Device<u8, Ext2Error>>(
+        fs: &Ext2<Dev>,
+        starting_addr: Address,
+    ) -> Result<Self, Error<Ext2Error>> {
         let mut device = fs.device.lock();
 
         let header = device.read_at::<Header>(starting_addr)?;
         let buffer = device.read_at::<[u8; 256]>(starting_addr + size_of::<Header>())?;
 
-        // As after an inode has been removed then added with a different name the previous name is not rewritten entirely, it is
-        // needed to add manually the `<NUL>` at the end of the vector.
+        // As after an inode has been removed then added with a different name the previous name is not rewritten
+        // entirely, it is needed to add manually the `<NUL>` at the end of the vector.
         let mut name = String::from_utf8(buffer.get_unchecked(..u32_to_usize(header.name_len.into())).to_vec())
             .map_err(|_err| Error::Fs(FsError::Implementation(Ext2Error::BadString)))?;
         name.push('\0');
-        let c_name =
-            CString::from_vec_with_nul(name.into()).map_err(|_err| Error::Fs(FsError::Implementation(Ext2Error::BadString)))?;
+        let c_name = CString::from_vec_with_nul(name.into())
+            .map_err(|_err| Error::Fs(FsError::Implementation(Ext2Error::BadString)))?;
         Ok(Self {
             inode: header.inode,
             rec_len: header.rec_len,
@@ -178,12 +181,12 @@ impl Entry {
     ///
     /// # Panics
     ///
-    /// Cannot panic on an entry obtained with [`parse`](struct.Entry.html#method.parse): can only panic by creating by hand a
-    /// ill-formed directory entry (whose length is greater than [`u16::MAX`]).
+    /// Cannot panic on an entry obtained with [`parse`](struct.Entry.html#method.parse): can only panic by creating by
+    /// hand a ill-formed directory entry (whose length is greater than [`u16::MAX`]).
     #[must_use]
     pub fn minimal_size(&self) -> u16 {
-        let minimal_size =
-            u16::try_from(size_of::<Header>() + self.name.as_bytes_with_nul().len()).expect("Ill-formed directory entry");
+        let minimal_size = u16::try_from(size_of::<Header>() + self.name.as_bytes_with_nul().len())
+            .expect("Ill-formed directory entry");
         minimal_size + (4 - ((minimal_size - 1) % 4 + 1))
     }
 
@@ -191,11 +194,13 @@ impl Entry {
     ///
     /// # Panics
     ///
-    /// Cannot panic on an entry obtained with [`parse`](struct.Entry.html#method.parse): can only panic by creating by hand a
-    /// ill-formed directory entry (whose length is greater than [`u16::MAX`]).
+    /// Cannot panic on an entry obtained with [`parse`](struct.Entry.html#method.parse): can only panic by creating by
+    /// hand a ill-formed directory entry (whose length is greater than [`u16::MAX`]).
     #[must_use]
     pub fn free_space(&self) -> u16 {
-        self.rec_len - u16::try_from(size_of::<Header>() + self.name.as_bytes_with_nul().len()).expect("Ill-formed directory entry")
+        self.rec_len
+            - u16::try_from(size_of::<Header>() + self.name.as_bytes_with_nul().len())
+                .expect("Ill-formed directory entry")
     }
 
     /// Returns this entry as bytes.

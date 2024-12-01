@@ -68,7 +68,8 @@ impl PostCheck {
                     Ok(())
                 } else {
                     Err(Error::IO(
-                        String::from_utf8(output.stdout).expect("Could not convert e2fsck stderr to a valid UTF-8 string"),
+                        String::from_utf8(output.stdout)
+                            .expect("Could not convert e2fsck stderr to a valid UTF-8 string"),
                     ))
                 }
             },

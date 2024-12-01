@@ -27,13 +27,17 @@ pub enum DevError {
 
     /// An error returned when an operation could not be completed because an “end of file” was reached prematurely.
     ///
-    /// This typically means that an operation could only succeed if it read a particular number of bytes but only a smaller number
-    /// of bytes could be read.
-    #[display("Unexpected End of File: an operation could not be completed because an \"end of file\" was reached prematurely")]
+    /// This typically means that an operation could only succeed if it read a particular number of bytes but only a
+    /// smaller number of bytes could be read.
+    #[display(
+        "Unexpected End of File: an operation could not be completed because an \"end of file\" was reached prematurely"
+    )]
     UnexpectedEof,
 
-    /// An error returned when an operation could not be completed because a call to [`write`](crate::io::Write::write) returned
-    /// `Ok(0)`.
-    #[display("Write Zero: An error returned when an operation could not be completed because a call to write returned Ok(0)")]
+    /// An error returned when an operation could not be completed because a call to [`write`](crate::io::Write::write)
+    /// returned `Ok(0)`.
+    #[display(
+        "Write Zero: An error returned when an operation could not be completed because a call to write returned Ok(0)"
+    )]
     WriteZero,
 }

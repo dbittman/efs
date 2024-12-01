@@ -12,27 +12,28 @@ use bitflags::Flags;
 use itertools::Itertools;
 use spin::Mutex;
 
+use super::Ext2Fs;
 use super::directory::{self, Entry, FileType};
 use super::error::Ext2Error;
 use super::inode::{Inode, TypePermissions};
-use super::Ext2Fs;
 use crate::arch::{u32_to_usize, u64_to_usize, usize_to_u64};
+use crate::dev::Device;
 use crate::dev::error::DevError;
 use crate::dev::sector::Address;
-use crate::dev::Device;
 use crate::error::Error;
 use crate::file::{self, DirectoryEntry, Stat, Type, TypeWithFile};
+use crate::fs::PATH_MAX;
 use crate::fs::error::FsError;
 use crate::fs::ext2::block::Block;
 use crate::fs::ext2::inode::DIRECT_BLOCK_POINTER_COUNT;
 use crate::fs::structures::indirection::IndirectedBlocks;
-use crate::fs::PATH_MAX;
 use crate::io::{Base, Read, Seek, SeekFrom, Write};
-use crate::path::{UnixStr, CUR_DIR, PARENT_DIR};
+use crate::path::{CUR_DIR, PARENT_DIR, UnixStr};
 use crate::permissions::Permissions;
 use crate::types::{Blkcnt, Blksize, Gid, Ino, Mode, Nlink, Off, Time, Timespec, Uid};
 
-/// Limit in bytes for the length of a pointed path of a symbolic link to be store in an inode and not in a separate data block.
+/// Limit in bytes for the length of a pointed path of a symbolic link to be store in an inode and not in a separate
+/// data block.
 pub const SYMBOLIC_LINK_INODE_STORE_LIMIT: usize = 60;
 
 /// General file implementation.
@@ -140,14 +141,17 @@ impl<Dev: Device<u8, Ext2Error>> File<Dev> {
             0
         } else {
             // SAFETY: the result is a u32 as `size` is valid (it has been checked)
-            unsafe { 1 + u32::try_from(size.saturating_sub(1) / u64::from(fs.superblock().block_size())).unwrap_unchecked() }
+            unsafe {
+                1 + u32::try_from(size.saturating_sub(1) / u64::from(fs.superblock().block_size())).unwrap_unchecked()
+            }
         };
         let indirection_blocks = self.inode.indirected_blocks(&fs)?;
 
         let mut new_indirection_blocks = indirection_blocks.clone();
         new_indirection_blocks.truncate_back_data_blocks(kept_data_blocks_number);
 
-        new_inode.blocks = (new_indirection_blocks.data_block_count() + new_indirection_blocks.indirection_block_count())
+        new_inode.blocks = (new_indirection_blocks.data_block_count()
+            + new_indirection_blocks.indirection_block_count())
             * fs.superblock().block_size()
             / 512;
 
@@ -236,7 +240,10 @@ impl<Dev: Device<u8, Ext2Error>> file::File for File<Dev> {
 
     fn get_type(&self) -> file::Type {
         self.inode.file_type().unwrap_or_else(|_| {
-            panic!("The inner inode with number {} is in an incoherent state: its file type is not valid", self.inode_number)
+            panic!(
+                "The inner inode with number {} is in an incoherent state: its file type is not valid",
+                self.inode_number
+            )
         })
     }
 
@@ -249,16 +256,16 @@ impl<Dev: Device<u8, Ext2Error>> file::File for File<Dev> {
 
     fn set_uid(&mut self, uid: Uid) -> Result<(), Error<Self::FsError>> {
         let mut new_inode = self.inode;
-        new_inode.uid =
-            TryInto::<u16>::try_into(uid.0).map_err(|_| Error::Fs(FsError::Implementation(Ext2Error::UidTooLarge(uid.0))))?;
+        new_inode.uid = TryInto::<u16>::try_into(uid.0)
+            .map_err(|_| Error::Fs(FsError::Implementation(Ext2Error::UidTooLarge(uid.0))))?;
         // SAFETY: only the UID has changed
         unsafe { self.set_inode(&new_inode) }
     }
 
     fn set_gid(&mut self, gid: Gid) -> Result<(), Error<Self::FsError>> {
         let mut new_inode = self.inode;
-        new_inode.gid =
-            TryInto::<u16>::try_into(gid.0).map_err(|_| Error::Fs(FsError::Implementation(Ext2Error::GidTooLarge(gid.0))))?;
+        new_inode.gid = TryInto::<u16>::try_into(gid.0)
+            .map_err(|_| Error::Fs(FsError::Implementation(Ext2Error::GidTooLarge(gid.0))))?;
         // SAFETY: only the GID has changed
         unsafe { self.set_inode(&new_inode) }
     }
@@ -352,17 +359,19 @@ impl<Dev: Device<u8, Ext2Error>> Write for File<Dev> {
         let data_blocks_to_request = data_blocks_needed.saturating_sub(current_data_block_count);
 
         let current_indirection_block_count = indirected_blocks.indirection_block_count();
-        let indirection_blocks_to_request = IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::necessary_indirection_block_count(
-            data_blocks_needed,
-            fs.superblock().base().block_size() / 4,
-        ) - current_indirection_block_count;
+        let indirection_blocks_to_request =
+            IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::necessary_indirection_block_count(
+                data_blocks_needed,
+                fs.superblock().base().block_size() / 4,
+            ) - current_indirection_block_count;
 
         let start_block_group = indirected_blocks
             .last_data_block_allocated()
             .map(|(block, _)| superblock.block_group(block))
             .unwrap_or_default();
 
-        let free_blocks = fs.free_blocks_offset(data_blocks_to_request + indirection_blocks_to_request, start_block_group)?;
+        let free_blocks =
+            fs.free_blocks_offset(data_blocks_to_request + indirection_blocks_to_request, start_block_group)?;
 
         fs.allocate_blocks(&free_blocks)?;
 
@@ -399,7 +408,8 @@ impl<Dev: Device<u8, Ext2Error>> Write for File<Dev> {
             let mut block = Block::new(self.filesystem.clone(), *block_number);
             let Some(buffer_end) = buf.get(
                 written_bytes
-                    ..written_bytes + u32_to_usize(superblock.base().blocks_per_group).min(u64_to_usize(buf_len) - written_bytes),
+                    ..written_bytes
+                        + u32_to_usize(superblock.base().blocks_per_group).min(u64_to_usize(buf_len) - written_bytes),
             ) else {
                 break;
             };
@@ -413,7 +423,8 @@ impl<Dev: Device<u8, Ext2Error>> Write for File<Dev> {
 
         let mut updated_inode = self.inode;
 
-        let total_block_used = new_indirected_blocks.data_block_count() + new_indirected_blocks.indirection_block_count();
+        let total_block_used =
+            new_indirected_blocks.data_block_count() + new_indirected_blocks.indirection_block_count();
         let (
             mut direct_block_pointers,
             singly_indirected_block_pointer,
@@ -421,7 +432,8 @@ impl<Dev: Device<u8, Ext2Error>> Write for File<Dev> {
             triply_indirected_block_pointer,
         ) = new_indirected_blocks.blocks();
 
-        direct_block_pointers.append(&mut vec![0_u32; 12].into_iter().take(12 - direct_block_pointers.len()).collect_vec());
+        direct_block_pointers
+            .append(&mut vec![0_u32; 12].into_iter().take(12 - direct_block_pointers.len()).collect_vec());
 
         let mut updated_direct_block_pointers = updated_inode.direct_block_pointers;
         updated_direct_block_pointers.clone_from_slice(&direct_block_pointers);
@@ -567,8 +579,8 @@ impl<Dev: Device<u8, Ext2Error>> file::Regular for Regular<Dev> {
 
 /// Interface for ext2's directories.
 ///
-/// In ext2, the content of a directory is a list of [`Entry`], which are the children of the directory. In particular, `.` and `..`
-/// are always children of a directory.
+/// In ext2, the content of a directory is a list of [`Entry`], which are the children of the directory. In particular,
+/// `.` and `..` are always children of a directory.
 #[derive(Debug)]
 pub struct Directory<Dev: Device<u8, Ext2Error>> {
     /// Inner file containing the generic file.
@@ -625,15 +637,16 @@ impl<Dev: Device<u8, Ext2Error>> Directory<Dev> {
             let mut entries_in_block = Vec::new();
             let mut accumulated_size = 0_u64;
             while accumulated_size < block_size {
-                let starting_addr =
-                    Address::from(usize::try_from(u64::from(block) * block_size + accumulated_size).map_err(|_err| {
+                let starting_addr = Address::from(
+                    usize::try_from(u64::from(block) * block_size + accumulated_size).map_err(|_err| {
                         Error::Device(DevError::OutOfBounds {
                             structure: "address",
                             value: (u64::from(block) * block_size + accumulated_size).into(),
                             lower_bound: 0_i128,
                             upper_bound: fs.device.lock().size().0.into(),
                         })
-                    })?);
+                    })?,
+                );
 
                 // SAFETY: `starting_addr` contains the beginning of an entry
                 let entry = unsafe { Entry::parse(&fs, starting_addr) }?;
@@ -658,13 +671,13 @@ impl<Dev: Device<u8, Ext2Error>> Directory<Dev> {
 
     /// Writes all the entries of the block `block_index`.
     ///
-    /// This function does not perform any check: the entries **MUST** be in a coherent state. It is recommanded to perform
-    /// [`defragment`](Directory::defragment) beforehand.
+    /// This function does not perform any check: the entries **MUST** be in a coherent state. It is recommanded to
+    /// perform [`defragment`](Directory::defragment) beforehand.
     ///
     /// # Safety
     ///
-    /// Must ensure that the entries are in a valid state regarding to the completion of data blocks and the number of entry per
-    /// data block. Furthermore, `block_index` must be a valid index of `self.entries`.
+    /// Must ensure that the entries are in a valid state regarding to the completion of data blocks and the number of
+    /// entry per data block. Furthermore, `block_index` must be a valid index of `self.entries`.
     unsafe fn write_block_entry(&mut self, block_index: usize) -> Result<(), Error<Ext2Error>> {
         let block_size = u64::from(self.file.filesystem.lock().superblock().block_size());
         self.file.seek(SeekFrom::Start(usize_to_u64(block_index) * block_size))?;
@@ -681,13 +694,13 @@ impl<Dev: Device<u8, Ext2Error>> Directory<Dev> {
 
     /// Writes all the entries.
     ///
-    /// This function does not perform any check: the entries **MUST** be in a coherent state. It is recommanded to perform
-    /// [`defragment`](Directory::defragment) beforehand.
+    /// This function does not perform any check: the entries **MUST** be in a coherent state. It is recommanded to
+    /// perform [`defragment`](Directory::defragment) beforehand.
     ///
     /// # Safety
     ///
-    /// Must ensure that the entries are in a valid state regarding to the completion of data blocks and the number of entry per
-    /// data block.
+    /// Must ensure that the entries are in a valid state regarding to the completion of data blocks and the number of
+    /// entry per data block.
     unsafe fn write_all_entries(&mut self) -> Result<(), Error<Ext2Error>> {
         self.file.truncate(0)?;
         let nb_entries = self.entries.lock().len();
@@ -834,7 +847,8 @@ impl<Dev: Device<u8, Ext2Error>> file::Directory for Directory<Dev> {
                 },
                 &Entry {
                     inode: self.file.inode_number,
-                    rec_len: u16::try_from(block_size - 9).expect("Ill-formed superblock: block size should be castable in a u16"),
+                    rec_len: u16::try_from(block_size - 9)
+                        .expect("Ill-formed superblock: block size should be castable in a u16"),
                     name_len: 2,
                     file_type: if file_type_feature { u8::from(FileType::Dir) } else { 0 },
                     // SAFETY: ".." is a valid CString
@@ -952,7 +966,8 @@ impl<Dev: Device<u8, Ext2Error>> file::Directory for Directory<Dev> {
                             }
                         }
 
-                        // SAFETY: the new number of links is exactly the previous one minus all the children that are directories
+                        // SAFETY: the new number of links is exactly the previous one minus all the children that are
+                        // directories
                         unsafe {
                             self.file.set_inode(&new_inode)?;
                         };
@@ -985,8 +1000,8 @@ impl<Dev: Device<u8, Ext2Error>> SymbolicLink<Dev> {
     ///
     /// Returns a [`BadString`](Ext2Error::BadString) if the content of the given inode does not look like a valid path.
     ///
-    /// Returns a [`NameTooLong`](crate::fs::error::FsError::NameTooLong) if the size of the inode's content is greater than
-    /// [`PATH_MAX`].
+    /// Returns a [`NameTooLong`](crate::fs::error::FsError::NameTooLong) if the size of the inode's content is greater
+    /// than [`PATH_MAX`].
     ///
     /// Otherwise, returns the same errors as [`Ext2::inode`](super::Ext2::inode).
     pub fn new(filesystem: &Ext2Fs<Dev>, inode_number: u32) -> Result<Self, Error<Ext2Error>> {
@@ -1142,15 +1157,15 @@ mod test {
     use crate::arch::{u32_to_usize, usize_to_u64};
     use crate::dev::sector::Address;
     use crate::file::{Regular, SymbolicLink, Type, TypeWithFile};
+    use crate::fs::FileSystem;
     use crate::fs::ext2::directory::Entry;
     use crate::fs::ext2::file::Directory;
-    use crate::fs::ext2::inode::{Inode, TypePermissions, ROOT_DIRECTORY_INODE};
+    use crate::fs::ext2::inode::{Inode, ROOT_DIRECTORY_INODE, TypePermissions};
     use crate::fs::ext2::{Ext2, Ext2Fs};
-    use crate::fs::FileSystem;
     use crate::io::{Read, Seek, SeekFrom, Write};
     use crate::path::{Path, UnixStr};
     use crate::permissions::Permissions;
-    use crate::tests::{new_device_id, LOREM, LOREM_LENGTH};
+    use crate::tests::{LOREM, LOREM_LENGTH, new_device_id};
     use crate::types::{Gid, Mode, Uid};
 
     fn parse_root(file: File) {
@@ -1175,7 +1190,9 @@ mod test {
         let dot = unsafe {
             Entry::parse(
                 &fs,
-                Address::new(u32_to_usize(root_inode.direct_block_pointers[0]) * u32_to_usize(fs.superblock().block_size())),
+                Address::new(
+                    u32_to_usize(root_inode.direct_block_pointers[0]) * u32_to_usize(fs.superblock().block_size()),
+                ),
             )
         }
         .unwrap();
@@ -1214,7 +1231,9 @@ mod test {
                 &fs,
                 Address::new(
                     (u32_to_usize(root_inode.direct_block_pointers[0]) * u32_to_usize(fs.superblock().block_size()))
-                        + u32_to_usize((dot.rec_len + two_dots.rec_len + lost_and_found.rec_len + big_file.rec_len).into()),
+                        + u32_to_usize(
+                            (dot.rec_len + two_dots.rec_len + lost_and_found.rec_len + big_file.rec_len).into(),
+                        ),
                 ),
             )
         }
@@ -1234,7 +1253,9 @@ mod test {
         let dot = unsafe {
             Entry::parse(
                 &fs,
-                Address::new(u32_to_usize(root_inode.direct_block_pointers[0]) * u32_to_usize(fs.superblock().block_size())),
+                Address::new(
+                    u32_to_usize(root_inode.direct_block_pointers[0]) * u32_to_usize(fs.superblock().block_size()),
+                ),
             )
         }
         .unwrap();
@@ -1273,7 +1294,9 @@ mod test {
                 &fs,
                 Address::new(
                     u32_to_usize(root_inode.direct_block_pointers[0]) * u32_to_usize(fs.superblock().block_size())
-                        + u32_to_usize((dot.rec_len + two_dots.rec_len + lost_and_found.rec_len + big_file.rec_len).into()),
+                        + u32_to_usize(
+                            (dot.rec_len + two_dots.rec_len + lost_and_found.rec_len + big_file.rec_len).into(),
+                        ),
                 ),
             )
         }
@@ -1668,8 +1691,14 @@ mod test {
 
         bar.set_pointed_file("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
             .unwrap();
-        assert_eq!(bar.get_pointed_file().unwrap(), "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
-        assert_eq!(bar.file.read_all().unwrap(), b"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        assert_eq!(
+            bar.get_pointed_file().unwrap(),
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        );
+        assert_eq!(
+            bar.file.read_all().unwrap(),
+            b"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        );
         assert_eq!(bar.file.inode.data_size(), 70);
 
         bar.set_pointed_file("foo.txt").unwrap();
@@ -1804,7 +1833,7 @@ mod test {
     }
 
     mod generated {
-        use crate::tests::{generate_fs_test, PostCheck};
+        use crate::tests::{PostCheck, generate_fs_test};
 
         generate_fs_test!(parse_root, "./tests/fs/ext2/extended.ext2", PostCheck::Ext);
         generate_fs_test!(parse_root_entries_without_cache, "./tests/fs/ext2/extended.ext2", PostCheck::Ext);
@@ -1814,12 +1843,32 @@ mod test {
         generate_fs_test!(read_file_with_offset, "./tests/fs/ext2/io_operations.ext2", PostCheck::Ext);
         generate_fs_test!(read_lorem, "./tests/fs/ext2/io_operations.ext2", PostCheck::Ext);
         generate_fs_test!(read_symlink, "./tests/fs/ext2/extended.ext2", PostCheck::Ext);
-        generate_fs_test!(write_file_dbp_extend_without_allocation, "./tests/fs/ext2/io_operations.ext2", PostCheck::Ext);
-        generate_fs_test!(write_file_dbp_replace_without_allocation, "./tests/fs/ext2/io_operations.ext2", PostCheck::Ext);
+        generate_fs_test!(
+            write_file_dbp_extend_without_allocation,
+            "./tests/fs/ext2/io_operations.ext2",
+            PostCheck::Ext
+        );
+        generate_fs_test!(
+            write_file_dbp_replace_without_allocation,
+            "./tests/fs/ext2/io_operations.ext2",
+            PostCheck::Ext
+        );
         generate_fs_test!(write_file_dbp_extend_with_allocation, "./tests/fs/ext2/io_operations.ext2", PostCheck::Ext);
-        generate_fs_test!(write_file_singly_indirect_block_pointer, "./tests/fs/ext2/io_operations.ext2", PostCheck::Ext);
-        generate_fs_test!(write_file_doubly_indirect_block_pointer, "./tests/fs/ext2/io_operations.ext2", PostCheck::Ext);
-        generate_fs_test!(write_file_triply_indirect_block_pointer, "./tests/fs/ext2/io_operations.ext2", PostCheck::Ext);
+        generate_fs_test!(
+            write_file_singly_indirect_block_pointer,
+            "./tests/fs/ext2/io_operations.ext2",
+            PostCheck::Ext
+        );
+        generate_fs_test!(
+            write_file_doubly_indirect_block_pointer,
+            "./tests/fs/ext2/io_operations.ext2",
+            PostCheck::Ext
+        );
+        generate_fs_test!(
+            write_file_triply_indirect_block_pointer,
+            "./tests/fs/ext2/io_operations.ext2",
+            PostCheck::Ext
+        );
         generate_fs_test!(write_file_twice, "./tests/fs/ext2/io_operations.ext2", PostCheck::Ext);
         generate_fs_test!(file_mode, "./tests/fs/ext2/io_operations.ext2", PostCheck::Ext);
         generate_fs_test!(file_truncation, "./tests/fs/ext2/io_operations.ext2", PostCheck::Ext);

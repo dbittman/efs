@@ -9,14 +9,14 @@ use core::slice::from_raw_parts;
 use bitflags::bitflags;
 use itertools::Itertools;
 
+use super::Ext2;
 use super::block_group::BlockGroupDescriptor;
 use super::error::Ext2Error;
 use super::superblock::{OperatingSystem, Superblock};
-use super::Ext2;
 use crate::arch::{u32_to_usize, usize_to_u64};
 use crate::cache::Cache;
-use crate::dev::sector::Address;
 use crate::dev::Device;
+use crate::dev::sector::Address;
 use crate::error::Error;
 use crate::file::Type;
 use crate::fs::error::FsError;
@@ -51,15 +51,18 @@ static INODE_CACHE: Cache<(u32, u32), Inode> = Cache::new();
 
 /// An ext2 inode.
 ///
-/// Each file corresponds to an inode, which contains all the metadata and pointers to the data blocks of the file it represents.
+/// Each file corresponds to an inode, which contains all the metadata and pointers to the data blocks of the file it
+/// represents.
 ///
-/// All the content of a file is located on data blocks, which are common [ext2 blocks](super::block::Block). As a file can grow
-/// very large, only [`DIRECT_BLOCK_POINTER_COUNT`] data blocks are directly addressed (by their block numbers). For the further
-/// data blocks, an indirection mechanism is created: a special block, called a singly indirected block, will be filled with a table
-/// of [`u32`] containing the block numbers of the next data blocks (each [`u32`] corresponds to a block number). This inode
-/// contains in the field [`singly_indirect_block_pointer`](struct.Inode.html#structfield.singly_indirect_block_pointer) the block
-/// number of the singly indirected block. For the next data blocks, and following this indirection logic, a doubly indirected block
-/// and a triply indirected block may also be used. All the indirection logic is deal with the structure [`IndirectedBlocks`].
+/// All the content of a file is located on data blocks, which are common [ext2 blocks](super::block::Block). As a file
+/// can grow very large, only [`DIRECT_BLOCK_POINTER_COUNT`] data blocks are directly addressed (by their block
+/// numbers). For the further data blocks, an indirection mechanism is created: a special block, called a singly
+/// indirected block, will be filled with a table of [`u32`] containing the block numbers of the next data blocks (each
+/// [`u32`] corresponds to a block number). This inode contains in the field
+/// [`singly_indirect_block_pointer`](struct.Inode.html#structfield.singly_indirect_block_pointer) the block
+/// number of the singly indirected block. For the next data blocks, and following this indirection logic, a doubly
+/// indirected block and a triply indirected block may also be used. All the indirection logic is deal with the
+/// structure [`IndirectedBlocks`].
 ///
 /// Note: **Inode addresses start at 1**.
 #[repr(C, packed)]
@@ -89,15 +92,16 @@ pub struct Inode {
     /// Group ID.
     pub gid: u16,
 
-    /// Count of hard links (directory entries) to this inode. When this reaches 0, the data blocks are marked as unallocated.
+    /// Count of hard links (directory entries) to this inode. When this reaches 0, the data blocks are marked as
+    /// unallocated.
     pub links_count: u16,
 
     /// Indicates the amount of blocks reserved for the associated file data. This includes both currently in used
     /// and currently reserved blocks in case the file grows in size.
     ///
-    ///  Since this value represents 512-byte blocks and not file system blocks, this value should not be directly used as an index
-    /// to the `i_block` array. Rather, the maximum index of the `i_block` array should be computed from `i_blocks /
-    /// ((1024<<s_log_block_size)/512)`, or once simplified, `i_blocks/(2<<s_log_block_size)`.
+    ///  Since this value represents 512-byte blocks and not file system blocks, this value should not be directly used
+    /// as an index to the `i_block` array. Rather, the maximum index of the `i_block` array should be computed
+    /// from `i_blocks / ((1024<<s_log_block_size)/512)`, or once simplified, `i_blocks/(2<<s_log_block_size)`.
     pub blocks: u32,
 
     /// Flags.
@@ -124,8 +128,8 @@ pub struct Inode {
     /// In Ext2 version 0, this field is reserved. In version >= 1, Extended attribute block (File ACL).
     pub file_acl: u32,
 
-    /// In Ext2 version 0, this field is reserved. In version >= 1, Upper 32 bits of file size (if feature bit set) if it's a file,
-    /// Directory ACL if it's a directory
+    /// In Ext2 version 0, this field is reserved. In version >= 1, Upper 32 bits of file size (if feature bit set) if
+    /// it's a file, Directory ACL if it's a directory
     pub dir_acl: u32,
 
     /// Block address of fragment
@@ -484,7 +488,15 @@ impl Inode {
     /// Creates a new inode from all the necessary fields.
     #[must_use]
     #[allow(clippy::similar_names)]
-    pub const fn create(mode: TypePermissions, uid: u16, gid: u16, time: u32, flags: Flags, osd1: u32, osd2: [u8; 12]) -> Self {
+    pub const fn create(
+        mode: TypePermissions,
+        uid: u16,
+        gid: u16,
+        time: u32,
+        flags: Flags,
+        osd1: u32,
+        osd2: [u8; 12],
+    ) -> Self {
         Self {
             mode: mode.bits(),
             uid,
@@ -514,8 +526,8 @@ impl Inode {
     ///
     /// # Errors
     ///
-    /// Returns an [`NonExistingBlockGroup`](Ext2Error::NonExistingBlockGroup) if `n` is greater than the block group count of this
-    /// device.
+    /// Returns an [`NonExistingBlockGroup`](Ext2Error::NonExistingBlockGroup) if `n` is greater than the block group
+    /// count of this device.
     ///
     /// Otherwise, returns an [`Error::Device`] if the device cannot be read.
     pub fn starting_addr<Dev: Device<u8, Ext2Error>>(fs: &Ext2<Dev>, n: u32) -> Result<Address, Error<Ext2Error>> {
@@ -539,11 +551,11 @@ impl Inode {
     ///
     /// # Errors
     ///
-    /// Returns an [`NonExistingBlockGroup`](Ext2Error::NonExistingBlockGroup) if `n` is greater than the block group count of this
-    /// device.
+    /// Returns an [`NonExistingBlockGroup`](Ext2Error::NonExistingBlockGroup) if `n` is greater than the block group
+    /// count of this device.
     ///
-    /// Returns an [`BadFileType`](Ext2Error::BadFileType) if the inode with the given inode number does not contains a valid file
-    /// type.
+    /// Returns an [`BadFileType`](Ext2Error::BadFileType) if the inode with the given inode number does not contains a
+    /// valid file type.
     ///
     /// Otherwise, returns an [`Error::Device`] if the device cannot be read.
     pub fn parse<Dev: Device<u8, Ext2Error>>(fs: &Ext2<Dev>, n: u32) -> Result<Self, Error<Ext2Error>> {
@@ -623,8 +635,9 @@ impl Inode {
             Ok(address_array.iter().filter(|&block_number| (*block_number != 0)).copied().collect_vec())
         }
 
-        let data_blocks = u32::try_from(1 + (self.data_size().saturating_sub(1)) / u64::from(fs.superblock().block_size()))
-            .expect("Ill-formed superblock: there should be at most u32::MAX blocks");
+        let data_blocks =
+            u32::try_from(1 + (self.data_size().saturating_sub(1)) / u64::from(fs.superblock().block_size()))
+                .expect("Ill-formed superblock: there should be at most u32::MAX blocks");
         let mut parsed_data_blocks = 0_u32;
         let blocks_per_indirection = fs.superblock().block_size() / 4;
 
@@ -709,11 +722,11 @@ impl Inode {
         Ok(indirected_blocks)
     }
 
-    /// Reads the content of this inode starting at the given `offset`, returning it in the given `buffer`. Returns the number of
-    /// bytes read.
+    /// Reads the content of this inode starting at the given `offset`, returning it in the given `buffer`. Returns the
+    /// number of bytes read.
     ///
-    /// If the size of the buffer is greater than the inode data size, it will fill the start of the buffer and will leave the end
-    /// untouch.
+    /// If the size of the buffer is greater than the inode data size, it will fill the start of the buffer and will
+    /// leave the end untouch.
     ///
     /// # Errors
     ///
@@ -747,8 +760,8 @@ impl Inode {
                 let block_addr = Address::from(u32_to_usize(block_number) * block_size);
                 let slice = device.slice(block_addr..block_addr + count)?;
 
-                // SAFETY: buffer contains at least `block_size.min(remaining_bytes_count)` since `remaining_bytes_count <=
-                // buffer_length`
+                // SAFETY: buffer contains at least `block_size.min(remaining_bytes_count)` since `remaining_bytes_count
+                // <= buffer_length`
                 let block_buffer = unsafe { buffer.get_mut(read_bytes..read_bytes + count).unwrap_unchecked() };
                 block_buffer.clone_from_slice(slice.as_ref());
 
@@ -756,16 +769,16 @@ impl Inode {
             } else if offset >= u64::from(fs.superblock().block_size()) {
                 offset -= u64::from(fs.superblock().block_size());
             } else {
-                // SAFETY: `offset < superblock.block_size()` and `superblock.block_size()` is generally around few KB, which is
-                // fine when `usize > u8`.
+                // SAFETY: `offset < superblock.block_size()` and `superblock.block_size()` is generally around few KB,
+                // which is fine when `usize > u8`.
                 let offset_usize = unsafe { usize::try_from(offset).unwrap_unchecked() };
 
                 let count = (block_size - offset_usize).min(buffer_length - read_bytes);
                 let block_addr = Address::from(u32_to_usize(block_number) * block_size);
                 let slice = device.slice(block_addr + offset_usize..block_addr + offset_usize + count)?;
 
-                // SAFETY: buffer contains at least `block_size.min(remaining_bytes_count)` since `remaining_bytes_count <=
-                // buffer_length`
+                // SAFETY: buffer contains at least `block_size.min(remaining_bytes_count)` since `remaining_bytes_count
+                // <= buffer_length`
                 let block_buffer = unsafe { buffer.get_mut(read_bytes..read_bytes + count).unwrap_unchecked() };
                 block_buffer.clone_from_slice(slice.as_ref());
 
@@ -779,7 +792,8 @@ impl Inode {
 
     /// Returns whether this inode is currently free or not from the inode bitmap in which the block resides.
     ///
-    /// The `bitmap` argument is usually the result of the method [`get_inode_bitmap`](../struct.Ext2.html#method.get_inode_bitmap).
+    /// The `bitmap` argument is usually the result of the method
+    /// [`get_inode_bitmap`](../struct.Ext2.html#method.get_inode_bitmap).
     #[must_use]
     #[allow(clippy::indexing_slicing)]
     pub const fn is_free(inode_number: u32, superblock: &Superblock, bitmap: &[u8]) -> bool {
@@ -790,7 +804,8 @@ impl Inode {
 
     /// Returns whether this inode is currently in use or not from the inode bitmap in which the block resides.
     ///
-    /// The `bitmap` argument is usually the result of the method [`get_inode_bitmap`](../struct.Ext2.html#method.get_inode_bitmap).
+    /// The `bitmap` argument is usually the result of the method
+    /// [`get_inode_bitmap`](../struct.Ext2.html#method.get_inode_bitmap).
     #[must_use]
     pub const fn is_used(inode_number: u32, superblock: &Superblock, bitmap: &[u8]) -> bool {
         !Self::is_free(inode_number, superblock, bitmap)
@@ -804,9 +819,9 @@ mod test {
     use std::time;
 
     use crate::dev::Device;
+    use crate::fs::ext2::Ext2;
     use crate::fs::ext2::error::Ext2Error;
     use crate::fs::ext2::inode::{Inode, ROOT_DIRECTORY_INODE};
-    use crate::fs::ext2::Ext2;
     use crate::tests::{copy_file, new_device_id};
 
     #[test]

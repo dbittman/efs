@@ -2,12 +2,13 @@
 //!
 //! # Devices
 //!
-//! In this crate, a [`Device`] is a structure capable of storing a fixed number of contiguous objects (usually bytes, i.e [`u8`],
-//! but can be any object implementing [`Copy`]). Each byte is located at a unique [`Address`], which is used to describe
-//! [`Slice`]s. When a [`Slice`] is mutated, it can be committed into a [`Commit`], which can be write back on the [`Device`].
+//! In this crate, a [`Device`] is a structure capable of storing a fixed number of contiguous objects (usually bytes,
+//! i.e [`u8`], but can be any object implementing [`Copy`]). Each byte is located at a unique [`Address`], which is
+//! used to describe [`Slice`]s. When a [`Slice`] is mutated, it can be committed into a [`Commit`], which can be write
+//! back on the [`Device`].
 //!
-//! To avoid manipulating only [`Slice`]s and [`Commit`]s, which is quite heavy, you can manipulate a [`Device`] through the
-//! provided metehods [`read_at`](Device::read_at) and [`write_at`](Device::write_at).
+//! To avoid manipulating only [`Slice`]s and [`Commit`]s, which is quite heavy, you can manipulate a [`Device`] through
+//! the provided metehods [`read_at`](Device::read_at) and [`write_at`](Device::write_at).
 //!
 //! If needed for the [`FileSystem`](crate::fs::FileSystem) usage, the device may be able to give the current time.
 //!
@@ -30,8 +31,8 @@
 //! ```
 //! use std::vec;
 //!
-//! use efs::dev::sector::Address;
 //! use efs::dev::Device;
+//! use efs::dev::sector::Address;
 //!
 //! // Here, our device is a `Vec<usize>`
 //! let mut device = vec![0_usize; 1024];
@@ -75,8 +76,8 @@
 //! use std::fmt::Display;
 //! use std::io::{Read, Seek, SeekFrom, Write};
 //!
-//! use efs::dev::sector::Address;
 //! use efs::dev::Device;
+//! use efs::dev::sector::Address;
 //! use efs::io::StdIOWrapper;
 //!
 //! #[derive(Debug)]
@@ -126,8 +127,8 @@
 //! assert_eq!(unsafe { device.read_at::<u32>(Address::new(0)) }.unwrap(), 0x0101_0101);
 //! ```
 //!
-//! It is to be noted that for the structure [`std::fs::File`], the implementation of [`Device::now`] returns the current time using
-//! [`SystemTime::now`](std::time::SystemTime::now).
+//! It is to be noted that for the structure [`std::fs::File`], the implementation of [`Device::now`] returns the
+//! current time using [`SystemTime::now`](std::time::SystemTime::now).
 
 use alloc::borrow::{Cow, ToOwned};
 use alloc::boxed::Box;
@@ -162,19 +163,19 @@ pub struct Slice<'mem, T: Clone> {
     starting_addr: Address,
 }
 
-impl<'mem, T: Clone> AsRef<[T]> for Slice<'mem, T> {
+impl<T: Clone> AsRef<[T]> for Slice<'_, T> {
     fn as_ref(&self) -> &[T] {
         &self.inner
     }
 }
 
-impl<'mem, T: Clone> AsMut<[T]> for Slice<'mem, T> {
+impl<T: Clone> AsMut<[T]> for Slice<'_, T> {
     fn as_mut(&mut self) -> &mut [T] {
         self.inner.to_mut().as_mut()
     }
 }
 
-impl<'mem, T: Clone> Deref for Slice<'mem, T> {
+impl<T: Clone> Deref for Slice<'_, T> {
     type Target = [T];
 
     fn deref(&self) -> &Self::Target {
@@ -182,7 +183,7 @@ impl<'mem, T: Clone> Deref for Slice<'mem, T> {
     }
 }
 
-impl<'mem, T: Clone> DerefMut for Slice<'mem, T> {
+impl<T: Clone> DerefMut for Slice<'_, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.as_mut()
     }
@@ -234,26 +235,29 @@ impl<'mem> Slice<'mem, u8> {
     ///
     /// # Safety
     ///
-    /// Must ensure that an instance of `T` is located at the begining of the slice and that the length of the slice is greater than
-    /// the memory size of `T`.
+    /// Must ensure that an instance of `T` is located at the begining of the slice and that the length of the slice is
+    /// greater than the memory size of `T`.
     ///
     /// # Panics
     ///
     /// Panics if the starting address cannot be read.
     #[must_use]
     pub unsafe fn cast<T: Copy>(&self) -> T {
-        assert!(self.inner.len() >= size_of::<T>(), "The length of the device slice is not great enough to contain an object T");
+        assert!(
+            self.inner.len() >= size_of::<T>(),
+            "The length of the device slice is not great enough to contain an object T"
+        );
         transmute_copy(self.inner.as_ptr().as_ref().expect("Could not read the pointer of the slice"))
     }
 
     /// Creates a [`Slice`] from any [`Copy`] object.
-    pub fn from<T: Copy>(object: T, starting_addr: Address) -> Self {
+    pub const fn from<T: Copy>(object: T, starting_addr: Address) -> Self {
         let len = size_of::<T>();
         let ptr = addr_of!(object).cast::<u8>();
         // SAFETY: the pointer is well-formed since it has been created above
         let inner_opt = unsafe { slice_from_raw_parts(ptr, len).as_ref::<'mem>() };
-        // SAFETY: `inner_opt` cannot be `None` as `ptr` contains data and the call to `slice_from_raw_parts` should not return a
-        // null pointer
+        // SAFETY: `inner_opt` cannot be `None` as `ptr` contains data and the call to `slice_from_raw_parts` should not
+        // return a null pointer
         Self::new(unsafe { inner_opt.unwrap_unchecked() }, starting_addr)
     }
 }
@@ -320,19 +324,21 @@ pub trait Device<T: Copy, FSE: core::error::Error> {
     ///
     /// # Errors
     ///
-    /// Returns an [`DevError::OutOfBounds`] if the read tries to go out of the device's bounds or if [`Device::slice`] failed.
+    /// Returns an [`DevError::OutOfBounds`] if the read tries to go out of the device's bounds or if [`Device::slice`]
+    /// failed.
     ///
     /// # Safety
     ///
     /// Must verifies the safety conditions of [`core::ptr::read`].
     unsafe fn read_at<O: Copy>(&mut self, starting_addr: Address) -> Result<O, Error<FSE>> {
         let length = size_of::<O>();
-        let range = starting_addr..Address::forward_checked(starting_addr, length).ok_or(Error::Device(DevError::OutOfBounds {
-            structure: "address",
-            value: usize_to_u64(starting_addr.index() + length).into(),
-            lower_bound: 0,
-            upper_bound: self.size().0.into(),
-        }))?;
+        let range = starting_addr
+            ..Address::forward_checked(starting_addr, length).ok_or(Error::Device(DevError::OutOfBounds {
+                structure: "address",
+                value: usize_to_u64(starting_addr.index() + length).into(),
+                lower_bound: 0,
+                upper_bound: self.size().0.into(),
+            }))?;
         let slice = self.slice(range)?;
         let ptr = slice.inner.as_ptr();
         Ok(ptr.cast::<O>().read())
@@ -340,13 +346,13 @@ pub trait Device<T: Copy, FSE: core::error::Error> {
 
     /// Writes an element of type `O` on the device starting at the address `starting_addr`.
     ///
-    /// Beware, the `object` **must be the owned `O` object and not a borrow**, otherwise the pointer to the object will be copied,
-    /// and not the object itself.
+    /// Beware, the `object` **must be the owned `O` object and not a borrow**, otherwise the pointer to the object will
+    /// be copied, and not the object itself.
     ///
     /// # Errors
     ///
-    /// Returns an [`DevError::OutOfBounds`] if the read tries to go out of the device's bounds or if [`Device::slice`] or
-    /// [`Device::commit`] failed.
+    /// Returns an [`DevError::OutOfBounds`] if the read tries to go out of the device's bounds or if [`Device::slice`]
+    /// or [`Device::commit`] failed.
     ///
     /// # Safety
     ///
@@ -361,12 +367,13 @@ pub trait Device<T: Copy, FSE: core::error::Error> {
         assert!(length > 0, "Cannot write a 0-byte object on a device");
         let object_slice = slice::from_raw_parts(addr_of!(object).cast::<T>(), length / size_of::<T>());
 
-        let range = starting_addr..Address::forward_checked(starting_addr, length).ok_or(Error::Device(DevError::OutOfBounds {
-            structure: "address",
-            value: usize_to_u64(starting_addr.index() + length).into(),
-            lower_bound: 0,
-            upper_bound: self.size().0.into(),
-        }))?;
+        let range = starting_addr
+            ..Address::forward_checked(starting_addr, length).ok_or(Error::Device(DevError::OutOfBounds {
+                structure: "address",
+                value: usize_to_u64(starting_addr.index() + length).into(),
+                lower_bound: 0,
+                upper_bound: self.size().0.into(),
+            }))?;
         let mut device_slice = self.slice(range)?;
         let buffer = device_slice
             .get_mut(..)
@@ -531,8 +538,8 @@ mod test {
     use derive_more::derive::Display;
 
     use crate::arch::usize_to_u64;
-    use crate::dev::sector::Address;
     use crate::dev::Device;
+    use crate::dev::sector::Address;
     use crate::io::{Base, StdIOWrapper};
 
     #[derive(Debug)]
@@ -549,7 +556,8 @@ mod test {
     #[test]
     fn device_generic_read() {
         let mut device = vec![0_u8; 1024];
-        let mut slice = Device::<u8, std::io::Error>::slice(&mut device, Address::from(256_u32)..Address::from(512_u32)).unwrap();
+        let mut slice =
+            Device::<u8, std::io::Error>::slice(&mut device, Address::from(256_u32)..Address::from(512_u32)).unwrap();
         slice.iter_mut().for_each(|element| *element = 1);
 
         let commit = slice.commit();
@@ -608,16 +616,19 @@ mod test {
         let test_bytes = unsafe { slice::from_raw_parts(addr_of!(test).cast::<u8>(), size_of::<Test>()) };
 
         let mut device = vec![0_u8; 1024];
-        let mut slice =
-            Device::<u8, std::io::Error>::slice(&mut device, Address::from(OFFSET)..Address::from(OFFSET + size_of::<Test>()))
-                .unwrap();
+        let mut slice = Device::<u8, std::io::Error>::slice(
+            &mut device,
+            Address::from(OFFSET)..Address::from(OFFSET + size_of::<Test>()),
+        )
+        .unwrap();
         let buffer = slice.get_mut(..).unwrap();
         buffer.clone_from_slice(test_bytes);
 
         let commit = slice.commit();
         Device::<u8, std::io::Error>::commit(&mut device, commit).unwrap();
 
-        let read_test = unsafe { Device::<u8, std::io::Error>::read_at::<Test>(&mut device, Address::from(OFFSET)).unwrap() };
+        let read_test =
+            unsafe { Device::<u8, std::io::Error>::read_at::<Test>(&mut device, Address::from(OFFSET)).unwrap() };
         assert_eq!(test, read_test);
     }
 

@@ -35,7 +35,9 @@ pub enum Ext2Error {
 
     /// Tried to write a large file while the filesystem does not have the
     /// [`RequiredFeature`](super::superblock::ReadOnlyFeatures::LARGE_FILE) feature set.
-    #[display("File Too Large: Tried to write a large file while the filesystem does not have the LARGE_FILE feature set")]
+    #[display(
+        "File Too Large: Tried to write a large file while the filesystem does not have the LARGE_FILE feature set"
+    )]
     FileTooLarge,
 
     /// Tried to write a [`Gid`](crate::types::Gid) containing a value bigger than [`u16::MAX`] in an inode.
