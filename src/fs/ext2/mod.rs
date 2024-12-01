@@ -651,7 +651,7 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
         osd2: [u8; 12],
     ) -> Result<(), Error<Ext2Error>> {
         self.locate_inode(inode_number, true)?;
-        let inode = Inode::create(self.superblock(), mode, uid, gid, flags, osd1, osd2);
+        let inode = Inode::create(mode, uid, gid, self.get_time(), flags, osd1, osd2);
 
         if inode.file_type().map_err(|err| Error::Fs(FsError::Implementation(err)))? == Type::Directory {
             let block_group_number = Inode::block_group(self.superblock(), inode_number);
@@ -683,7 +683,7 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
     pub fn deallocate_inode(&mut self, inode_number: u32) -> Result<(), Error<Ext2Error>> {
         let mut inode = self.inode(inode_number)?;
 
-        inode.dtime = self.superblock().base().wtime;
+        inode.dtime = self.get_time();
         inode.links_count -= if inode.file_type().map_err(FsError::Implementation)? == Type::Directory { 2 } else { 1 };
         if inode.links_count == 0 {
             let file_type = inode.file_type().map_err(FsError::Implementation)?;
@@ -710,6 +710,20 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
 
         // SAFETY: `inode_address` is the starting address of the inode
         unsafe { Inode::write_on_device(self, inode_number, inode) }
+    }
+
+    /// Returns a usable time for creation, modification and deletion times (which is always encoded on a [`u32`]).
+    ///
+    /// This function will returns the current time if it is available through [`Device::now`], or the last mount time of the
+    /// filesystem otherwise.
+    #[must_use]
+    pub fn get_time(&self) -> u32 {
+        let mut device = self.device.lock();
+        device.now().map_or_else(
+            || self.superblock().base().mtime,
+            // SAFETY: the modulo u32::MAX ensure that the result is a u32
+            |time| unsafe { u32::try_from(time.tv_sec.0.unsigned_abs() % u64::from(u32::MAX)).unwrap_unchecked() },
+        )
     }
 }
 
@@ -970,7 +984,7 @@ mod test {
         assert!(Inode::is_used(free_inode, superblock, &bitmap));
 
         assert_eq!(
-            Inode::create(superblock, TypePermissions::REGULAR_FILE, 0, 0, Flags::empty(), 0, [0; 12]),
+            Inode::create(TypePermissions::REGULAR_FILE, 0, 0, ext2.get_time(), Flags::empty(), 0, [0; 12]),
             Inode::parse(&ext2, free_inode).unwrap()
         );
 

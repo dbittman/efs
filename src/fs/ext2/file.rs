@@ -132,14 +132,9 @@ impl<Dev: Device<u8, Ext2Error>> File<Dev> {
         // SAFETY: the result is smaller than `u32::MAX`
         new_inode.size = unsafe { u32::try_from(u64::from(u32::MAX) & size).unwrap_unchecked() };
 
-        let mut device = fs.device.lock();
-        if let Some(now) = device.now() {
-            // SAFETY: the result will always be under u32::MAX
-            let time = unsafe { (now.tv_sec.0 & i64::from(u32::MAX)).try_into().unwrap_unchecked() };
-            new_inode.atime = time;
-            new_inode.mtime = time;
-        }
-        drop(device);
+        let time = fs.get_time();
+        new_inode.atime = time;
+        new_inode.mtime = time;
 
         let kept_data_blocks_number = if size == 0 {
             0
@@ -446,14 +441,11 @@ impl<Dev: Device<u8, Ext2Error>> Write for File<Dev> {
         updated_inode.dir_acl = unsafe { u32::try_from((new_size >> 32) & u64::from(u32::MAX)).unwrap_unchecked() };
 
         let fs = self.filesystem.lock();
-        let mut device = fs.device.lock();
-        if let Some(now) = device.now() {
-            // SAFETY: the result will always be under u32::MAX
-            let time = unsafe { (now.tv_sec.0 & i64::from(u32::MAX)).try_into().unwrap_unchecked() };
-            updated_inode.atime = time;
-            updated_inode.mtime = time;
-        }
-        drop(device);
+
+        let time = fs.get_time();
+        updated_inode.atime = time;
+        updated_inode.mtime = time;
+
         drop(fs);
 
         // SAFETY: the updated inode contains the right inode created in this function
@@ -888,21 +880,14 @@ impl<Dev: Device<u8, Ext2Error>> file::Directory for Directory<Dev> {
         }
 
         let fs = self.file.filesystem.lock();
-        let mut device = fs.device.lock();
-        if let Some(now) = device.now() {
-            drop(device);
+        let mut new_inode = fs.inode(inode_number)?;
 
-            let mut new_inode = fs.inode(inode_number)?;
-            // SAFETY: the result will always be under u32::MAX
-            let time = unsafe { (now.tv_sec.0 & i64::from(u32::MAX)).try_into().unwrap_unchecked() };
-            new_inode.atime = time;
-            new_inode.mtime = time;
-            new_inode.ctime = time;
-            // SAFETY: add ctime, atime and mtime to the inode
-            unsafe { Inode::write_on_device(&fs, inode_number, new_inode)? };
-        } else {
-            drop(device);
-        }
+        let time = fs.get_time();
+        new_inode.atime = time;
+        new_inode.mtime = time;
+        new_inode.ctime = time;
+
+        unsafe { Inode::write_on_device(&fs, inode_number, new_inode)? };
         drop(fs);
 
         self.file.filesystem.file(inode_number)

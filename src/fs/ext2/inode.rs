@@ -484,22 +484,14 @@ impl Inode {
     /// Creates a new inode from all the necessary fields.
     #[must_use]
     #[allow(clippy::similar_names)]
-    pub const fn create(
-        superblock: &Superblock,
-        mode: TypePermissions,
-        uid: u16,
-        gid: u16,
-        flags: Flags,
-        osd1: u32,
-        osd2: [u8; 12],
-    ) -> Self {
+    pub const fn create(mode: TypePermissions, uid: u16, gid: u16, time: u32, flags: Flags, osd1: u32, osd2: [u8; 12]) -> Self {
         Self {
             mode: mode.bits(),
             uid,
             size: 0,
-            atime: superblock.base().wtime,
-            ctime: superblock.base().wtime,
-            mtime: superblock.base().wtime,
+            atime: time,
+            ctime: time,
+            mtime: time,
             dtime: 0,
             gid,
             links_count: 1,
