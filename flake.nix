@@ -38,6 +38,8 @@
         packages = with pkgs; [
           cargo-deny
           git
+          rustPlatform
+          rustup
         ];
 
         RUSTDOCFLAGS = "--cfg docsrs";
