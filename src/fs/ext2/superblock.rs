@@ -31,89 +31,89 @@ pub const SUPERBLOCK_SIZE: usize = 1024;
 #[repr(C, packed)]
 #[derive(Debug, Clone, Copy)]
 pub struct Base {
-    /// Total number of inodes in file system
+    /// Total number of inodes in file system.
     pub inodes_count: u32,
 
-    /// Total number of blocks in file system
+    /// Total number of blocks in file system.
     pub blocks_count: u32,
 
     /// Number of blocks reserved for superuser (see the
-    /// [`reserved_blocks_user_id`](struct.Base.html#structfield.reserved_blocks_user_id) field)
+    /// [`reserved_blocks_user_id`](struct.Base.html#structfield.reserved_blocks_user_id) field).
     pub r_blocks_count: u32,
 
-    /// Total number of unallocated blocks
+    /// Total number of unallocated blocks.
     pub free_blocks_count: u32,
 
-    /// Total number of unallocated inodes
+    /// Total number of unallocated inodes.
     pub free_inodes_count: u32,
 
-    /// Block number of the block containing the superblock (also the starting block number, NOT always zero.)
+    /// Block number of the block containing the superblock (also the starting block number, NOT always zero.).
     pub first_data_block: u32,
 
-    /// log2(block size) - 10. (In other words, the number to shift 1,024 to the left by to obtain the block size)
+    /// log2(block size) - 10. (In other words, the number to shift 1,024 to the left by to obtain the block size).
     pub log_block_size: u32,
 
     /// log2(fragment size) - 10. (In other words, the number to shift 1,024 to the left by to obtain the fragment
-    /// size)
+    /// size).
     pub log_frag_size: u32,
 
-    /// Number of blocks in each block group
+    /// Number of blocks in each block group.
     pub blocks_per_group: u32,
 
-    /// Number of fragments in each block group
+    /// Number of fragments in each block group.
     pub frags_per_group: u32,
 
-    /// Number of inodes in each block group
+    /// Number of inodes in each block group.
     pub inodes_per_group: u32,
 
-    /// Last mount time (in POSIX time)
+    /// Last mount time (in POSIX time).
     pub mtime: u32,
 
-    /// Last written time (in POSIX time)
+    /// Last written time (in POSIX time).
     pub wtime: u32,
 
-    /// Number of times the volume has been mounted since its last consistency check (fsck)
+    /// Number of times the volume has been mounted since its last consistency check (fsck).
     pub mnt_count: u16,
 
-    /// Number of mounts allowed before a consistency check (fsck) must be done
+    /// Number of mounts allowed before a consistency check (fsck) must be done.
     pub max_mnt_count: u16,
 
-    /// Ext2 signature (0xef53), used to help confirm the presence of Ext2 on a volume
+    /// Ext2 signature (0xef53), used to help confirm the presence of Ext2 on a volume.
     ///
     /// This field should always be equal to [`EXT2_SIGNATURE`].
     pub magic: u16,
 
-    /// File system state
+    /// File system state.
     ///
     /// See [`State`] for more information.
     pub state: u16,
 
-    /// What to do when an error is detected
+    /// What to do when an error is detected.
     ///
     /// See [`ErrorHandlingMethod`] for more information.
     pub errors: u16,
 
-    /// Minor portion of version (combine with Major portion below to construct full version field)
+    /// Minor portion of version (combine with Major portion below to construct full version field).
     pub minor_rev_level: u16,
 
-    /// POSIX time of last consistency check (fsck)
+    /// POSIX time of last consistency check (fsck).
     pub lastcheck: u32,
 
-    /// Interval (in POSIX time) between forced consistency checks (fsck)
+    /// Interval (in POSIX time) between forced consistency checks (fsck).
     pub checkinterval: u32,
 
-    /// Operating system ID from which the filesystem on this volume was created
+    /// Operating system ID from which the filesystem on this volume was created.
     ///
     /// See [`OperatingSystem`] for more information.
     pub creator_os: u32,
 
-    /// Major portion of version (combine with Minor portion above to construct full version field)
+    /// Major portion of version (combine with Minor portion above to construct full version field).
     pub rev_level: u32,
 
-    /// User ID that can use reserved blocks
+    /// User ID that can use reserved blocks.
     pub def_resuid: u16,
 
-    /// Group ID that can use reserved blocks
+    /// Group ID that can use reserved blocks.
     pub def_resgid: u16,
 }
 
@@ -235,28 +235,28 @@ impl From<ErrorHandlingMethod> for u16 {
     }
 }
 
-/// Creator Operating Systemd IDs
+/// Creator Operating Systemd IDs.
 ///
 /// See the [OSdev wiki](https://wiki.osdev.org/Ext2#Creator_Operating_System_IDs) for more information.
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OperatingSystem {
-    /// [Linux](https://kernel.org/)
+    /// [Linux](https://kernel.org/).
     Linux = 0x0000_0000,
 
-    /// [GNU HURD](https://www.gnu.org/software/hurd/hurd.html)
+    /// [GNU HURD](https://www.gnu.org/software/hurd/hurd.html).
     GnuHurd = 0x0000_0001,
 
-    /// MASIX (an operating system developed by Rémy Card, one of the developers of ext2)
+    /// MASIX (an operating system developed by Rémy Card, one of the developers of ext2).
     Masix = 0x0000_0002,
 
-    /// [FreeBSD](https://www.freebsd.org/)
+    /// [FreeBSD](https://www.freebsd.org/).
     FreeBSD = 0x0000_0003,
 
-    /// Other "Lites" (BSD4.4-Lite derivatives such as [NetBSD](https://www.netbsd.org/), [OpenBSD](https://www.openbsd.org/), [XNU/Darwin](https://opensource.apple.com/source/xnu/), etc.)
+    /// Other "Lites" (BSD4.4-Lite derivatives such as [NetBSD](https://www.netbsd.org/), [OpenBSD](https://www.openbsd.org/), [XNU/Darwin](https://opensource.apple.com/source/xnu/), etc.).
     OtherLites = 0x0000_0004,
 
-    /// Unspecified operating system
+    /// Unspecified operating system.
     ///
     /// This variant exists as any other operating system should be able to specify its own value.
     Other(u32),
@@ -361,74 +361,72 @@ impl Base {
 #[repr(C, packed)]
 #[derive(Debug, Clone, Copy)]
 pub struct ExtendedFields {
-    /// First non-reserved inode in file system. (In versions < 1.0, this is fixed as 11)
+    /// First non-reserved inode in file system. (In versions < 1.0, this is fixed as 11).
     pub first_ino: u32,
 
-    /// Size of each inode structure in bytes. (In versions < 1.0, this is fixed as 128)
+    /// Size of each inode structure in bytes. (In versions < 1.0, this is fixed as 128).
     pub inode_size: u16,
 
-    /// Block group that this superblock is part of (if backup copy)
+    /// Block group that this superblock is part of (if backup copy).
     pub block_group_nr: u16,
 
     /// Optional features present (features that are not required to read or write, but usually result in a performance
-    /// increase)
+    /// increase).
     pub feature_compat: u32,
 
-    /// Required features present (features that are required to be supported to read or write)
+    /// Required features present (features that are required to be supported to read or write).
     pub feature_incompat: u32,
 
-    /// Features that if not supported, the volume must be mounted read-only
+    /// Features that if not supported, the volume must be mounted read-only.
     pub feature_ro_compat: u32,
 
-    /// File system ID (what is output by blkid)
+    /// File system ID (what is output by blkid).
     pub uuid: u128,
 
-    /// Volume name (C-style string: characters terminated by a 0 byte)
+    /// Volume name (C-style string: characters terminated by a 0 byte).
     pub volume_name: [u8; 16],
 
-    /// Path volume was last mounted to (C-style string: characters terminated by a 0 byte)
+    /// Path volume was last mounted to (C-style string: characters terminated by a 0 byte).
     pub last_mounted: [u8; 64],
 
     /// Compression algorithms used (see
-    /// [`required_features`](struct.ExtendedFields.html#structfield.required_features))
+    /// [`required_features`](struct.ExtendedFields.html#structfield.required_features)).
     pub algo_bitmap: u32,
 
-    /// Number of blocks to preallocate for files
+    /// Number of blocks to preallocate for files.
     pub prealloc_blocks: u8,
 
-    /// Number of blocks to preallocate for directories
+    /// Number of blocks to preallocate for directories.
     pub prealloc_dir_blocks: u8,
 
-    /// Alignement
-    #[doc(hidden)]
-    pub unused_1: u16,
+    /// Alignement.
+    pub alignment: u16,
 
-    /// Journal ID (same style as the File system ID above)
+    /// Journal ID (same style as the File system ID above).
     pub journal_uuid: u128,
 
-    /// Journal inode
+    /// Journal inode.
     pub journal_inum: u32,
 
-    /// Journal device
+    /// Journal device.
     pub journal_dev: u32,
 
-    /// Head of orphan inode list
+    /// Head of orphan inode list.
     pub last_orphan: u32,
 
-    /// Seeds used for the hash algorithm for directory indexing
+    /// Seeds used for the hash algorithm for directory indexing.
     pub hash_seed: [u32; 4],
 
-    /// Default hash version used for directory indexing
+    /// Default hash version used for directory indexing.
     pub def_hash_version: u8,
 
-    /// Padding
-    #[doc(hidden)]
-    pub unused_2: [u8; 3],
+    /// Padding.
+    pub padding: [u8; 3],
 
-    /// Default mount options for this file system
+    /// Default mount options for this file system.
     pub default_mount_options: u32,
 
-    /// Block group ID of the first meta block group
+    /// Block group ID of the first meta block group.
     pub first_meta_bg: u32,
 }
 
@@ -464,40 +462,40 @@ bitflags! {
     /// implementations that do support them.
     pub struct OptionalFeatures: u32 {
         ///  Preallocate some number of (contiguous?) blocks (see byte 205 in the superblock) to a directory when creating
-        /// a new one
+        /// a new one.
         const DIR_PREALLOC  =   0x0000_0001;
 
-        /// AFS server inodes exist
+        /// AFS server inodes exist.
         const IMAGIC_INODES =   0x0000_0002;
 
-        /// File system has a journal (Ext3)
+        /// File system has a journal (Ext3).
         const HAS_JOURNAL   =   0x0000_0004;
 
-        /// Inodes have extended attributes
+        /// Inodes have extended attributes.
         const EXT_ATTR      =   0x0000_0008;
 
-        /// File system can resize itself for larger partitions
+        /// File system can resize itself for larger partitions.
         const RESIZE_INO    =   0x0000_0010;
 
-        /// Directories use hash index
+        /// Directories use hash index.
         const DIR_INDEX     =   0x0000_0020;
     }
 }
 
 bitflags! {
     /// These features if present on a file system are required to be supported by an implementation in order to correctly
-    /// read from or write to the file system
+    /// read from or write to the file system.
     pub struct RequiredFeatures: u32 {
         /// Compression is used
         const COMPRESSION   =   0x0000_0001;
 
-        /// Directory entries contain a type field
+        /// Directory entries contain a type field.
         const FILETYPE      =   0x0000_0002;
 
-        /// File system needs to replay its journal
+        /// File system needs to replay its journal.
         const RECOVER       =   0x0000_0004;
 
-        /// File system uses a journal device
+        /// File system uses a journal device.
         const JOURNAL_DEV   =   0x0000_0008;
 
         /// Meta Block Groups option (see [this paragraph](https://docs.kernel.org/filesystems/ext4/overview.html#meta-block-groups) from the ext4 documentation).
@@ -509,13 +507,13 @@ bitflags! {
     /// These features, if present on a file system, are required in order for an implementation to write to the file system,
     /// but are not required to read from the file system.
     pub struct ReadOnlyFeatures: u32 {
-        /// Sparse superblocks and group descriptor tables
+        /// Sparse superblocks and group descriptor tables.
         const SPARSE_SUPER  =   0x0000_0001;
 
-        /// File system uses a 64-bit file size
+        /// File system uses a 64-bit file size.
         const LARGE_FILE    =   0x0000_0002;
 
-        /// Directory contents are stored in the form of a Binary Tree
+        /// Directory contents are stored in the form of a Binary Tree.
         const BTREE_DIR     =   0x0000_0004;
     }
 }
@@ -529,16 +527,16 @@ pub enum CompressionAlgorithm {
     /// [Lempi-Ziv-Welch compression algorithm](https://en.wikipedia.org/wiki/Lempel-Ziv-Welch).
     LZV1 = 0x0000_0001,
 
-    /// [LZRW compression algorithm](https://en.wikipedia.org/wiki/LZRW) variant LZRW3-A
+    /// [LZRW compression algorithm](https://en.wikipedia.org/wiki/LZRW) variant LZRW3-A.
     LZRW3A = 0x0000_0002,
 
-    /// [GZIP algorithm](https://en.wikipedia.org/wiki/Gzip)
+    /// [GZIP algorithm](https://en.wikipedia.org/wiki/Gzip).
     GZIP = 0x0000_0004,
 
-    /// [bzip2 algorithm](https://en.wikipedia.org/wiki/Bzip2)
+    /// [bzip2 algorithm](https://en.wikipedia.org/wiki/Bzip2).
     BZIP2 = 0x0000_0008,
 
-    /// [Lempel-Zip-Oberhumer algorithm](https://en.wikipedia.org/wiki/Lempel-Ziv-Oberhumer)
+    /// [Lempel-Zip-Oberhumer algorithm](https://en.wikipedia.org/wiki/Lempel-Ziv-Oberhumer).
     LZO = 0x0000_0010,
 }
 

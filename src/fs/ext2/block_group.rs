@@ -46,11 +46,9 @@ pub struct BlockGroupDescriptor {
     pub used_dirs_count: u16,
 
     /// Used for padding the structure on a 32bit boundary.
-    #[doc(hidden)]
     pub pad: u16,
 
     /// Reserved space for future revisions.
-    #[doc(hidden)]
     pub reserved: [u8; 12],
 }
 
