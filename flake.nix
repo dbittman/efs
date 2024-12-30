@@ -38,11 +38,10 @@
         packages = with pkgs; [
           cargo-deny
           git
-          rustPlatform
           rustup
         ];
 
-        RUSTDOCFLAGS = "--cfg docsrs";
+        RUSTDOCFLAGS = "--cfg docsrs -D warnings";
       };
 
       packages.efs = craneLib.buildPackage (commonArgs // {
