@@ -248,7 +248,7 @@ mod test {
         .unwrap()
         .commit();
 
-        let ext2 = Ext2Fs::new_celled(celled_file, 0, false).unwrap();
+        let ext2 = Ext2Fs::new_celled(celled_file, new_device_id()).unwrap();
         let mut block = Block::new(ext2, BLOCK_NUMBER);
         block.seek(SeekFrom::Start(123)).unwrap();
         let mut buffer_auto = [0_u8; 59];
@@ -260,7 +260,7 @@ mod test {
     fn block_write(file: File) {
         const BLOCK_NUMBER: u32 = 10_234;
 
-        let ext2 = Ext2Fs::new(file, new_device_id(), false).unwrap();
+        let ext2 = Ext2Fs::new(file, new_device_id()).unwrap();
         let superblock = ext2.lock().superblock().clone();
 
         let mut block = Block::new(ext2, BLOCK_NUMBER);
@@ -278,7 +278,7 @@ mod test {
         // This block should not be free
         const BLOCK_NUMBER: u32 = 9;
 
-        let ext2 = Ext2Fs::new(file, new_device_id(), false).unwrap();
+        let ext2 = Ext2Fs::new(file, new_device_id()).unwrap();
         let superblock = ext2.lock().superblock().clone();
 
         let mut block = Block::new(ext2.clone(), BLOCK_NUMBER);
@@ -309,7 +309,7 @@ mod test {
         // This block should not be used
         const BLOCK_NUMBER: u32 = 1920;
 
-        let ext2 = Ext2Fs::new(file, new_device_id(), false).unwrap();
+        let ext2 = Ext2Fs::new(file, new_device_id()).unwrap();
         let superblock = ext2.lock().superblock().clone();
 
         let mut block = Block::new(ext2.clone(), BLOCK_NUMBER);

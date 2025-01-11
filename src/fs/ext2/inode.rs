@@ -14,7 +14,6 @@ use super::block_group::BlockGroupDescriptor;
 use super::error::Ext2Error;
 use super::superblock::{OperatingSystem, Superblock};
 use crate::arch::{u32_to_usize, usize_to_u64};
-use crate::cache::Cache;
 use crate::dev::Device;
 use crate::dev::sector::Address;
 use crate::error::Error;
@@ -43,11 +42,6 @@ pub const BOOT_LOADER_INODE: u32 = 5;
 
 /// Reserved undeleted directory inode number.
 pub const UNDELETED_DIRECTORY_INODE: u32 = 6;
-
-/// Cache for inodes.
-///
-/// Stores the couple `((device, inode_number), inode)` for each visited inode.
-static INODE_CACHE: Cache<(u32, u32), Inode> = Cache::new();
 
 /// An ext2 inode.
 ///
@@ -559,12 +553,6 @@ impl Inode {
     ///
     /// Otherwise, returns an [`Error::Device`] if the device cannot be read.
     pub fn parse<Dev: Device<u8, Ext2Error>>(fs: &Ext2<Dev>, n: u32) -> Result<Self, Error<Ext2Error>> {
-        if fs.cache
-            && let Some(inode) = INODE_CACHE.get_copy(&(fs.device_id, n))
-        {
-            return Ok(inode);
-        }
-
         let starting_addr = Self::starting_addr(fs, n)?;
         let mut device = fs.device.lock();
 
@@ -575,11 +563,6 @@ impl Inode {
             Ok(_) => inode,
             Err(err) => Err(Error::Fs(FsError::Implementation(err)))?,
         };
-
-        // It's the first time the inode is read.
-        if fs.cache {
-            INODE_CACHE.insert((fs.device_id, n), inode);
-        }
 
         Ok(inode)
     }
@@ -599,9 +582,6 @@ impl Inode {
         inode: Self,
     ) -> Result<(), Error<Ext2Error>> {
         let starting_addr = Self::starting_addr(fs, n)?;
-        if fs.cache {
-            INODE_CACHE.insert((fs.device_id, n), inode);
-        }
         fs.device.lock().write_at(starting_addr, inode)
     }
 
@@ -816,13 +796,12 @@ impl Inode {
 mod test {
     use core::mem::size_of;
     use std::fs::File;
-    use std::time;
 
     use crate::dev::Device;
     use crate::fs::ext2::Ext2;
     use crate::fs::ext2::error::Ext2Error;
     use crate::fs::ext2::inode::{Inode, ROOT_DIRECTORY_INODE};
-    use crate::tests::{copy_file, new_device_id};
+    use crate::tests::new_device_id;
 
     #[test]
     fn struct_size() {
@@ -830,27 +809,27 @@ mod test {
     }
 
     fn parse_root_base(file: File) {
-        let fs = Ext2::new(file, new_device_id(), false).unwrap();
+        let fs = Ext2::new(file, new_device_id()).unwrap();
         assert!(Inode::parse(&fs, ROOT_DIRECTORY_INODE).is_ok());
     }
 
     fn parse_root_extended(file: File) {
-        let fs = Ext2::new(file, new_device_id(), false).unwrap();
+        let fs = Ext2::new(file, new_device_id()).unwrap();
         assert!(Inode::parse(&fs, ROOT_DIRECTORY_INODE).is_ok());
     }
 
     fn failed_parse_base(file: File) {
-        let fs = Ext2::new(file, new_device_id(), false).unwrap();
+        let fs = Ext2::new(file, new_device_id()).unwrap();
         assert!(Inode::parse(&fs, 0).is_err());
     }
 
     fn failed_parse_extended(file: File) {
-        let fs = Ext2::new(file, new_device_id(), false).unwrap();
+        let fs = Ext2::new(file, new_device_id()).unwrap();
         assert!(Inode::parse(&fs, 0).is_err());
     }
 
     fn starting_addr(file: File) {
-        let fs = Ext2::new(file, new_device_id(), false).unwrap();
+        let fs = Ext2::new(file, new_device_id()).unwrap();
 
         let root_auto = Inode::parse(&fs, ROOT_DIRECTORY_INODE).unwrap();
 
@@ -862,28 +841,6 @@ mod test {
         assert_eq!(root_auto, root_manual);
     }
 
-    fn cache_test(file: File) {
-        let fs = Ext2::new(file, new_device_id(), false).unwrap();
-
-        let start_time = time::Instant::now();
-        for _ in 0..100_000 {
-            assert!(Inode::parse(&fs, ROOT_DIRECTORY_INODE).is_ok());
-        }
-        let time_cache_disabled = start_time.elapsed();
-
-        let file_name = copy_file("./tests/fs/ext2/base.ext2").unwrap();
-        let file = File::open(&file_name).unwrap();
-        let fs = Ext2::new(file, new_device_id(), true).unwrap();
-        let start_time = time::Instant::now();
-        for _ in 0..100_000 {
-            assert!(Inode::parse(&fs, ROOT_DIRECTORY_INODE).is_ok());
-        }
-        let time_cache_enabled = start_time.elapsed();
-        std::fs::remove_file(file_name).unwrap();
-
-        assert!(time_cache_disabled > time_cache_enabled);
-    }
-
     mod generated {
         use crate::tests::generate_fs_test;
 
@@ -892,6 +849,5 @@ mod test {
         generate_fs_test!(failed_parse_base, "./tests/fs/ext2/base.ext2");
         generate_fs_test!(failed_parse_extended, "./tests/fs/ext2/extended.ext2");
         generate_fs_test!(starting_addr, "./tests/fs/ext2/base.ext2");
-        generate_fs_test!(cache_test, "./tests/fs/ext2/base.ext2");
     }
 }

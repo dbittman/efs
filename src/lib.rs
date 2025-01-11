@@ -136,6 +136,8 @@
 //! # )
 //! # .unwrap();
 //!
+//! let device_id = 0_u32;
+//!
 //! // `device` now contains a `Device`
 //! let device = std::fs::File::options()
 //!     .read(true)
@@ -143,7 +145,7 @@
 //!     .open("./tests/fs/ext2/example.ext2")
 //!     .unwrap();
 //!
-//! let fs = Ext2Fs::new(device, 0, false).unwrap();
+//! let fs = Ext2Fs::new(device, device_id).unwrap();
 //!
 //! // `fs` now contains a `FileSystem` with the following structure:
 //! // /
@@ -284,7 +286,6 @@ extern crate core;
 extern crate std;
 
 pub mod arch;
-pub mod cache;
 pub mod celled;
 pub mod dev;
 pub mod error;

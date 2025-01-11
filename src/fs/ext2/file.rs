@@ -590,11 +590,6 @@ pub struct Directory<Dev: Device<u8, Ext2Error>> {
     ///
     /// They are stored as a list of entries in each data block.
     entries: Mutex<Vec<Vec<Entry>>>,
-
-    /// Should the directory content be cached ?
-    ///
-    /// If the directory is cached, the content will not be read directly from the device but from this object.
-    cache: bool,
 }
 
 impl<Dev: Device<u8, Ext2Error>> Directory<Dev> {
@@ -605,14 +600,9 @@ impl<Dev: Device<u8, Ext2Error>> Directory<Dev> {
     /// Returns the same errors as [`Entry::parse`].
     pub fn new(filesystem: &Ext2Fs<Dev>, inode_number: u32) -> Result<Self, Error<Ext2Error>> {
         let file = File::new(filesystem, inode_number)?;
-        let cache = file.filesystem.lock().cache;
         let entries = Mutex::new(Self::parse(&file)?);
 
-        Ok(Self {
-            file,
-            entries,
-            cache,
-        })
+        Ok(Self { file, entries })
     }
 
     /// Parse this inode's content as a list of directory entries.
@@ -760,7 +750,6 @@ impl<Dev: Device<u8, Ext2Error>> Clone for Directory<Dev> {
         Self {
             file: self.file.clone(),
             entries: Mutex::new(self.entries.lock().clone()),
-            cache: self.cache,
         }
     }
 }
@@ -778,9 +767,7 @@ impl<Dev: Device<u8, Ext2Error>> file::Directory for Directory<Dev> {
     fn entries(&self) -> Result<Vec<file::DirectoryEntry<Self>>, Error<Ext2Error>> {
         let mut entries = Vec::new();
 
-        if self.cache {
-            self.update_inner_entries()?;
-        }
+        self.update_inner_entries()?;
 
         for entry in self.entries.lock().iter().flatten() {
             entries.push(DirectoryEntry {
@@ -1169,7 +1156,7 @@ mod test {
     use crate::types::{Gid, Mode, Uid};
 
     fn parse_root(file: File) {
-        let ext2 = Ext2Fs::new(file, new_device_id(), true).unwrap();
+        let ext2 = Ext2Fs::new(file, new_device_id()).unwrap();
         let root = Directory::new(&ext2, ROOT_DIRECTORY_INODE).unwrap();
         assert_eq!(
             root.entries
@@ -1183,8 +1170,8 @@ mod test {
         );
     }
 
-    fn parse_root_entries_without_cache(file: File) {
-        let fs = Ext2::new(file, new_device_id(), false).unwrap();
+    fn parse_root_entries(file: File) {
+        let fs = Ext2::new(file, new_device_id()).unwrap();
         let root_inode = Inode::parse(&fs, ROOT_DIRECTORY_INODE).unwrap();
 
         let dot = unsafe {
@@ -1231,69 +1218,6 @@ mod test {
                 &fs,
                 Address::new(
                     (u32_to_usize(root_inode.direct_block_pointers[0]) * u32_to_usize(fs.superblock().block_size()))
-                        + u32_to_usize(
-                            (dot.rec_len + two_dots.rec_len + lost_and_found.rec_len + big_file.rec_len).into(),
-                        ),
-                ),
-            )
-        }
-        .unwrap();
-
-        assert_eq!(dot.name.as_c_str().to_string_lossy(), ".");
-        assert_eq!(two_dots.name.as_c_str().to_string_lossy(), "..");
-        assert_eq!(lost_and_found.name.as_c_str().to_string_lossy(), "lost+found");
-        assert_eq!(big_file.name.as_c_str().to_string_lossy(), "big_file");
-        assert_eq!(symlink.name.as_c_str().to_string_lossy(), "symlink");
-    }
-
-    fn parse_root_entries_with_cache(file: File) {
-        let fs = Ext2::new(file, new_device_id(), true).unwrap();
-        let root_inode = Inode::parse(&fs, ROOT_DIRECTORY_INODE).unwrap();
-
-        let dot = unsafe {
-            Entry::parse(
-                &fs,
-                Address::new(
-                    u32_to_usize(root_inode.direct_block_pointers[0]) * u32_to_usize(fs.superblock().block_size()),
-                ),
-            )
-        }
-        .unwrap();
-        let two_dots = unsafe {
-            Entry::parse(
-                &fs,
-                Address::new(
-                    u32_to_usize(root_inode.direct_block_pointers[0]) * u32_to_usize(fs.superblock().block_size())
-                        + u32_to_usize(dot.rec_len.into()),
-                ),
-            )
-        }
-        .unwrap();
-        let lost_and_found = unsafe {
-            Entry::parse(
-                &fs,
-                Address::new(
-                    u32_to_usize(root_inode.direct_block_pointers[0]) * u32_to_usize(fs.superblock().block_size())
-                        + u32_to_usize((dot.rec_len + two_dots.rec_len).into()),
-                ),
-            )
-        }
-        .unwrap();
-        let big_file = unsafe {
-            Entry::parse(
-                &fs,
-                Address::new(
-                    u32_to_usize(root_inode.direct_block_pointers[0]) * u32_to_usize(fs.superblock().block_size())
-                        + u32_to_usize((dot.rec_len + two_dots.rec_len + lost_and_found.rec_len).into()),
-                ),
-            )
-        }
-        .unwrap();
-        let symlink = unsafe {
-            Entry::parse(
-                &fs,
-                Address::new(
-                    u32_to_usize(root_inode.direct_block_pointers[0]) * u32_to_usize(fs.superblock().block_size())
                         + u32_to_usize(
                             (dot.rec_len + two_dots.rec_len + lost_and_found.rec_len + big_file.rec_len).into(),
                         ),
@@ -1310,7 +1234,7 @@ mod test {
     }
 
     fn parse_big_file_inode_data(file: File) {
-        let ext2 = Ext2Fs::new(file, new_device_id(), true).unwrap();
+        let ext2 = Ext2Fs::new(file, new_device_id()).unwrap();
         let root = Directory::new(&ext2, ROOT_DIRECTORY_INODE).unwrap();
 
         let fs = ext2.lock();
@@ -1344,7 +1268,7 @@ mod test {
     }
 
     fn read_file(file: File) {
-        let ext2 = Ext2Fs::new(file, new_device_id(), false).unwrap();
+        let ext2 = Ext2Fs::new(file, new_device_id()).unwrap();
 
         let TypeWithFile::Directory(root) = ext2.file(ROOT_DIRECTORY_INODE).unwrap() else {
             panic!("The root is always a directory.")
@@ -1359,7 +1283,7 @@ mod test {
     }
 
     fn read_file_with_offset(file: File) {
-        let ext2 = Ext2Fs::new(file, new_device_id(), false).unwrap();
+        let ext2 = Ext2Fs::new(file, new_device_id()).unwrap();
 
         let TypeWithFile::Directory(root) = ext2.file(ROOT_DIRECTORY_INODE).unwrap() else {
             panic!("The root is always a directory.")
@@ -1378,7 +1302,7 @@ mod test {
     }
 
     fn read_lorem(file: File) {
-        let ext2 = Ext2Fs::new(file, new_device_id(), false).unwrap();
+        let ext2 = Ext2Fs::new(file, new_device_id()).unwrap();
 
         let TypeWithFile::Directory(root) = ext2.file(ROOT_DIRECTORY_INODE).unwrap() else {
             panic!("The root is always a directory.")
@@ -1403,7 +1327,7 @@ mod test {
     }
 
     fn read_symlink(file: File) {
-        let ext2 = Ext2Fs::new(file, new_device_id(), false).unwrap();
+        let ext2 = Ext2Fs::new(file, new_device_id()).unwrap();
         let root = Directory::new(&ext2, ROOT_DIRECTORY_INODE).unwrap();
 
         let TypeWithFile::SymbolicLink(symlink) =
@@ -1416,7 +1340,7 @@ mod test {
     }
 
     fn set_inode(file: File) {
-        let ext2 = Ext2Fs::new(file, new_device_id(), false).unwrap();
+        let ext2 = Ext2Fs::new(file, new_device_id()).unwrap();
         let TypeWithFile::Directory(root) = ext2.file(ROOT_DIRECTORY_INODE).unwrap() else {
             panic!("The root is always a directory.")
         };
@@ -1437,7 +1361,7 @@ mod test {
     }
 
     fn write_file_dbp_replace_without_allocation(file: File) {
-        let ext2 = Ext2Fs::new(file, new_device_id(), false).unwrap();
+        let ext2 = Ext2Fs::new(file, new_device_id()).unwrap();
         let TypeWithFile::Directory(root) = ext2.file(ROOT_DIRECTORY_INODE).unwrap() else {
             panic!("The root is always a directory.")
         };
@@ -1458,7 +1382,7 @@ mod test {
     }
 
     fn write_file_dbp_extend_without_allocation(file: File) {
-        let ext2 = Ext2Fs::new(file, new_device_id(), false).unwrap();
+        let ext2 = Ext2Fs::new(file, new_device_id()).unwrap();
         let TypeWithFile::Directory(root) = ext2.file(ROOT_DIRECTORY_INODE).unwrap() else {
             panic!("The root is always a directory.")
         };
@@ -1481,7 +1405,7 @@ mod test {
     fn write_file_dbp_extend_with_allocation(file: File) {
         const BYTES_TO_WRITE: usize = 12_000;
 
-        let ext2 = Ext2Fs::new(file, new_device_id(), false).unwrap();
+        let ext2 = Ext2Fs::new(file, new_device_id()).unwrap();
         let TypeWithFile::Directory(root) = ext2.file(ROOT_DIRECTORY_INODE).unwrap() else {
             panic!("The root is always a directory.")
         };
@@ -1504,7 +1428,7 @@ mod test {
     fn write_file_singly_indirect_block_pointer(file: File) {
         const BYTES_TO_WRITE: usize = 23_000;
 
-        let ext2 = Ext2Fs::new(file, new_device_id(), false).unwrap();
+        let ext2 = Ext2Fs::new(file, new_device_id()).unwrap();
         let TypeWithFile::Directory(root) = ext2.file(ROOT_DIRECTORY_INODE).unwrap() else {
             panic!("The root is always a directory.")
         };
@@ -1531,7 +1455,7 @@ mod test {
     fn write_file_doubly_indirect_block_pointer(file: File) {
         const BYTES_TO_WRITE: usize = 400_000;
 
-        let ext2 = Ext2Fs::new(file, new_device_id(), false).unwrap();
+        let ext2 = Ext2Fs::new(file, new_device_id()).unwrap();
         let TypeWithFile::Directory(root) = ext2.file(ROOT_DIRECTORY_INODE).unwrap() else {
             panic!("The root is always a directory.")
         };
@@ -1558,7 +1482,7 @@ mod test {
     fn write_file_triply_indirect_block_pointer(file: File) {
         const BYTES_TO_WRITE: usize = 70_000_000;
 
-        let ext2 = Ext2Fs::new(file, new_device_id(), false).unwrap();
+        let ext2 = Ext2Fs::new(file, new_device_id()).unwrap();
         let TypeWithFile::Directory(root) = ext2.file(ROOT_DIRECTORY_INODE).unwrap() else {
             panic!("The root is always a directory.")
         };
@@ -1581,7 +1505,7 @@ mod test {
     fn write_file_twice(file: File) {
         const BYTES_TO_WRITE: usize = 23_000;
 
-        let ext2 = Ext2Fs::new(file, new_device_id(), false).unwrap();
+        let ext2 = Ext2Fs::new(file, new_device_id()).unwrap();
         let TypeWithFile::Directory(root) = ext2.file(ROOT_DIRECTORY_INODE).unwrap() else {
             panic!("The root is always a directory.")
         };
@@ -1608,7 +1532,7 @@ mod test {
 
     #[allow(clippy::similar_names)]
     fn file_mode(file: File) {
-        let ext2 = Ext2Fs::new(file, new_device_id(), false).unwrap();
+        let ext2 = Ext2Fs::new(file, new_device_id()).unwrap();
         let TypeWithFile::Directory(root) = ext2.file(ROOT_DIRECTORY_INODE).unwrap() else {
             panic!("The root is always a directory.")
         };
@@ -1642,7 +1566,7 @@ mod test {
     fn file_truncation(file: File) {
         const BYTES_TO_WRITE: usize = 400_000;
 
-        let ext2 = Ext2Fs::new(file, new_device_id(), false).unwrap();
+        let ext2 = Ext2Fs::new(file, new_device_id()).unwrap();
         let TypeWithFile::Directory(root) = ext2.file(ROOT_DIRECTORY_INODE).unwrap() else {
             panic!("The root is always a directory.")
         };
@@ -1674,7 +1598,7 @@ mod test {
     }
 
     fn file_symlinks(file: File) {
-        let ext2 = Ext2Fs::new(file, new_device_id(), false).unwrap();
+        let ext2 = Ext2Fs::new(file, new_device_id()).unwrap();
         let TypeWithFile::Directory(root) = ext2.file(ROOT_DIRECTORY_INODE).unwrap() else {
             panic!("The root is always a directory.");
         };
@@ -1709,7 +1633,7 @@ mod test {
     }
 
     fn new_files(file: File) {
-        let ext2 = Ext2Fs::new(file, new_device_id(), false).unwrap();
+        let ext2 = Ext2Fs::new(file, new_device_id()).unwrap();
         let TypeWithFile::Directory(mut root) = ext2.file(ROOT_DIRECTORY_INODE).unwrap() else {
             panic!("The root is always a directory.");
         };
@@ -1748,7 +1672,7 @@ mod test {
 
     #[allow(clippy::similar_names)]
     fn remove_files(file: File) {
-        let ext2 = Ext2Fs::new(file, new_device_id(), false).unwrap();
+        let ext2 = Ext2Fs::new(file, new_device_id()).unwrap();
         let TypeWithFile::Directory(mut root) = ext2.file(ROOT_DIRECTORY_INODE).unwrap() else {
             panic!("The root is always a directory.");
         };
@@ -1795,7 +1719,7 @@ mod test {
     }
 
     fn atime_and_mtime(file: File) {
-        let ext2 = Ext2Fs::new(file, new_device_id(), false).unwrap();
+        let ext2 = Ext2Fs::new(file, new_device_id()).unwrap();
         let TypeWithFile::Directory(root) = ext2.file(ROOT_DIRECTORY_INODE).unwrap() else {
             panic!("The root is always a directory.")
         };
@@ -1836,8 +1760,7 @@ mod test {
         use crate::tests::{PostCheck, generate_fs_test};
 
         generate_fs_test!(parse_root, "./tests/fs/ext2/extended.ext2", PostCheck::Ext);
-        generate_fs_test!(parse_root_entries_without_cache, "./tests/fs/ext2/extended.ext2", PostCheck::Ext);
-        generate_fs_test!(parse_root_entries_with_cache, "./tests/fs/ext2/extended.ext2", PostCheck::Ext);
+        generate_fs_test!(parse_root_entries, "./tests/fs/ext2/extended.ext2", PostCheck::Ext);
         generate_fs_test!(parse_big_file_inode_data, "./tests/fs/ext2/extended.ext2", PostCheck::Ext);
         generate_fs_test!(read_file, "./tests/fs/ext2/io_operations.ext2", PostCheck::Ext);
         generate_fs_test!(read_file_with_offset, "./tests/fs/ext2/io_operations.ext2", PostCheck::Ext);

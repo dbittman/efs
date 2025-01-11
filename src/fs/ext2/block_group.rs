@@ -5,7 +5,6 @@
 use super::Ext2;
 use super::error::Ext2Error;
 use super::superblock::{SUPERBLOCK_SIZE, SUPERBLOCK_START_BYTE, Superblock};
-use crate::cache::Cache;
 use crate::dev::Device;
 use crate::dev::sector::Address;
 use crate::error::Error;
@@ -13,11 +12,6 @@ use crate::fs::error::FsError;
 
 /// Size in bytes of a block group descriptor with reserved bytes.
 pub const BLOCK_GROUP_DESCRIPTOR_SIZE: usize = 32;
-
-/// Cache for block group descriptors.
-///
-/// Stores the couple `((device, block_group_number), block_group_descriptor)` for each visited inode.
-static BLOCK_GROUP_DESCRIPTOR_CACHE: Cache<(u32, u32), BlockGroupDescriptor> = Cache::new();
 
 /// Block group descriptor.
 ///
@@ -78,23 +72,12 @@ impl BlockGroupDescriptor {
     ///
     /// Returns an [`Error::Device`] if the device cannot be read.
     pub fn parse<Dev: Device<u8, Ext2Error>>(fs: &Ext2<Dev>, n: u32) -> Result<Self, Error<Ext2Error>> {
-        if fs.cache
-            && let Some(block_group_descriptor) = BLOCK_GROUP_DESCRIPTOR_CACHE.get_copy(&(fs.device_id, n))
-        {
-            return Ok(block_group_descriptor);
-        }
-
         let mut device = fs.device.lock();
 
         let block_group_descriptor_address = Self::starting_addr(fs.superblock(), n)?;
 
         // SAFETY: all the possible failures are catched in the resulting error
         let block_group_descriptor = unsafe { device.read_at::<Self>(block_group_descriptor_address) }?;
-
-        // It's the first time the block group descriptor is read.
-        if fs.cache {
-            BLOCK_GROUP_DESCRIPTOR_CACHE.insert((fs.device_id, n), block_group_descriptor);
-        }
 
         Ok(block_group_descriptor)
     }
@@ -114,9 +97,6 @@ impl BlockGroupDescriptor {
         block_group_descriptor: Self,
     ) -> Result<(), Error<Ext2Error>> {
         let starting_addr = Self::starting_addr(fs.superblock(), n)?;
-        if fs.cache {
-            BLOCK_GROUP_DESCRIPTOR_CACHE.insert((fs.device_id, n), block_group_descriptor);
-        }
         fs.device.lock().write_at(starting_addr, block_group_descriptor)
     }
 }
@@ -125,11 +105,10 @@ impl BlockGroupDescriptor {
 mod test {
     use core::mem::size_of;
     use std::fs::File;
-    use std::time;
 
     use super::{BLOCK_GROUP_DESCRIPTOR_SIZE, BlockGroupDescriptor};
     use crate::fs::ext2::Ext2;
-    use crate::tests::{copy_file, new_device_id};
+    use crate::tests::new_device_id;
 
     #[test]
     fn struct_size() {
@@ -137,53 +116,27 @@ mod test {
     }
 
     fn parse_first_block_group_descriptor_base(file: File) {
-        let fs = Ext2::new(file, new_device_id(), false).unwrap();
+        let fs = Ext2::new(file, new_device_id()).unwrap();
         assert!(BlockGroupDescriptor::parse(&fs, 0).is_ok());
     }
 
     fn parse_first_block_group_descriptor_extended(file: File) {
-        let fs = Ext2::new(file, new_device_id(), false).unwrap();
+        let fs = Ext2::new(file, new_device_id()).unwrap();
         assert!(BlockGroupDescriptor::parse(&fs, 0).is_ok());
     }
 
     fn failed_parse_base(file: File) {
-        let fs = Ext2::new(file, new_device_id(), false).unwrap();
+        let fs = Ext2::new(file, new_device_id()).unwrap();
         assert!(BlockGroupDescriptor::parse(&fs, fs.superblock().block_group_count()).is_err());
     }
 
     fn failed_parse_extended(file: File) {
-        let fs = Ext2::new(file, new_device_id(), false).unwrap();
+        let fs = Ext2::new(file, new_device_id()).unwrap();
         assert!(BlockGroupDescriptor::parse(&fs, fs.superblock().block_group_count()).is_err());
     }
 
-    #[test]
-    fn cache_test() {
-        let file_name = copy_file("./tests/fs/ext2/base.ext2").unwrap();
-        let file = std::fs::File::open(&file_name).unwrap();
-        let fs = Ext2::new(file, new_device_id(), false).unwrap();
-
-        let start_time = time::Instant::now();
-        for _ in 0..100_000 {
-            assert!(BlockGroupDescriptor::parse(&fs, 0).is_ok());
-        }
-        let time_cache_disabled = start_time.elapsed();
-        std::fs::remove_file(&file_name).unwrap();
-
-        let file_name = copy_file("./tests/fs/ext2/base.ext2").unwrap();
-        let file = std::fs::File::open(&file_name).unwrap();
-        let fs = Ext2::new(file, new_device_id(), true).unwrap();
-        let start_time = time::Instant::now();
-        for _ in 0..100_000 {
-            assert!(BlockGroupDescriptor::parse(&fs, 0).is_ok());
-        }
-        let time_cache_enabled = start_time.elapsed();
-        std::fs::remove_file(&file_name).unwrap();
-
-        assert!(time_cache_disabled > time_cache_enabled);
-    }
-
     fn write_back(file: File) {
-        let fs = Ext2::new(file, new_device_id(), false).unwrap();
+        let fs = Ext2::new(file, new_device_id()).unwrap();
 
         let mut bgd = BlockGroupDescriptor::parse(&fs, 0).unwrap();
         bgd.free_blocks_count = 0;
