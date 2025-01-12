@@ -107,8 +107,9 @@
 //! ### Concurrency
 //!
 //! This library do not offer any guaranty for the behaviour of file manipulations when an other program is making
-//! `write` operations on the same device at the same time in a general context. Each filesystem implementation
-//! documentation contains a paragraph on its handle on concurrency, you can refer to it for more information.
+//! `write` operations on the same device at the same time in a general context. If you really need to, each filesystem
+//! implementation documentation contains a paragraph describing exactly what structures are cached: updating by hand
+//! those structures allow you to handle concurrency correctly.
 //!
 //! In concrete terms, in particular for OS developers, it's your duty, and more precisely the duty of the [virtual filesystem](https://en.wikipedia.org/wiki/Virtual_file_system)
 //! to handle the case where two programs tries to modify the same data at the same time.

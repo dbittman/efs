@@ -70,22 +70,9 @@
 //!
 //! ## Concurrency
 //!
-//! When instancing a new instance of [`Ext2Fs`], the principal structure to manipulate an ext2 filesystem, you can
-//! choose whether to enable caches or not.
-//!
-//! - When the cache is not enabled, all the structures will be read whenever needed to make sure no change has been
-//!   made by an external program. Only the [superblock](Superblock) will be kept in memory because of its high usage:
-//!   it will only be updated before each write operation.
-//!
-//! - When the cache is enabled the [superblock](Superblock), the [inodes](Inode), the [block group
-//!   descriptors](BlockGroupDescriptor) and the [directories](Directory) will be cached so that the program does not
-//!   need to read the current state of the filesystem to know the content of those structures.
-//!
-//! Enabling the cache will consume more memory but can greatly increase speed when dealing with a high number of
-//! requests.
-//!
-//! The cache **CANNOT** be used if an external program is writing on this filesystem at the same time. When using the
-//! cache, you have to make sure that all the write operations are made by this library.
+//! When instancing a new instance of [`Ext2Fs`], the principal structure to manipulate an ext2 filesystem, only the
+//! [superblock](Superblock) will be kept in memory because of its high usage: it will only be updated before each
+//! write operation.
 
 use alloc::borrow::ToOwned;
 use alloc::vec;
