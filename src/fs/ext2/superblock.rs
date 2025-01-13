@@ -10,7 +10,7 @@ use super::error::Ext2Error;
 use crate::arch::usize_to_u64;
 use crate::celled::Celled;
 use crate::dev::Device;
-use crate::dev::sector::Address;
+use crate::dev::address::Address;
 use crate::error::Error;
 use crate::fs::error::FsError;
 

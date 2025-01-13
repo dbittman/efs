@@ -6,7 +6,7 @@ use super::Ext2;
 use super::error::Ext2Error;
 use super::superblock::{SUPERBLOCK_SIZE, SUPERBLOCK_START_BYTE, Superblock};
 use crate::dev::Device;
-use crate::dev::sector::Address;
+use crate::dev::address::Address;
 use crate::error::Error;
 use crate::fs::error::FsError;
 

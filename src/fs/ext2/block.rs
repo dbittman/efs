@@ -13,7 +13,7 @@ use super::error::Ext2Error;
 use super::superblock::Superblock;
 use crate::arch::{u32_to_usize, usize_to_u64};
 use crate::dev::Device;
-use crate::dev::sector::Address;
+use crate::dev::address::Address;
 use crate::error::Error;
 use crate::fs::error::FsError;
 use crate::io::{Base, Read, Seek, SeekFrom, Write};
@@ -223,7 +223,7 @@ mod test {
 
     use crate::celled::Celled;
     use crate::dev::Device;
-    use crate::dev::sector::Address;
+    use crate::dev::address::Address;
     use crate::fs::ext2::Ext2Fs;
     use crate::fs::ext2::block::Block;
     use crate::fs::ext2::block_group::BlockGroupDescriptor;
@@ -238,7 +238,7 @@ mod test {
         let celled_file = Celled::new(file);
         let superblock = Superblock::parse(&celled_file).unwrap();
 
-        let block_starting_addr = Address::new((BLOCK_NUMBER * superblock.block_size()).try_into().unwrap());
+        let block_starting_addr = Address::new((BLOCK_NUMBER * superblock.block_size()).into());
         let slice = <File as Device<u8, Ext2Error>>::slice(
             &mut celled_file.lock(),
             block_starting_addr + 123..block_starting_addr + 123 + 59,

@@ -32,7 +32,7 @@
 //! use std::vec;
 //!
 //! use efs::dev::Device;
-//! use efs::dev::sector::Address;
+//! use efs::dev::address::Address;
 //!
 //! // Here, our device is a `Vec<usize>`
 //! let mut device = vec![0_usize; 1024];
@@ -77,7 +77,7 @@
 //! use std::io::{Read, Seek, SeekFrom, Write};
 //!
 //! use efs::dev::Device;
-//! use efs::dev::sector::Address;
+//! use efs::dev::address::Address;
 //! use efs::io::StdIOWrapper;
 //!
 //! #[derive(Debug)]
@@ -139,7 +139,7 @@ use core::mem::{size_of, transmute_copy};
 use core::ops::{Deref, DerefMut, Range};
 use core::ptr::{addr_of, slice_from_raw_parts};
 
-use self::sector::Address;
+use self::address::Address;
 use self::size::Size;
 use crate::arch::usize_to_u64;
 use crate::dev::error::DevError;
@@ -149,8 +149,8 @@ use crate::io::{Base, Read, Seek, SeekFrom, Write};
 use crate::types::Time;
 use crate::types::Timespec;
 
+pub mod address;
 pub mod error;
-pub mod sector;
 pub mod size;
 
 /// Slice of a device, filled with objects of type `T`.
@@ -549,7 +549,7 @@ mod test {
 
     use crate::arch::usize_to_u64;
     use crate::dev::Device;
-    use crate::dev::sector::Address;
+    use crate::dev::address::Address;
     use crate::io::{Base, StdIOWrapper};
 
     #[derive(Debug)]

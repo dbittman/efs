@@ -10,7 +10,7 @@ use core::ops::{Deref, DerefMut};
 use crate::arch::u32_to_usize;
 use crate::celled::Celled;
 use crate::dev::Device;
-use crate::dev::sector::Address;
+use crate::dev::address::Address;
 use crate::error::Error;
 
 /// Generic bitmap structure.

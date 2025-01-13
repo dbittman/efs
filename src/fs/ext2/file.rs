@@ -18,8 +18,8 @@ use super::error::Ext2Error;
 use super::inode::{Inode, TypePermissions};
 use crate::arch::{u32_to_usize, u64_to_usize, usize_to_u64};
 use crate::dev::Device;
+use crate::dev::address::Address;
 use crate::dev::error::DevError;
-use crate::dev::sector::Address;
 use crate::error::Error;
 use crate::file::{self, DirectoryEntry, Stat, Type, TypeWithFile};
 use crate::fs::PATH_MAX;
@@ -1142,7 +1142,7 @@ mod test {
     use itertools::Itertools;
 
     use crate::arch::usize_to_u64;
-    use crate::dev::sector::Address;
+    use crate::dev::address::Address;
     use crate::file::{Regular, SymbolicLink, Type, TypeWithFile};
     use crate::fs::FileSystem;
     use crate::fs::ext2::directory::Entry;

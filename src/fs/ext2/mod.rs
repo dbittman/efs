@@ -92,7 +92,7 @@ use super::structures::bitmap::Bitmap;
 use crate::arch::{u32_to_usize, usize_to_u64};
 use crate::celled::Celled;
 use crate::dev::Device;
-use crate::dev::sector::Address;
+use crate::dev::address::Address;
 use crate::error::Error;
 use crate::file::{Type, TypeWithFile};
 use crate::fs::error::FsError;

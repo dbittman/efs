@@ -15,7 +15,7 @@ use super::error::Ext2Error;
 use super::superblock::{OperatingSystem, Superblock};
 use crate::arch::{u32_to_usize, usize_to_u64};
 use crate::dev::Device;
-use crate::dev::sector::Address;
+use crate::dev::address::Address;
 use crate::error::Error;
 use crate::file::Type;
 use crate::fs::error::FsError;
