@@ -11,7 +11,7 @@ use alloc::vec::Vec;
 use super::Ext2Fs;
 use super::error::Ext2Error;
 use super::superblock::Superblock;
-use crate::arch::u32_to_usize;
+use crate::arch::{u32_to_usize, usize_to_u64};
 use crate::dev::Device;
 use crate::dev::sector::Address;
 use crate::error::Error;
@@ -148,10 +148,9 @@ impl<Dev: Device<u8, Ext2Error>> Read for Block<Dev> {
         let mut device = fs.device.lock();
 
         let length = u32_to_usize(fs.superblock().block_size() - self.io_offset).min(buf.len());
-        let starting_addr = Address::new(
-            u32_to_usize(self.number) * u32_to_usize(fs.superblock().block_size()) + u32_to_usize(self.io_offset),
-        );
-        let slice = device.slice(starting_addr..starting_addr + length)?;
+        let starting_addr =
+            Address::new(u64::from(self.number) * u64::from(fs.superblock().block_size()) + u64::from(self.io_offset));
+        let slice = device.slice(starting_addr..starting_addr + usize_to_u64(length))?;
         buf.clone_from_slice(slice.as_ref());
 
         // SAFETY: `length <= block_size << u32::MAX`
@@ -167,10 +166,9 @@ impl<Dev: Device<u8, Ext2Error>> Write for Block<Dev> {
         let mut device = fs.device.lock();
 
         let length = u32_to_usize(fs.superblock().block_size() - self.io_offset).min(buf.len());
-        let starting_addr = Address::new(
-            u32_to_usize(self.number) * u32_to_usize(fs.superblock().block_size()) + u32_to_usize(self.io_offset),
-        );
-        let mut slice = device.slice(starting_addr..starting_addr + length)?;
+        let starting_addr =
+            Address::new(u64::from(self.number) * u64::from(fs.superblock().block_size()) + u64::from(self.io_offset));
+        let mut slice = device.slice(starting_addr..starting_addr + usize_to_u64(length))?;
         // SAFETY: buf size is at least length
         slice.clone_from_slice(unsafe { buf.get_unchecked(..length) });
         let commit = slice.commit();

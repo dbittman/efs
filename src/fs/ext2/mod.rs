@@ -247,7 +247,10 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
         device.write_at(Address::new(SUPERBLOCK_START_BYTE), *superblock.base())?;
 
         if let Some(extended) = superblock.extended_fields() {
-            device.write_at(Address::new(SUPERBLOCK_START_BYTE + size_of::<superblock::Base>()), *extended)?;
+            device.write_at(
+                Address::new(SUPERBLOCK_START_BYTE + usize_to_u64(size_of::<superblock::Base>())),
+                *extended,
+            )?;
         }
 
         drop(device);
@@ -281,8 +284,8 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
 
         let block_group_descriptor = BlockGroupDescriptor::parse(self, block_group_number)?;
         let starting_addr =
-            Address::new(u32_to_usize(block_group_descriptor.block_bitmap) * u32_to_usize(superblock.block_size()));
-        let length = u32_to_usize(superblock.base().blocks_per_group / 8);
+            Address::new(u64::from(block_group_descriptor.block_bitmap) * u64::from(superblock.block_size()));
+        let length = u64::from(superblock.base().blocks_per_group / 8);
 
         Bitmap::new(self.device.clone(), starting_addr, length)
     }
@@ -512,8 +515,8 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
 
         let block_group_descriptor = BlockGroupDescriptor::parse(self, block_group_number)?;
         let starting_addr =
-            Address::new(u32_to_usize(block_group_descriptor.inode_bitmap) * u32_to_usize(superblock.block_size()));
-        let length = u32_to_usize(superblock.base().inodes_per_group / 8);
+            Address::new(u64::from(block_group_descriptor.inode_bitmap) * u64::from(superblock.block_size()));
+        let length = u64::from(superblock.base().inodes_per_group / 8);
 
         Bitmap::new(self.device.clone(), starting_addr, length)
     }
@@ -602,10 +605,7 @@ impl<Dev: Device<u8, Ext2Error>> Ext2<Dev> {
         let inode_index = u64::from(Inode::group_index(&superblock, inode_number)) / 8;
         // SAFETY: 0 <= inode_offset < 8
         let inode_offset = unsafe { u8::try_from((inode_number - 1) % 8).unwrap_unchecked() };
-        let bitmap_inode_address = Address::new(
-            usize::try_from(bitmap_starting_byte + inode_index)
-                .expect("Could not fit the starting byte of the inode on a usize"),
-        );
+        let bitmap_inode_address = Address::new(bitmap_starting_byte + inode_index);
 
         let mut device = self.device.lock();
 
@@ -867,7 +867,7 @@ mod test {
 
         assert_eq!(
             ext2.get_block_bitmap(0).unwrap().length() * 8,
-            u32_to_usize(ext2.superblock().base().blocks_per_group)
+            u64::from(ext2.superblock().base().blocks_per_group)
         );
     }
 

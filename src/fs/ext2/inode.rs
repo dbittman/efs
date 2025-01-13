@@ -607,7 +607,7 @@ impl Inode {
             let mut device = fs.device.lock();
 
             let block_address = Address::from(u32_to_usize(block_number) * u32_to_usize(fs.superblock().block_size()));
-            let slice = device.slice(block_address..block_address + u32_to_usize(fs.superblock().block_size()))?;
+            let slice = device.slice(block_address..block_address + u64::from(fs.superblock().block_size()))?;
             let byte_array = slice.as_ref();
             let address_array =
                 // SAFETY: casting n `u8` to `u32` with n a multiple of 4 (as the block size is a power of 2, generally above 512)
@@ -738,7 +738,7 @@ impl Inode {
             if offset == 0 {
                 let count = block_size.min(buffer_length - read_bytes);
                 let block_addr = Address::from(u32_to_usize(block_number) * block_size);
-                let slice = device.slice(block_addr..block_addr + count)?;
+                let slice = device.slice(block_addr..block_addr + usize_to_u64(count))?;
 
                 // SAFETY: buffer contains at least `block_size.min(remaining_bytes_count)` since `remaining_bytes_count
                 // <= buffer_length`
@@ -755,7 +755,8 @@ impl Inode {
 
                 let count = (block_size - offset_usize).min(buffer_length - read_bytes);
                 let block_addr = Address::from(u32_to_usize(block_number) * block_size);
-                let slice = device.slice(block_addr + offset_usize..block_addr + offset_usize + count)?;
+                let slice = device
+                    .slice(block_addr + usize_to_u64(offset_usize)..block_addr + usize_to_u64(offset_usize + count))?;
 
                 // SAFETY: buffer contains at least `block_size.min(remaining_bytes_count)` since `remaining_bytes_count
                 // <= buffer_length`

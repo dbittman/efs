@@ -3,7 +3,6 @@
 use derive_more::derive::{Display, Error};
 
 /// Enumeration of possible errors encountered with device's manipulation.
-#[allow(clippy::module_name_repetitions)]
 #[derive(Debug, PartialEq, Eq, Display, Error)]
 #[display("Device Error: {_variant}")]
 pub enum DevError {

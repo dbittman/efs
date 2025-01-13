@@ -1141,7 +1141,7 @@ mod test {
 
     use itertools::Itertools;
 
-    use crate::arch::{u32_to_usize, usize_to_u64};
+    use crate::arch::usize_to_u64;
     use crate::dev::sector::Address;
     use crate::file::{Regular, SymbolicLink, Type, TypeWithFile};
     use crate::fs::FileSystem;
@@ -1177,9 +1177,7 @@ mod test {
         let dot = unsafe {
             Entry::parse(
                 &fs,
-                Address::new(
-                    u32_to_usize(root_inode.direct_block_pointers[0]) * u32_to_usize(fs.superblock().block_size()),
-                ),
+                Address::new(u64::from(root_inode.direct_block_pointers[0]) * u64::from(fs.superblock().block_size())),
             )
         }
         .unwrap();
@@ -1187,8 +1185,8 @@ mod test {
             Entry::parse(
                 &fs,
                 Address::new(
-                    u32_to_usize(root_inode.direct_block_pointers[0]) * u32_to_usize(fs.superblock().block_size())
-                        + u32_to_usize(dot.rec_len.into()),
+                    u64::from(root_inode.direct_block_pointers[0]) * u64::from(fs.superblock().block_size())
+                        + u64::from(dot.rec_len),
                 ),
             )
         }
@@ -1197,8 +1195,8 @@ mod test {
             Entry::parse(
                 &fs,
                 Address::new(
-                    (u32_to_usize(root_inode.direct_block_pointers[0]) * u32_to_usize(fs.superblock().block_size()))
-                        + u32_to_usize((dot.rec_len + two_dots.rec_len).into()),
+                    (u64::from(root_inode.direct_block_pointers[0]) * u64::from(fs.superblock().block_size()))
+                        + u64::from(dot.rec_len + two_dots.rec_len),
                 ),
             )
         }
@@ -1207,8 +1205,8 @@ mod test {
             Entry::parse(
                 &fs,
                 Address::new(
-                    (u32_to_usize(root_inode.direct_block_pointers[0]) * u32_to_usize(fs.superblock().block_size()))
-                        + u32_to_usize((dot.rec_len + two_dots.rec_len + lost_and_found.rec_len).into()),
+                    (u64::from(root_inode.direct_block_pointers[0]) * u64::from(fs.superblock().block_size()))
+                        + u64::from(dot.rec_len + two_dots.rec_len + lost_and_found.rec_len),
                 ),
             )
         }
@@ -1217,10 +1215,8 @@ mod test {
             Entry::parse(
                 &fs,
                 Address::new(
-                    (u32_to_usize(root_inode.direct_block_pointers[0]) * u32_to_usize(fs.superblock().block_size()))
-                        + u32_to_usize(
-                            (dot.rec_len + two_dots.rec_len + lost_and_found.rec_len + big_file.rec_len).into(),
-                        ),
+                    (u64::from(root_inode.direct_block_pointers[0]) * u64::from(fs.superblock().block_size()))
+                        + u64::from(dot.rec_len + two_dots.rec_len + lost_and_found.rec_len + big_file.rec_len),
                 ),
             )
         }

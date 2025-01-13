@@ -10,7 +10,7 @@ use core::mem::size_of;
 
 use super::Ext2;
 use super::error::Ext2Error;
-use crate::arch::u32_to_usize;
+use crate::arch::{u32_to_usize, usize_to_u64};
 use crate::dev::Device;
 use crate::dev::sector::Address;
 use crate::error::Error;
@@ -159,7 +159,7 @@ impl Entry {
         let mut device = fs.device.lock();
 
         let header = device.read_at::<Header>(starting_addr)?;
-        let buffer = device.read_at::<[u8; 256]>(starting_addr + size_of::<Header>())?;
+        let buffer = device.read_at::<[u8; 256]>(starting_addr + usize_to_u64(size_of::<Header>()))?;
 
         // As after an inode has been removed then added with a different name the previous name is not rewritten
         // entirely, it is needed to add manually the `<NUL>` at the end of the vector.

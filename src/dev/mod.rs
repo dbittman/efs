@@ -335,7 +335,7 @@ pub trait Device<T: Copy, FSE: core::error::Error> {
         let range = starting_addr
             ..Address::forward_checked(starting_addr, length).ok_or(Error::Device(DevError::OutOfBounds {
                 structure: "address",
-                value: usize_to_u64(starting_addr.index() + length).into(),
+                value: (starting_addr.index() + usize_to_u64(length)).into(),
                 lower_bound: 0,
                 upper_bound: self.size().0.into(),
             }))?;
@@ -370,7 +370,7 @@ pub trait Device<T: Copy, FSE: core::error::Error> {
         let range = starting_addr
             ..Address::forward_checked(starting_addr, length).ok_or(Error::Device(DevError::OutOfBounds {
                 structure: "address",
-                value: usize_to_u64(starting_addr.index() + length).into(),
+                value: (starting_addr.index() + usize_to_u64(length)).into(),
                 lower_bound: 0,
                 upper_bound: self.size().0.into(),
             }))?;
@@ -423,21 +423,21 @@ impl<FSE: core::error::Error, T: Base<FsError = FSE> + Read + Write + Seek> Devi
         let len = TryInto::<usize>::try_into((addr_range.end - addr_range.start).index()).map_err(|_err| {
             Error::Device(DevError::OutOfBounds {
                 structure: "addr range",
-                value: usize_to_u64((addr_range.end - addr_range.start).index()).into(),
+                value: (addr_range.end - addr_range.start).index().into(),
                 lower_bound: 0,
                 upper_bound: i128::MAX,
             })
         })?;
 
         let mut slice = alloc::vec![0; len];
-        self.seek(SeekFrom::Start(usize_to_u64(starting_addr.index())))?;
+        self.seek(SeekFrom::Start(starting_addr.index()))?;
         self.read_exact(&mut slice)?;
 
         Ok(Slice::new_owned(slice, starting_addr))
     }
 
     fn commit(&mut self, commit: Commit<u8>) -> Result<(), Error<FSE>> {
-        let offset = self.seek(SeekFrom::Start(usize_to_u64(commit.addr().index())))?;
+        let offset = self.seek(SeekFrom::Start(commit.addr().index()))?;
         self.write_all(commit.as_ref())?;
         self.seek(SeekFrom::Start(offset))?;
 
@@ -454,15 +454,20 @@ macro_rules! impl_device {
             }
 
             fn slice(&mut self, addr_range: Range<Address>) -> Result<Slice<'_, T>, Error<FSE>> {
-                if Device::<T, FSE>::size(self) >= usize_to_u64(usize::from(addr_range.end)) {
+                if Device::<T, FSE>::size(self) >= u64::from(addr_range.end) {
                     let addr_start = addr_range.start;
-                    let range = addr_range.start.index()..addr_range.end.index();
+                    let range = usize::try_from(addr_range.start.index()).expect(
+                        "Unreachable: tried to handle a structure that need more RAM that the system can handle",
+                    )
+                        ..usize::try_from(addr_range.end.index()).expect(
+                            "Unreachable: tried to handle a structure that need more RAM that the system can handle",
+                        );
                     // SAFETY: it is checked above that the wanted elements exist
                     Ok(Slice::new(unsafe { <Self as AsRef<[T]>>::as_ref(self).get_unchecked(range) }, addr_start))
                 } else {
                     Err(Error::Device(DevError::OutOfBounds {
                         structure: "address",
-                        value: usize_to_u64(addr_range.end.index()).into(),
+                        value: addr_range.end.index().into(),
                         lower_bound: 0,
                         upper_bound: <Self as Device<T, FSE>>::size(self).0.into(),
                     }))
@@ -471,15 +476,20 @@ macro_rules! impl_device {
 
             fn commit(&mut self, commit: Commit<T>) -> Result<(), Error<FSE>> {
                 let addr_start = commit.addr().index();
-                let addr_end = addr_start + commit.as_ref().len();
+                let addr_end = addr_start + usize_to_u64(commit.as_ref().len());
 
                 let self_len = usize_to_u64(self.len()).into();
 
-                let dest = &mut <Self as AsMut<[T]>>::as_mut(self).get_mut(addr_start..addr_end).ok_or_else(|| {
+                let dest = &mut <Self as AsMut<[T]>>::as_mut(self).get_mut(usize::try_from(addr_start).expect(
+                    "Unreachable: tried to handle a structure that need more RAM that the system can handle",
+                )
+                    ..usize::try_from(addr_end).expect(
+                        "Unreachable: tried to handle a structure that need more RAM that the system can handle",
+                    )).ok_or_else(|| {
                     // SAFETY: `usize::MAX <= i128::MAX`
                     Error::Device(DevError::OutOfBounds {
-                        structure: "address",
-                        value: usize_to_u64(addr_end).into(),
+                        structure: "Address",
+                        value: addr_end.into(),
                         lower_bound: 0,
                         upper_bound: self_len,
                     })
@@ -506,14 +516,14 @@ impl<FSE: core::error::Error> Device<u8, FSE> for std::fs::File {
     fn slice(&mut self, addr_range: Range<Address>) -> Result<Slice<'_, u8>, Error<FSE>> {
         let starting_addr = addr_range.start;
         let len = (addr_range.end - addr_range.start).index();
-        let mut slice = alloc::vec![0; len];
-        std::io::Seek::seek(self, std::io::SeekFrom::Start(usize_to_u64(starting_addr.index())))?;
+        let mut slice = alloc::vec![0; len.try_into().unwrap()];
+        std::io::Seek::seek(self, std::io::SeekFrom::Start(starting_addr.index()))?;
         std::io::Read::read_exact(self, &mut slice)?;
         Ok(Slice::new_owned(slice, starting_addr))
     }
 
     fn commit(&mut self, commit: Commit<u8>) -> Result<(), Error<FSE>> {
-        let offset = std::io::Seek::seek(self, std::io::SeekFrom::Start(usize_to_u64(commit.addr().index())))?;
+        let offset = std::io::Seek::seek(self, std::io::SeekFrom::Start(commit.addr().index()))?;
         std::io::Write::write_all(self, commit.as_ref())?;
         std::io::Seek::seek(self, std::io::SeekFrom::Start(offset))?;
         Ok(())

@@ -7,6 +7,7 @@ use core::mem::size_of;
 use bitflags::bitflags;
 
 use super::error::Ext2Error;
+use crate::arch::usize_to_u64;
 use crate::celled::Celled;
 use crate::dev::Device;
 use crate::dev::sector::Address;
@@ -19,10 +20,10 @@ pub const EXT2_SIGNATURE: u16 = 0xef53;
 /// Starting byte of the superblock in a Ext2 storage device.
 ///
 /// As described [here](https://www.nongnu.org/ext2-doc/ext2.html#superblock), the superblock **always** located at byte offset 1024 from the beginning of the file, block device or partition.
-pub const SUPERBLOCK_START_BYTE: usize = 1024;
+pub const SUPERBLOCK_START_BYTE: u64 = 1024;
 
 /// Size in bytes of the superblock with reserved bytes.
-pub const SUPERBLOCK_SIZE: usize = 1024;
+pub const SUPERBLOCK_SIZE: u64 = 1024;
 
 /// Base Superblock Fields.
 ///
@@ -619,7 +620,7 @@ impl Superblock {
         } else {
             let superblock_extended_fields =
                 // SAFETY: all the possible failures are catched in the resulting error
-                unsafe { device.read_at::<ExtendedFields>(Address::from(SUPERBLOCK_START_BYTE + size_of::<Base>())) }?;
+                unsafe { device.read_at::<ExtendedFields>(Address::from(SUPERBLOCK_START_BYTE + usize_to_u64(size_of::<Base>()))) }?;
             Ok(Self::Extended(superblock_base, superblock_extended_fields))
         }
     }

@@ -29,7 +29,7 @@ pub struct Bitmap<T: Copy, FSE: core::error::Error, Dev: Device<T, FSE>> {
     starting_addr: Address,
 
     /// Length of the bitmap.
-    length: usize,
+    length: u64,
 
     /// Phantom data to use the `E` generic.
     phantom: PhantomData<FSE>,
@@ -53,7 +53,7 @@ impl<FSE: core::error::Error, T: Copy, Dev: Device<T, FSE>> Bitmap<T, FSE, Dev> 
     /// # Errors
     ///
     /// Returns an [`Error::Device`] if the device cannot be read.
-    pub fn new(celled_device: Celled<Dev>, starting_addr: Address, length: usize) -> Result<Self, Error<FSE>> {
+    pub fn new(celled_device: Celled<Dev>, starting_addr: Address, length: u64) -> Result<Self, Error<FSE>> {
         let inner = celled_device.lock().slice(starting_addr..(starting_addr + length))?.to_vec();
         Ok(Self {
             device: celled_device,
@@ -66,7 +66,7 @@ impl<FSE: core::error::Error, T: Copy, Dev: Device<T, FSE>> Bitmap<T, FSE, Dev> 
 
     /// Returns the length of the bitmap.
     #[must_use]
-    pub const fn length(&self) -> usize {
+    pub const fn length(&self) -> u64 {
         self.length
     }
 

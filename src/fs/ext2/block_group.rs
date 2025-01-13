@@ -11,7 +11,7 @@ use crate::error::Error;
 use crate::fs::error::FsError;
 
 /// Size in bytes of a block group descriptor with reserved bytes.
-pub const BLOCK_GROUP_DESCRIPTOR_SIZE: usize = 32;
+pub const BLOCK_GROUP_DESCRIPTOR_SIZE: u64 = 32;
 
 /// Block group descriptor.
 ///
@@ -60,7 +60,7 @@ impl BlockGroupDescriptor {
         };
 
         let superblock_end_address = SUPERBLOCK_START_BYTE + SUPERBLOCK_SIZE;
-        Ok(Address::new(superblock_end_address + BLOCK_GROUP_DESCRIPTOR_SIZE * n as usize))
+        Ok(Address::new(superblock_end_address + BLOCK_GROUP_DESCRIPTOR_SIZE * (n as u64)))
     }
 
     /// Parse the `n`th block group descriptor from the given device (starting at 0).
@@ -112,7 +112,7 @@ mod test {
 
     #[test]
     fn struct_size() {
-        assert_eq!(size_of::<BlockGroupDescriptor>(), BLOCK_GROUP_DESCRIPTOR_SIZE);
+        assert_eq!(size_of::<BlockGroupDescriptor>() as u64, BLOCK_GROUP_DESCRIPTOR_SIZE);
     }
 
     fn parse_first_block_group_descriptor_base(file: File) {
