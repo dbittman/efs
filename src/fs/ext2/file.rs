@@ -7,6 +7,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::fmt::Debug;
 use core::ptr::{addr_of, addr_of_mut, slice_from_raw_parts};
+use std::eprintln;
 
 use bitflags::Flags;
 use itertools::Itertools;
@@ -385,8 +386,10 @@ impl<Dev: Device<u8, Ext2Error>> Write for File<Dev> {
 
         for (starting_index, (indirection_block, blocks)) in changed_blocks.changed_indirected_blocks() {
             let mut block = Block::new(self.filesystem.clone(), indirection_block);
+
+            let sl = unsafe { &*slice_from_raw_parts(blocks.as_ptr().cast::<u32>(), blocks.len()) };
             if starting_index != 0 {
-                block.seek(SeekFrom::Start(usize_to_u64(starting_index)))?;
+                block.seek(SeekFrom::Start(usize_to_u64(starting_index * 4)))?;
             }
 
             // SAFETY: it is always possible to cast a u32 to 4 u8
@@ -826,7 +829,7 @@ impl<Dev: Device<u8, Ext2Error>> file::Directory for Directory<Dev> {
             let self_and_parent = [
                 &Entry {
                     inode: inode_number,
-                    rec_len: 9,
+                    rec_len: 12,
                     name_len: 1,
                     file_type: if file_type_feature { u8::from(FileType::Dir) } else { 0 },
                     // SAFETY: "." is a valid CString
@@ -834,7 +837,7 @@ impl<Dev: Device<u8, Ext2Error>> file::Directory for Directory<Dev> {
                 },
                 &Entry {
                     inode: self.file.inode_number,
-                    rec_len: u16::try_from(block_size - 9)
+                    rec_len: u16::try_from(block_size - 12)
                         .expect("Ill-formed superblock: block size should be castable in a u16"),
                     name_len: 2,
                     file_type: if file_type_feature { u8::from(FileType::Dir) } else { 0 },
@@ -843,9 +846,13 @@ impl<Dev: Device<u8, Ext2Error>> file::Directory for Directory<Dev> {
                 },
             ];
 
-            let self_and_parent_bytes = self_and_parent.map(Entry::as_bytes).concat();
+            let mut bytes = Vec::new();
+            bytes.append(&mut self_and_parent[0].as_bytes());
+            bytes.append(&mut vec![0; self_and_parent[0].free_space() as usize]);
+            bytes.append(&mut self_and_parent[1].as_bytes());
+            bytes.append(&mut vec![0; self_and_parent[1].free_space() as usize]);
             dir.seek(SeekFrom::Start(0))?;
-            dir.write_all(&self_and_parent_bytes)?;
+            dir.write_all(&bytes)?;
             dir.flush()?;
         }
 
