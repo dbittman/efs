@@ -60,7 +60,9 @@ impl BlockGroupDescriptor {
         };
 
         let superblock_end_address = SUPERBLOCK_START_BYTE + SUPERBLOCK_SIZE;
-        Ok(Address::new(superblock_end_address + BLOCK_GROUP_DESCRIPTOR_SIZE * (n as u64)))
+        let block_group_descriptors_start_address =
+            superblock_end_address.next_multiple_of(superblock.block_size() as u64);
+        Ok(Address::new(block_group_descriptors_start_address + BLOCK_GROUP_DESCRIPTOR_SIZE * (n as u64)))
     }
 
     /// Parse the `n`th block group descriptor from the given device (starting at 0).

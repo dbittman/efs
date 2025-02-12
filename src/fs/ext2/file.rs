@@ -7,7 +7,6 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::fmt::Debug;
 use core::ptr::{addr_of, addr_of_mut, slice_from_raw_parts};
-use std::eprintln;
 
 use bitflags::Flags;
 use itertools::Itertools;
@@ -387,7 +386,6 @@ impl<Dev: Device<u8, Ext2Error>> Write for File<Dev> {
         for (starting_index, (indirection_block, blocks)) in changed_blocks.changed_indirected_blocks() {
             let mut block = Block::new(self.filesystem.clone(), indirection_block);
 
-            let sl = unsafe { &*slice_from_raw_parts(blocks.as_ptr().cast::<u32>(), blocks.len()) };
             if starting_index != 0 {
                 block.seek(SeekFrom::Start(usize_to_u64(starting_index * 4)))?;
             }
