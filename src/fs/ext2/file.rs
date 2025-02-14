@@ -363,7 +363,8 @@ impl<Dev: Device<u8, Ext2Error>> Write for File<Dev> {
             IndirectedBlocks::<DIRECT_BLOCK_POINTER_COUNT>::necessary_indirection_block_count(
                 data_blocks_needed,
                 fs.superblock().base().block_size() / 4,
-            ) - current_indirection_block_count;
+            )
+            .saturating_sub(current_indirection_block_count);
 
         let start_block_group = indirected_blocks
             .last_data_block_allocated()
@@ -374,8 +375,14 @@ impl<Dev: Device<u8, Ext2Error>> Write for File<Dev> {
             fs.free_blocks_offset(data_blocks_to_request + indirection_blocks_to_request, start_block_group)?;
 
         fs.allocate_blocks(&free_blocks)?;
-
         drop(fs);
+
+        // TODO: this is inefficient. We need to zero blocks used for indirect blocks.
+        for block in &free_blocks {
+            let mut block = Block::new(self.filesystem.clone(), *block);
+            let buf = vec![0; block_size as usize];
+            block.write(&buf)?;
+        }
 
         let (new_indirected_blocks, changed_blocks) = indirected_blocks.append_blocks_with_difference(
             &free_blocks,
@@ -892,8 +899,20 @@ impl<Dev: Device<u8, Ext2Error>> file::Directory for Directory<Dev> {
         new_inode.atime = time;
         new_inode.mtime = time;
         new_inode.ctime = time;
+        // if we created a directory, increase our link count (.)
+        if file_type == Type::Directory {
+            new_inode.links_count += 1;
+        }
 
         unsafe { Inode::write_on_device(&fs, inode_number, new_inode)? };
+
+        // if we created a directory, increase the parent's link count (..)
+        if file_type == Type::Directory {
+            let mut parent_inode = self.file.inode;
+            parent_inode.links_count += 1;
+            unsafe { Inode::write_on_device(&fs, self.file.inode_number, parent_inode)? };
+        }
+
         drop(fs);
 
         self.file.filesystem.file(inode_number)

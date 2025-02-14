@@ -388,7 +388,10 @@ pub trait Device<T: Copy, FSE: core::error::Error> {
     ///
     /// Otherwise, returns [`None`].
     fn now(&mut self) -> Option<Timespec> {
-        None
+        #[cfg(feature = "std")]
+        return Some(default_now());
+        #[cfg(not(feature = "std"))]
+        return None;
     }
 }
 
