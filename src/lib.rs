@@ -1,3 +1,4 @@
+#![feature(const_ptr_is_null)]
 //! # Extended fs
 //!
 //! An OS and architecture independent implementation of some Unix filesystems in Rust.
