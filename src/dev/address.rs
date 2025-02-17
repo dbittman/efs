@@ -78,7 +78,7 @@ impl Mul<u64> for Address {
 }
 
 impl Step for Address {
-    fn steps_between(start: &Self, end: &Self) -> (usize, Option<usize>) {
+    fn steps_between(start: &Self, end: &Self) -> Option<usize> {
         u64::steps_between(start, end)
     }
 
